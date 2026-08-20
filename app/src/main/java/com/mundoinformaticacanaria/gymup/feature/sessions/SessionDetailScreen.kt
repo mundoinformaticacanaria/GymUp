@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -176,6 +177,32 @@ private fun SessionMetadataEditor(
     var typeId by remember(detail.sessionTypeId) { mutableStateOf(detail.sessionTypeId) }
     var dateText by remember(detail.summary.date) { mutableStateOf(detail.summary.date.toString()) }
     var orderText by remember(detail.summary.orderInDay) { mutableStateOf(detail.summary.orderInDay.toString()) }
+    var confirmRecalculate by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val hasActualData = detail.exercises.any { exercise -> exercise.sets.any { it.actualConfirmed } }
+
+    if (confirmRecalculate) {
+        AlertDialog(
+            onDismissRequest = { confirmRecalculate = false },
+            title = { Text("Recalcular objetivos") },
+            text = { Text("Se sustituirán los objetivos actuales por los calculados desde la nueva posición temporal. Esta acción no modifica datos reales.") },
+            confirmButton = {
+                TextButton(onClick = { confirmRecalculate = false; onRecalculate() }) { Text("Recalcular") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRecalculate = false }) { Text("Cancelar") } },
+        )
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Eliminar sesión") },
+            text = { Text("La sesión y todos sus ejercicios y series se eliminarán definitivamente.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("Eliminar") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
+        )
+    }
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -199,13 +226,15 @@ private fun SessionMetadataEditor(
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Guardar fecha/orden") }
-            TextButton(onClick = onRecalculate, modifier = Modifier.fillMaxWidth()) { Text("Recalcular objetivos") }
+            if (!hasActualData) {
+                TextButton(onClick = { confirmRecalculate = true }, modifier = Modifier.fillMaxWidth()) { Text("Recalcular objetivos") }
+            }
             Text("Estado operativo")
             SessionOperationalState.entries.forEach { state ->
                 FilterChip(selected = detail.summary.operationalState == state, onClick = { onStateChange(state) }, label = { Text(state.label()) })
             }
             Button(onClick = onFinalize, modifier = Modifier.fillMaxWidth()) { Text("Finalizar sesión") }
-            TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) { Text("Eliminar sesión") }
+            TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) { Text("Eliminar sesión") }
             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
