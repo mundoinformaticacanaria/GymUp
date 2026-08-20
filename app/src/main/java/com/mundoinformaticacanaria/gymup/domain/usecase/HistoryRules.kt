@@ -14,7 +14,7 @@ import java.time.LocalDate
 data class SessionHistoryFilter(
     val operationalState: SessionOperationalState? = null,
     val executionResult: SessionExecutionResult? = null,
-    val sessionTypeName: String? = null,
+    val sessionTypeId: String? = null,
     val from: LocalDate? = null,
     val to: LocalDate? = null,
 )
@@ -80,14 +80,17 @@ fun rankExercises(
     }.map { it.exercise }
 }
 
-fun filterSessionHistory(sessions: List<SessionSummary>, filter: SessionHistoryFilter): List<SessionSummary> =
-    sessions.filter { session ->
-        (filter.operationalState == null || session.operationalState == filter.operationalState) &&
-            (filter.executionResult == null || session.executionResult == filter.executionResult) &&
-            (filter.sessionTypeName == null || session.sessionTypeName == filter.sessionTypeName) &&
-            (filter.from == null || !session.date.isBefore(filter.from)) &&
-            (filter.to == null || !session.date.isAfter(filter.to))
-    }
+fun filterSessionHistory(
+    sessions: List<SessionSummary>,
+    filter: SessionHistoryFilter,
+    sessionTypeIds: Map<String, String> = emptyMap(),
+): List<SessionSummary> = sessions.filter { session ->
+    (filter.operationalState == null || session.operationalState == filter.operationalState) &&
+        (filter.executionResult == null || session.executionResult == filter.executionResult) &&
+        (filter.sessionTypeId == null || sessionTypeIds[session.id] == filter.sessionTypeId) &&
+        (filter.from == null || !session.date.isBefore(filter.from)) &&
+        (filter.to == null || !session.date.isAfter(filter.to))
+}
 
 fun buildChartSegments(
     executionsChronological: List<ExerciseHistoryExecution>,
