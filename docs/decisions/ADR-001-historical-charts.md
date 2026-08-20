@@ -23,9 +23,9 @@ La gráfica tendrá selector entre:
 - `Carga`
 - `Medición`
 
-`Medición` representa la unidad principal aplicable al ejercicio (por ejemplo repeticiones, repeticiones/lado, segundos o segundos/lado).
-
 Cada serie se representa como una línea independiente.
+
+### Carga
 
 La opción `Carga` se oculta cuando el ejercicio no tiene un valor numérico de carga aplicable.
 
@@ -45,3 +45,13 @@ Si la modalidad cambia entre ejecuciones, la gráfica no une esos valores como u
 Ejemplo: `10 kg/mano → 12,5 kg/mano → 25 kg total` no puede mostrarse como una línea continua `10 → 12,5 → 25`.
 
 No se calculan pesos efectivos derivados.
+
+### Medición
+
+`Medición` representa la unidad real aplicable a la ejecución: `repeticiones`, `repeticiones/lado`, `segundos` o `segundos/lado`.
+
+Las unidades de medición son dominios comparables únicamente consigo mismos. Nunca se convierten ni se unen automáticamente unidades distintas.
+
+Si la unidad cambia entre ejecuciones, la gráfica debe cortar la línea o representar una serie visual distinta por unidad, dejando visible el cambio.
+
+Ejemplo: `30 segundos → 40 segundos → 12 repeticiones` no puede mostrarse como una progresión continua `30 → 40 → 12`.
