@@ -19,10 +19,15 @@ La fuente de verdad funcional y técnica del proyecto es este repositorio.
 ## Documentación
 
 - [Contrato funcional v1](docs/PRODUCT_CONTRACT_V1.md)
+- [Cierre funcional MVP v1](docs/PRODUCT_CONTRACT_V1_CLOSURE.md)
 - [Gobierno, roles y reglas de trabajo](docs/PROJECT_GOVERNANCE.md)
 
 ## Estado
 
-Fase actual: definición y cierre del contrato de producto v1.
+**Contrato funcional del MVP v1 cerrado el 20/08/2026.**
 
-No deben implementarse funcionalidades que contradigan el contrato funcional vigente. Las decisiones de producto pendientes deben resolverse antes de asumir comportamiento.
+La Issue #1 cerró el circuito FUNCIONAL ↔ TECH LEAD sin dudas funcionales relevantes pendientes. El catálogo inicial funcional queda aceptado con 61 ejercicios.
+
+Fase actual: **definición de arquitectura técnica, modelo de datos, ADR iniciales y backlog de implementación**.
+
+No deben implementarse funcionalidades que contradigan el contrato funcional vigente. Cualquier cambio futuro de producto debe quedar trazado explícitamente en GitHub antes de incorporarse al desarrollo.
