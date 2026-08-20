@@ -13,8 +13,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val container = (application as GymUpApplication).container
-        setContent {
-            GymUpApp(userPreferencesRepository = container.userPreferencesRepository)
-        }
+        setContent { GymUpApp(container = container) }
     }
 }
