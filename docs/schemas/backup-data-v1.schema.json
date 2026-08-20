@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gymup.local/schemas/backup-data-v1.schema.json",
+  "title": "GymUp Backup Data v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_types", "muscle_groups", "equipment", "exercises", "exercise_images", "routines", "routine_exercises", "sessions", "session_exercises", "session_sets", "preferences"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "session_types": {"type": "array", "items": {"$ref": "#/$defs/sessionType"}},
+    "muscle_groups": {"type": "array", "items": {"$ref": "#/$defs/namedMaster"}},
+    "equipment": {"type": "array", "items": {"$ref": "#/$defs/namedMaster"}},
+    "exercises": {"type": "array", "items": {"$ref": "#/$defs/exercise"}},
+    "exercise_images": {"type": "array", "items": {"$ref": "#/$defs/exerciseImage"}},
+    "routines": {"type": "array", "items": {"$ref": "#/$defs/routine"}},
+    "routine_exercises": {"type": "array", "items": {"$ref": "#/$defs/routineExercise"}},
+    "sessions": {"type": "array", "items": {"$ref": "#/$defs/session"}},
+    "session_exercises": {"type": "array", "items": {"$ref": "#/$defs/sessionExercise"}},
+    "session_sets": {"type": "array", "items": {"$ref": "#/$defs/sessionSet"}},
+    "preferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["theme_mode"],
+      "properties": {"theme_mode": {"enum": ["SYSTEM", "LIGHT", "DARK"]}}
+    }
+  },
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "namedMaster": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "is_active"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "name": {"type": "string", "minLength": 1},
+        "is_active": {"type": "boolean"}
+      }
+    },
+    "sessionType": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "is_active", "is_protected_other"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "name": {"type": "string", "minLength": 1},
+        "is_active": {"type": "boolean"},
+        "is_protected_other": {"type": "boolean"}
+      }
+    },
+    "exercise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name_es", "name_en", "muscle_group_id", "default_load_mode", "default_measurement_unit", "rir_required", "is_favorite", "is_active"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "name_es": {"type": "string"},
+        "name_en": {"type": "string"},
+        "muscle_group_id": {"$ref": "#/$defs/uuid"},
+        "equipment_id": {"anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+        "default_load_mode": {"$ref": "#/$defs/loadMode"},
+        "default_measurement_unit": {"$ref": "#/$defs/measurementUnit"},
+        "rir_required": {"type": "boolean"},
+        "initial_set_count": {"type": ["integer", "null"], "minimum": 1},
+        "initial_load": {"type": ["number", "null"], "minimum": 0},
+        "initial_measurement": {"type": ["integer", "null"], "minimum": 0},
+        "description": {"type": ["string", "null"]},
+        "is_favorite": {"type": "boolean"},
+        "is_active": {"type": "boolean"}
+      }
+    },
+    "exerciseImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "exercise_id", "position", "source_type", "storage_key"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "exercise_id": {"$ref": "#/$defs/uuid"},
+        "position": {"type": "integer", "minimum": 1, "maximum": 3},
+        "source_type": {"enum": ["SEED", "USER"]},
+        "storage_key": {"type": "string"},
+        "original_source_url": {"type": ["string", "null"]},
+        "author": {"type": ["string", "null"]},
+        "license": {"type": ["string", "null"]}
+      }
+    },
+    "routine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "name": {"type": "string"},
+        "suggested_session_type_id": {"anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+        "description": {"type": ["string", "null"]}
+      }
+    },
+    "routineExercise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["routine_id", "exercise_id", "position"],
+      "properties": {
+        "routine_id": {"$ref": "#/$defs/uuid"},
+        "exercise_id": {"$ref": "#/$defs/uuid"},
+        "position": {"type": "integer", "minimum": 1}
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "date_epoch_day", "order_in_day", "session_type_id", "session_type_name_snapshot", "name", "is_auto_name", "operational_state", "execution_result"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "date_epoch_day": {"type": "integer"},
+        "order_in_day": {"type": "integer", "minimum": 1},
+        "session_type_id": {"$ref": "#/$defs/uuid"},
+        "session_type_name_snapshot": {"type": "string"},
+        "name": {"type": "string"},
+        "is_auto_name": {"type": "boolean"},
+        "general_note": {"type": ["string", "null"]},
+        "operational_state": {"enum": ["PLANNED", "IN_PROGRESS", "REALIZED"]},
+        "execution_result": {"enum": ["NOT_STARTED", "PARTIAL", "COMPLETED"]}
+      }
+    },
+    "sessionExercise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "session_id", "exercise_id", "position", "name_es_snapshot", "name_en_snapshot", "muscle_group_snapshot", "load_mode_snapshot", "measurement_unit_snapshot", "rir_required_snapshot", "is_finalized"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "session_id": {"$ref": "#/$defs/uuid"},
+        "exercise_id": {"$ref": "#/$defs/uuid"},
+        "position": {"type": "integer", "minimum": 1},
+        "name_es_snapshot": {"type": "string"},
+        "name_en_snapshot": {"type": "string"},
+        "muscle_group_snapshot": {"type": "string"},
+        "equipment_snapshot": {"type": ["string", "null"]},
+        "load_mode_snapshot": {"$ref": "#/$defs/loadMode"},
+        "measurement_unit_snapshot": {"$ref": "#/$defs/measurementUnit"},
+        "rir_required_snapshot": {"type": "boolean"},
+        "description_snapshot": {"type": ["string", "null"]},
+        "exercise_rest_seconds": {"type": ["integer", "null"], "minimum": 0},
+        "note": {"type": ["string", "null"]},
+        "incomplete_reason": {"type": ["string", "null"]},
+        "is_finalized": {"type": "boolean"}
+      }
+    },
+    "sessionSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "session_exercise_id", "position", "load_mode", "measurement_unit", "actual_confirmed"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "session_exercise_id": {"$ref": "#/$defs/uuid"},
+        "position": {"type": "integer", "minimum": 1},
+        "load_mode": {"$ref": "#/$defs/loadMode"},
+        "measurement_unit": {"$ref": "#/$defs/measurementUnit"},
+        "target_load": {"type": ["number", "null"], "minimum": 0},
+        "actual_load": {"type": ["number", "null"], "minimum": 0},
+        "target_measurement": {"type": ["integer", "null"], "minimum": 0},
+        "actual_measurement": {"type": ["integer", "null"], "minimum": 0},
+        "rir": {"type": ["integer", "null"], "minimum": 0, "maximum": 2},
+        "rest_override_seconds": {"type": ["integer", "null"], "minimum": 0},
+        "actual_confirmed": {"type": "boolean"}
+      }
+    },
+    "loadMode": {"enum": ["KG_TOTAL", "KG_PER_HAND", "KG_PER_SIDE", "BODYWEIGHT", "BODYWEIGHT_PLUS_LOAD", "BODYWEIGHT_MINUS_ASSISTANCE", "NO_WEIGHT"]},
+    "measurementUnit": {"enum": ["REPETITIONS", "REPETITIONS_PER_SIDE", "SECONDS", "SECONDS_PER_SIDE"]}
+  }
+}
