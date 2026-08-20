@@ -1,8 +1,10 @@
 # GymUp — Contrato funcional v1
 
-Estado: **vivo / en definición**
+Estado: **vivo / en cierre funcional**
 
 Este documento recoge las decisiones de producto vigentes para GymUp v1. Si una conversación, Issue, ADR o implementación contradice este documento, el trabajo afectado debe detenerse hasta resolver explícitamente la discrepancia.
+
+GitHub es la fuente de verdad del proyecto.
 
 ## 1. Alcance general
 
@@ -36,6 +38,7 @@ No existe autenticación, perfiles, PIN ni biometría en v1.
 - Las sesiones históricas conservan snapshots suficientes para interpretar exactamente cómo estaban configuradas cuando se registraron.
 - Las métricas y gráficas utilizan exclusivamente trabajo realmente ejecutado.
 - Toda funcionalidad principal debe funcionar sin conexión a Internet.
+- Las decisiones visibles o de negocio no se rellenan por inferencia silenciosa.
 
 ## 3. Sesiones
 
@@ -96,7 +99,7 @@ Valores:
 - `Parcial`
 - `Completada`
 
-El resultado se recalcula automáticamente cuando cambian datos reales, incluso si la sesión ya está `Realizada`.
+El resultado se deriva de los estados reales de sus ejercicios y se recalcula automáticamente cuando cambian datos reales, incluso si la sesión ya está `Realizada`.
 
 Estado operativo y resultado son conceptos independientes.
 
@@ -138,6 +141,18 @@ Se puede eliminar cualquier sesión —`Planificada`, `En curso` o `Realizada`�
 Una sesión que no llegó a ejecutarse puede conservarse como `Realizada + No iniciada` o eliminarse.
 
 No existe archivado en v1.
+
+### 3.6 Cambio posterior de fecha u orden
+
+Cambiar `fecha` u `orden_en_dia` nunca recalcula ni sobrescribe automáticamente objetivos ya existentes.
+
+Reglas:
+
+- los objetivos actuales se conservan exactamente;
+- si la sesión todavía no tiene ningún dato real, puede ofrecerse una acción explícita `Recalcular objetivos` usando la nueva posición temporal;
+- esa acción nunca se ejecuta sola;
+- si el usuario había editado objetivos, se pide confirmación antes de sustituirlos;
+- si ya existe al menos una serie realizada en la sesión, no se ofrece recálculo automático/masivo: se conserva el plan con el que comenzó la ejecución y cualquier ajuste posterior se realiza manualmente.
 
 ## 4. Ejercicios dentro de una sesión
 
@@ -195,7 +210,7 @@ Valores:
 - `Parcial`
 - `Completado`
 
-Cálculo automático:
+Cálculo automático y único en v1:
 
 - 0 series realizadas → `No realizado`;
 - al menos una realizada y alguna pendiente → `Parcial`;
@@ -203,7 +218,13 @@ Cálculo automático:
 
 El ejercicio puede finalizarse manualmente en cualquier momento. Al finalizar la sesión se finalizan los ejercicios aún abiertos.
 
-El estado calculado puede modificarse manualmente después. El efecto exacto de ese override sobre resultado de sesión y futuras precargas permanece pendiente de cierre funcional en la Issue #1; no debe inferirse.
+**El estado `No realizado` / `Parcial` / `Completado` no es editable manualmente en v1.** Se deriva exclusivamente de las series reales.
+
+Consecuencias:
+
+- el `resultado_ejecucion` de la sesión se calcula a partir de estos estados derivados;
+- una ejecución solo puede servir como fuente `Completado` para precarga futura cuando todas sus series estén realmente realizadas;
+- no existen overrides manuales que puedan convertir datos parciales en una ejecución completada.
 
 Si un ejercicio no queda completado, puede registrarse opcionalmente un motivo a nivel de ejercicio:
 
@@ -318,7 +339,9 @@ Puede definirse:
 
 Se puede introducir en segundos o minutos. Segundos es la unidad por defecto.
 
-Internamente puede normalizarse a segundos.
+Internamente se normaliza a segundos.
+
+No existe temporizador de descanso en v1.
 
 ### 9.2 Notas
 
@@ -330,7 +353,7 @@ Internamente puede normalizarse a segundos.
 
 La v1 arranca con un catálogo curado de aproximadamente 60–100 ejercicios.
 
-FUNCIONAL es responsable de preparar y validar el contenido funcional inicial siguiendo `docs/data/EXERCISE_CATALOG_TEMPLATE.md`. El Tech Lead validará estructura, enums, duplicados, catálogos referenciados y licencias antes de aceptar el seed.
+FUNCIONAL es responsable de preparar y validar el contenido funcional inicial siguiendo `docs/data/EXERCISE_CATALOG_TEMPLATE.md`. El Tech Lead valida estructura, enums, duplicados, catálogos referenciados y licencias antes de aceptar el seed.
 
 No se inventarán objetivos iniciales solo para completar campos.
 
@@ -369,7 +392,7 @@ Los ejercicios personalizados pueden crearse y pueden añadir imágenes desde ga
 
 Durante una sesión se deben poder abrir imágenes e instrucciones sin abandonar el registro.
 
-### 10.1 Baja y borrado
+### 10.1 Baja, referencias y borrado
 
 Si un ejercicio tiene histórico, eliminarlo desde mantenimiento implica baja lógica:
 
@@ -377,9 +400,13 @@ Si un ejercicio tiene histórico, eliminarlo desde mantenimiento implica baja l�
 - deja de aparecer en búsquedas normales;
 - conserva el histórico.
 
-Solo ejercicios sin histórico pueden optar a borrado definitivo desde gestión normal.
+Reglas adicionales:
 
-El comportamiento cuando un ejercicio desactivado o borrable está referenciado por una rutina o por una duplicación histórica está pendiente de cierre funcional en la Issue #1.
+1. Si una rutina contiene un ejercicio que después se desactiva, la rutina conserva la referencia y lo muestra como `Desactivado`. Al crear una sesión desde esa rutina, el ejercicio desactivado no se copia. Antes de confirmar la creación se muestra un aviso con los ejercicios omitidos.
+2. Al duplicar una sesión histórica que contiene un ejercicio actualmente desactivado, ese ejercicio no se copia a la nueva sesión y se muestra un aviso explícito antes de crearla. La sesión histórica original permanece intacta.
+3. Si un ejercicio no tiene histórico pero está presente en una o más rutinas, puede borrarse definitivamente solo con confirmación explícita indicando las rutinas afectadas. El borrado elimina atómicamente el ejercicio del catálogo y de esas listas de rutina. Si el usuario cancela, no cambia nada.
+
+Un ejercicio desactivado nunca vuelve a introducirse silenciosamente en una sesión nueva.
 
 ## 11. Búsqueda de ejercicios
 
@@ -417,26 +444,28 @@ Filtro por patrón de movimiento: fuera de v1.
 
 ## 12. Catálogos auxiliares
 
+Los catálogos `Tipo de sesión`, `Grupo muscular` y `Equipo` prohíben nombres duplicados usando la misma normalización básica de ejercicios: insensible a mayúsculas/minúsculas y tildes/diacríticos.
+
+Los cambios de maestros no reescriben snapshots históricos.
+
 ### 12.1 Grupo muscular
 
 Cada ejercicio tiene un único grupo muscular principal en v1.
 
 Catálogo editable: crear, renombrar y desactivar.
 
-Lista inicialmente propuesta, pendiente de confirmación funcional en Issue #1:
+Seed v1 aprobado:
 
-- Pecho
-- Espalda
-- Hombro
-- Bíceps
-- Tríceps
-- Pierna
-- Glúteo
-- Gemelos
-- Core
-- Antebrazo/Agarre
-
-Los cambios del maestro no reescriben snapshots históricos.
+- `Pecho`
+- `Espalda`
+- `Hombro`
+- `Bíceps`
+- `Tríceps`
+- `Pierna`
+- `Glúteo`
+- `Gemelos`
+- `Core`
+- `Antebrazo/Agarre`
 
 ### 12.2 Equipo
 
@@ -444,26 +473,26 @@ Equipo es opcional en el ejercicio.
 
 Catálogo editable: crear, renombrar y desactivar.
 
-Lista inicialmente propuesta, pendiente de confirmación funcional en Issue #1:
+Seed v1 aprobado:
 
-- Mancuernas
-- Barra
-- Polea
-- Máquina
-- Discos
-- Banco
-- Peso corporal
-- Bandas elásticas
-- Kettlebell
-- Otro
+- `Mancuernas`
+- `Barra`
+- `Polea`
+- `Máquina`
+- `Discos`
+- `Banco`
+- `Peso corporal`
+- `Bandas elásticas`
+- `Kettlebell`
+- `Otro`
 
-Los cambios del maestro no reescriben snapshots históricos.
+`Otro` de Equipo se gestiona como cualquier otro equipo: puede renombrarse o desactivarse. Si tiene referencias históricas, se aplican las reglas normales de preservación del histórico.
 
 ### 12.3 Tipo de sesión
 
 Tipo de sesión es obligatorio al crear sesión y pertenece a un catálogo editable.
 
-Lista inicial aprobada:
+Seed v1 aprobado:
 
 - `Fuerza`
 - `Hipertrofia`
@@ -477,9 +506,9 @@ Nombres específicos como `Pádel`, `Full body` o `Pre-pádel` pueden añadirse 
 
 La selección debe ser rápida y puede recordar el último tipo usado cuando tenga sentido.
 
-Si un tipo usado históricamente deja de estar activo, las sesiones antiguas conservan su snapshot.
+`Otro` de Tipo de sesión es un valor de escape garantizado y protegido: no puede borrarse, desactivarse ni renombrarse.
 
-La protección concreta de `Otro` y las reglas de unicidad de los catálogos editables permanecen pendientes en Issue #1.
+Si un tipo usado históricamente deja de estar activo, las sesiones antiguas conservan su snapshot.
 
 ### 12.4 Patrón de movimiento
 
@@ -502,8 +531,9 @@ No guarda objetivos de peso, series o medición.
 
 Al crear una sesión desde rutina:
 
-- se copian ejercicios + orden;
+- se copian ejercicios activos + orden;
 - cada ejercicio calcula objetivos desde histórico/defaults;
+- los ejercicios desactivados se omiten con aviso explícito antes de confirmar la sesión;
 - el tipo sugerido se precarga si existe y sigue siendo editable;
 - la descripción de la rutina no se copia a la nota de sesión.
 
@@ -553,7 +583,7 @@ Cada serie se representa como línea independiente. Si una serie no existe en un
 
 `Carga` se oculta cuando el ejercicio no tiene valor numérico de carga aplicable.
 
-Para lastre/asistencia se representa solo `X`.
+Para `peso corporal + X kg` y `peso corporal - X kg asistencia` se representa solo `X`.
 
 Cada modalidad se compara exclusivamente consigo misma. Nunca se convierten modalidades automáticamente.
 
@@ -632,7 +662,11 @@ Cada importación reemplaza **todos** los datos existentes. No existen merge ni 
 
 Antes de sobrescribir, la aplicación valida compatibilidad e integridad.
 
-La necesidad o no de protección adicional del ZIP mediante contraseña/cifrado queda pendiente de cierre funcional en Issue #1.
+GymUp v1 exporta el backup como **ZIP sin contraseña ni cifrado adicional propio de la aplicación**.
+
+La interfaz debe indicar claramente que el archivo contiene datos de GymUp y que debe custodiarse como una copia de seguridad personal.
+
+El cifrado/protección por contraseña queda como posible evolución posterior.
 
 ## 18. Limpieza histórica
 
@@ -729,9 +763,11 @@ Entre otros:
 - métricas derivadas avanzadas;
 - comparación automática del informe con sesiones anteriores;
 - archivado de sesiones;
-- filtro histórico `Solo completadas`.
+- filtro histórico `Solo completadas`;
+- temporizador de descanso;
+- cifrado/contraseña propia del backup ZIP.
 
-## 23. Decisiones pendientes y circuito de cierre
+## 23. Cierre funcional y circuito
 
 Las dudas funcionales pendientes del MVP v1 se centralizan en la Issue `#1 — [FUNCIONAL] Cierre de dudas pendientes — MVP v1`.
 
@@ -739,12 +775,16 @@ Circuito:
 
 1. label `FUNCIONAL`: trabaja el funcional;
 2. al terminar cambia a `TECH LEAD`;
-3. el Tech Lead revisa respuestas, coherencia, contrato y ADR;
-4. si quedan dudas/contradicciones, el Tech Lead comenta únicamente lo pendiente y devuelve la label a `FUNCIONAL`;
+3. el Tech Lead revisa respuestas, coherencia, contrato, ADR y datos entregados;
+4. si quedan dudas, contradicciones o correcciones, el Tech Lead comenta únicamente lo pendiente y devuelve la label a `FUNCIONAL`;
 5. el ciclo se repite hasta cerrar funcionalmente el MVP v1.
 
-Cuando el usuario indique `Revisa GitHub` o equivalente, el Tech Lead debe localizar todas las Issues abiertas con label `TECH LEAD` y procesarlas sin pedir que se copie su contenido en el chat.
-
-No debe inferirse una decisión funcional pendiente.
+Cuando el usuario indique `Revisa GitHub` o equivalente, el Tech Lead localiza todas las Issues abiertas de GymUp con label `TECH LEAD` y las procesa sin pedir que se copie su contenido en el chat.
 
 El Tech Lead es responsable de mantener GitHub y este contrato actualizados durante todo el circuito.
+
+### Pendiente actual
+
+F-07 a F-13 quedan aprobadas y consolidadas.
+
+F-14 (seed inicial de ejercicios) está estructuralmente validado, pero permanece pendiente de una corrección de cobertura funcional registrada en la Issue #1 antes de considerarse seed definitivo v1.
