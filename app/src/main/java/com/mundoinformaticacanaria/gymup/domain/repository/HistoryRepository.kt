@@ -39,5 +39,6 @@ data class ExerciseHistory(
 
 interface HistoryRepository {
     fun observeExerciseSearchMetadata(): Flow<Map<String, ExerciseSearchMetadata>>
+    fun observeSessionTypeIds(): Flow<Map<String, String>>
     suspend fun getExerciseHistory(exerciseId: String, limit: Int = 10): ExerciseHistory?
 }
