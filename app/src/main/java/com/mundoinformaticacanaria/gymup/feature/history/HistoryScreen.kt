@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mundoinformaticacanaria.gymup.core.model.SessionExecutionResult
 import com.mundoinformaticacanaria.gymup.core.model.SessionOperationalState
+import com.mundoinformaticacanaria.gymup.domain.repository.HistoryRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
 import com.mundoinformaticacanaria.gymup.domain.usecase.SessionHistoryFilter
@@ -38,28 +39,31 @@ import java.time.LocalDate
 fun HistoryScreen(
     trainingRepository: TrainingRepository,
     masterCatalogRepository: MasterCatalogRepository,
+    historyRepository: HistoryRepository,
     onOpenSession: (String) -> Unit,
     onBack: () -> Unit,
 ) {
     val sessions by trainingRepository.observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
     val sessionTypes by masterCatalogRepository.observeSessionTypes().collectAsStateWithLifecycle(initialValue = emptyList())
+    val sessionTypeIds by historyRepository.observeSessionTypeIds().collectAsStateWithLifecycle(initialValue = emptyMap())
     var state by remember { mutableStateOf<SessionOperationalState?>(null) }
     var result by remember { mutableStateOf<SessionExecutionResult?>(null) }
-    var typeName by remember { mutableStateOf<String?>(null) }
+    var typeId by remember { mutableStateOf<String?>(null) }
     var fromText by remember { mutableStateOf("") }
     var toText by remember { mutableStateOf("") }
     val from = fromText.parseDateOrNull()
     val to = toText.parseDateOrNull()
-    val filtered = remember(sessions, state, result, typeName, from, to) {
+    val filtered = remember(sessions, sessionTypeIds, state, result, typeId, from, to) {
         filterSessionHistory(
             sessions,
             SessionHistoryFilter(
                 operationalState = state,
                 executionResult = result,
-                sessionTypeName = typeName,
+                sessionTypeId = typeId,
                 from = from,
                 to = to,
             ),
+            sessionTypeIds,
         )
     }
 
@@ -99,11 +103,11 @@ fun HistoryScreen(
                             )
                         }
                         Text("Tipo de sesión")
-                        FilterChip(selected = typeName == null, onClick = { typeName = null }, label = { Text("Todos") })
+                        FilterChip(selected = typeId == null, onClick = { typeId = null }, label = { Text("Todos") })
                         sessionTypes.forEach { type ->
                             FilterChip(
-                                selected = typeName == type.name,
-                                onClick = { typeName = if (typeName == type.name) null else type.name },
+                                selected = typeId == type.id,
+                                onClick = { typeId = if (typeId == type.id) null else type.id },
                                 label = { Text(type.name) },
                             )
                         }
@@ -130,7 +134,7 @@ fun HistoryScreen(
                             onClick = {
                                 state = null
                                 result = null
-                                typeName = null
+                                typeId = null
                                 fromText = ""
                                 toText = ""
                             },
