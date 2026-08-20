@@ -9,25 +9,24 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.mundoinformaticacanaria.gymup.core.model.ThemeMode
 import com.mundoinformaticacanaria.gymup.core.ui.GymUpTheme
-import com.mundoinformaticacanaria.gymup.data.preferences.UserPreferencesRepository
 import com.mundoinformaticacanaria.gymup.feature.home.HomeScreen
 import com.mundoinformaticacanaria.gymup.feature.placeholder.PlaceholderScreen
+import com.mundoinformaticacanaria.gymup.feature.routines.RoutinesScreen
+import com.mundoinformaticacanaria.gymup.feature.sessions.NewSessionScreen
+import com.mundoinformaticacanaria.gymup.feature.sessions.SessionDetailScreen
+import com.mundoinformaticacanaria.gymup.feature.sessions.SessionsScreen
 import com.mundoinformaticacanaria.gymup.feature.settings.SettingsScreen
 import kotlinx.coroutines.launch
 
 @Composable
-fun GymUpApp(userPreferencesRepository: UserPreferencesRepository) {
-    val themeMode by userPreferencesRepository.themeMode.collectAsStateWithLifecycle(
-        initialValue = ThemeMode.SYSTEM,
-    )
+fun GymUpApp(container: AppContainer) {
+    val userPreferencesRepository = container.userPreferencesRepository
+    val themeMode by userPreferencesRepository.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
 
     GymUpTheme(themeMode = themeMode) {
-        NavHost(
-            navController = navController,
-            startDestination = Routes.HOME,
-        ) {
+        NavHost(navController = navController, startDestination = Routes.HOME) {
             composable(Routes.HOME) {
                 HomeScreen(
                     onNewSession = { navController.navigate(Routes.NEW_SESSION) },
@@ -39,13 +38,44 @@ fun GymUpApp(userPreferencesRepository: UserPreferencesRepository) {
                 )
             }
             composable(Routes.NEW_SESSION) {
-                PlaceholderScreen(title = "Nueva sesión", onBack = navController::popBackStack)
+                NewSessionScreen(
+                    trainingRepository = container.trainingRepository,
+                    masterCatalogRepository = container.masterCatalogRepository,
+                    exerciseCatalogRepository = container.exerciseCatalogRepository,
+                    onCreated = { sessionId ->
+                        navController.navigate(Routes.sessionDetail(sessionId)) {
+                            popUpTo(Routes.NEW_SESSION) { inclusive = true }
+                        }
+                    },
+                    onBack = navController::popBackStack,
+                )
             }
             composable(Routes.SESSIONS) {
-                PlaceholderScreen(title = "Sesiones", onBack = navController::popBackStack)
+                SessionsScreen(
+                    trainingRepository = container.trainingRepository,
+                    onNewSession = { navController.navigate(Routes.NEW_SESSION) },
+                    onOpenSession = { navController.navigate(Routes.sessionDetail(it)) },
+                    onBack = navController::popBackStack,
+                )
+            }
+            composable("${Routes.SESSION_DETAIL}/{sessionId}") { entry ->
+                val sessionId = requireNotNull(entry.arguments?.getString("sessionId"))
+                SessionDetailScreen(
+                    sessionId = sessionId,
+                    trainingRepository = container.trainingRepository,
+                    masterCatalogRepository = container.masterCatalogRepository,
+                    exerciseCatalogRepository = container.exerciseCatalogRepository,
+                    onBack = navController::popBackStack,
+                    onDeleted = { navController.popBackStack() },
+                )
             }
             composable(Routes.ROUTINES) {
-                PlaceholderScreen(title = "Rutinas", onBack = navController::popBackStack)
+                RoutinesScreen(
+                    trainingRepository = container.trainingRepository,
+                    masterCatalogRepository = container.masterCatalogRepository,
+                    exerciseCatalogRepository = container.exerciseCatalogRepository,
+                    onBack = navController::popBackStack,
+                )
             }
             composable(Routes.EXERCISES) {
                 PlaceholderScreen(title = "Ejercicios", onBack = navController::popBackStack)
@@ -56,9 +86,7 @@ fun GymUpApp(userPreferencesRepository: UserPreferencesRepository) {
             composable(Routes.SETTINGS) {
                 SettingsScreen(
                     currentMode = themeMode,
-                    onThemeModeSelected = { mode ->
-                        scope.launch { userPreferencesRepository.setThemeMode(mode) }
-                    },
+                    onThemeModeSelected = { mode -> scope.launch { userPreferencesRepository.setThemeMode(mode) } },
                     onBack = navController::popBackStack,
                 )
             }
@@ -69,9 +97,12 @@ fun GymUpApp(userPreferencesRepository: UserPreferencesRepository) {
 private object Routes {
     const val HOME = "home"
     const val NEW_SESSION = "session/new"
+    const val SESSION_DETAIL = "session/detail"
     const val SESSIONS = "sessions"
     const val ROUTINES = "routines"
     const val EXERCISES = "exercises"
     const val HISTORY = "history"
     const val SETTINGS = "settings"
+
+    fun sessionDetail(id: String): String = "$SESSION_DETAIL/$id"
 }
