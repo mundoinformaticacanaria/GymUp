@@ -4,10 +4,12 @@ import android.content.Context
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
 import com.mundoinformaticacanaria.gymup.data.preferences.UserPreferencesRepository
 import com.mundoinformaticacanaria.gymup.data.repository.RoomExerciseCatalogRepository
+import com.mundoinformaticacanaria.gymup.data.repository.RoomHistoryRepository
 import com.mundoinformaticacanaria.gymup.data.repository.RoomMasterCatalogRepository
 import com.mundoinformaticacanaria.gymup.data.repository.RoomTrainingRepository
 import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseCatalogRepository
+import com.mundoinformaticacanaria.gymup.domain.repository.HistoryRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +22,7 @@ interface AppContainer {
     val masterCatalogRepository: MasterCatalogRepository
     val exerciseCatalogRepository: ExerciseCatalogRepository
     val trainingRepository: TrainingRepository
+    val historyRepository: HistoryRepository
 }
 
 class DefaultAppContainer(context: Context) : AppContainer {
@@ -30,6 +33,7 @@ class DefaultAppContainer(context: Context) : AppContainer {
     override val masterCatalogRepository: MasterCatalogRepository = RoomMasterCatalogRepository(database.masterDataDao())
     override val exerciseCatalogRepository: ExerciseCatalogRepository = RoomExerciseCatalogRepository(database.exerciseDao())
     override val trainingRepository: TrainingRepository = RoomTrainingRepository(database)
+    override val historyRepository: HistoryRepository = RoomHistoryRepository(database)
 
     init {
         applicationScope.launch { DatabaseSeeder(appContext, database).seedIfNeeded() }
