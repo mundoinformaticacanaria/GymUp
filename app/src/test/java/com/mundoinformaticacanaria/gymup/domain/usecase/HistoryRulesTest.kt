@@ -58,10 +58,11 @@ class HistoryRulesTest {
             sessions,
             SessionHistoryFilter(
                 operationalState = SessionOperationalState.REALIZED,
-                sessionTypeName = "Fuerza",
+                sessionTypeId = "strength",
                 from = LocalDate.of(2026, 8, 20),
                 to = LocalDate.of(2026, 8, 20),
             ),
+            mapOf("a" to "strength", "b" to "strength", "c" to "cardio"),
         )
         assertEquals(listOf("b"), filtered.map { it.id })
     }
