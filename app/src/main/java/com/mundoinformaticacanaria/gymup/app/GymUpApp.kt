@@ -9,8 +9,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.mundoinformaticacanaria.gymup.core.model.ThemeMode
 import com.mundoinformaticacanaria.gymup.core.ui.GymUpTheme
+import com.mundoinformaticacanaria.gymup.feature.exercises.ExerciseHistoryScreen
+import com.mundoinformaticacanaria.gymup.feature.exercises.ExercisesScreen
+import com.mundoinformaticacanaria.gymup.feature.history.HistoryScreen
 import com.mundoinformaticacanaria.gymup.feature.home.HomeScreen
-import com.mundoinformaticacanaria.gymup.feature.placeholder.PlaceholderScreen
 import com.mundoinformaticacanaria.gymup.feature.routines.RoutinesScreen
 import com.mundoinformaticacanaria.gymup.feature.sessions.NewSessionScreen
 import com.mundoinformaticacanaria.gymup.feature.sessions.SessionDetailScreen
@@ -78,10 +80,29 @@ fun GymUpApp(container: AppContainer) {
                 )
             }
             composable(Routes.EXERCISES) {
-                PlaceholderScreen(title = "Ejercicios", onBack = navController::popBackStack)
+                ExercisesScreen(
+                    exerciseCatalogRepository = container.exerciseCatalogRepository,
+                    masterCatalogRepository = container.masterCatalogRepository,
+                    historyRepository = container.historyRepository,
+                    onOpenHistory = { navController.navigate(Routes.exerciseHistory(it)) },
+                    onBack = navController::popBackStack,
+                )
+            }
+            composable("${Routes.EXERCISE_HISTORY}/{exerciseId}") { entry ->
+                val exerciseId = requireNotNull(entry.arguments?.getString("exerciseId"))
+                ExerciseHistoryScreen(
+                    exerciseId = exerciseId,
+                    historyRepository = container.historyRepository,
+                    onBack = navController::popBackStack,
+                )
             }
             composable(Routes.HISTORY) {
-                PlaceholderScreen(title = "Histórico", onBack = navController::popBackStack)
+                HistoryScreen(
+                    trainingRepository = container.trainingRepository,
+                    masterCatalogRepository = container.masterCatalogRepository,
+                    onOpenSession = { navController.navigate(Routes.sessionDetail(it)) },
+                    onBack = navController::popBackStack,
+                )
             }
             composable(Routes.SETTINGS) {
                 SettingsScreen(
@@ -101,8 +122,10 @@ private object Routes {
     const val SESSIONS = "sessions"
     const val ROUTINES = "routines"
     const val EXERCISES = "exercises"
+    const val EXERCISE_HISTORY = "exercise/history"
     const val HISTORY = "history"
     const val SETTINGS = "settings"
 
     fun sessionDetail(id: String): String = "$SESSION_DETAIL/$id"
+    fun exerciseHistory(id: String): String = "$EXERCISE_HISTORY/$id"
 }
