@@ -79,8 +79,10 @@ Reglas:
 - una sesión planificada pasa automáticamente a `En curso` cuando comienzan a registrarse datos reales;
 - solo pasa a `Realizada` cuando el usuario pulsa `Finalizar sesión`;
 - puede finalizarse con ejercicios o series sin completar;
+- puede finalizarse sin ningún dato de ejecución; en ese caso queda `Realizada + No iniciada`;
 - editar posteriormente una sesión `Realizada` no cambia su estado;
-- cualquier cambio desde `Realizada` a otro estado debe ser manual.
+- cualquier cambio desde `Realizada` a otro estado debe ser manual;
+- no existe estado `Cancelada` en v1.
 
 Resultado de ejecución:
 
@@ -96,6 +98,7 @@ Ejemplos válidos:
 
 - `Planificada + No iniciada`
 - `En curso + Parcial`
+- `Realizada + No iniciada`
 - `Realizada + Parcial`
 - `Realizada + Completada`
 
@@ -124,7 +127,9 @@ Una sesión puede editarse siempre, antes, durante o después de finalizarse.
 
 Los ejercicios de una sesión pueden reordenarse antes, durante y después.
 
-Se permite eliminar cualquier sesión, incluida una realizada, con confirmación previa.
+Se permite eliminar cualquier sesión, incluida una planificada, en curso o realizada, con confirmación previa.
+
+Una sesión que finalmente no se ejecutó puede conservarse finalizándola como `Realizada + No iniciada` o eliminarse si el usuario no desea mantenerla en el histórico.
 
 No existe archivado en v1.
 
