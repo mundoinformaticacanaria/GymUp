@@ -61,11 +61,12 @@ interface RoutineDao {
 
 @Dao
 interface TrainingDao {
-    @Query("SELECT * FROM sessions ORDER BY session_date_epoch_day DESC, order_in_day DESC") fun observeSessions(): Flow<List<SessionEntity>>
-    @Query("SELECT * FROM sessions WHERE session_date_epoch_day = :epochDay ORDER BY order_in_day") fun observeSessionsForDate(epochDay: Long): Flow<List<SessionEntity>>
+    // order_in_day <= 0 is reserved for transient in-transaction parking while reordering.
+    @Query("SELECT * FROM sessions WHERE order_in_day > 0 ORDER BY session_date_epoch_day DESC, order_in_day DESC") fun observeSessions(): Flow<List<SessionEntity>>
+    @Query("SELECT * FROM sessions WHERE session_date_epoch_day = :epochDay AND order_in_day > 0 ORDER BY order_in_day") fun observeSessionsForDate(epochDay: Long): Flow<List<SessionEntity>>
     @Query("SELECT * FROM sessions WHERE id = :id LIMIT 1") suspend fun getSession(id: String): SessionEntity?
-    @Query("SELECT * FROM sessions WHERE session_date_epoch_day = :epochDay ORDER BY order_in_day") suspend fun getSessionsForDate(epochDay: Long): List<SessionEntity>
-    @Query("SELECT COALESCE(MAX(order_in_day), 0) FROM sessions WHERE session_date_epoch_day = :epochDay") suspend fun maxOrderInDay(epochDay: Long): Int
+    @Query("SELECT * FROM sessions WHERE session_date_epoch_day = :epochDay AND order_in_day > 0 ORDER BY order_in_day") suspend fun getSessionsForDate(epochDay: Long): List<SessionEntity>
+    @Query("SELECT COALESCE(MAX(order_in_day), 0) FROM sessions WHERE session_date_epoch_day = :epochDay AND order_in_day > 0") suspend fun maxOrderInDay(epochDay: Long): Int
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertSession(item: SessionEntity)
     @Update suspend fun updateSession(item: SessionEntity)
     @Delete suspend fun deleteSession(item: SessionEntity)
@@ -90,6 +91,7 @@ interface TrainingDao {
         SELECT se.* FROM session_exercises se
         INNER JOIN sessions s ON s.id = se.session_id
         WHERE se.exercise_id = :exerciseId
+          AND s.order_in_day > 0
           AND (s.session_date_epoch_day < :epochDay
                OR (s.session_date_epoch_day = :epochDay AND s.order_in_day < :orderInDay))
         ORDER BY s.session_date_epoch_day DESC, s.order_in_day DESC
