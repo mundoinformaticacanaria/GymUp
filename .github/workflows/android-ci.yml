@@ -30,16 +30,31 @@ jobs:
         with:
           gradle-version: '8.13'
 
+      - name: Check whether Android project exists
+        id: android-project
+        shell: bash
+        run: |
+          if [ -f settings.gradle.kts ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Android project has not been bootstrapped on this ref yet."
+          fi
+
       - name: Unit tests
+        if: steps.android-project.outputs.exists == 'true'
         run: gradle --no-daemon testDebugUnitTest
 
       - name: Lint
+        if: steps.android-project.outputs.exists == 'true'
         run: gradle --no-daemon lintDebug
 
       - name: Assemble debug APK
+        if: steps.android-project.outputs.exists == 'true'
         run: gradle --no-daemon assembleDebug
 
       - name: Upload debug APK
+        if: steps.android-project.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: gymup-debug
