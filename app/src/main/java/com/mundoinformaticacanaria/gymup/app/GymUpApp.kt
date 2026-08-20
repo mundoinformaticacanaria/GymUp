@@ -100,6 +100,7 @@ fun GymUpApp(container: AppContainer) {
                 HistoryScreen(
                     trainingRepository = container.trainingRepository,
                     masterCatalogRepository = container.masterCatalogRepository,
+                    historyRepository = container.historyRepository,
                     onOpenSession = { navController.navigate(Routes.sessionDetail(it)) },
                     onBack = navController::popBackStack,
                 )
