@@ -11,6 +11,7 @@ import com.mundoinformaticacanaria.gymup.domain.usecase.deriveExerciseStatus
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 
 class RoomHistoryRepository(
     private val database: GymUpDatabase,
@@ -32,6 +33,9 @@ class RoomHistoryRepository(
                 )
             }
         }
+
+    override fun observeSessionTypeIds(): Flow<Map<String, String>> =
+        trainingDao.observeSessions().map { sessions -> sessions.associate { it.id to it.sessionTypeId } }
 
     override suspend fun getExerciseHistory(exerciseId: String, limit: Int): ExerciseHistory? = database.withTransaction {
         require(limit > 0) { "El límite debe ser positivo" }
