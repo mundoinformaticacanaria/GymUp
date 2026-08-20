@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gymup.local/schemas/backup-manifest-v1.schema.json",
+  "title": "GymUp Backup Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema_version", "exported_at", "app_version", "data", "images"],
+  "properties": {
+    "format": {"const": "gymup-backup"},
+    "schema_version": {"const": 1},
+    "exported_at": {"type": "string", "format": "date-time"},
+    "app_version": {"type": "string", "minLength": 1},
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "size_bytes"],
+      "properties": {
+        "path": {"const": "data.json"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "size_bytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "images": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["storage_key", "path", "sha256", "size_bytes"],
+        "properties": {
+          "storage_key": {"type": "string", "pattern": "^user:[0-9a-fA-F-]{36}$"},
+          "path": {"type": "string", "pattern": "^images/[A-Za-z0-9._-]+$"},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "size_bytes": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  }
+}
