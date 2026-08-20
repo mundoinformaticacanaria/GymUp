@@ -12,6 +12,12 @@ enum class SessionExecutionResult {
     COMPLETED,
 }
 
+enum class ExerciseExecutionStatus {
+    NOT_PERFORMED,
+    PARTIAL,
+    COMPLETED,
+}
+
 enum class LoadMode {
     KG_TOTAL,
     KG_PER_HAND,
