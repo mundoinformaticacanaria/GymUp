@@ -49,13 +49,13 @@ class RoomTrainingRepository(
     private val masterDao: MasterDataDao = database.masterDataDao()
 
     override fun observeSessions(): Flow<List<SessionSummary>> =
-        trainingDao.observeSessions().map { sessions -> sessions.map(SessionEntity::toSummary) }
+        trainingDao.observeSessions().map { sessions -> sessions.map { it.toSummary() } }
 
     override fun observeSessionsForDate(date: LocalDate): Flow<List<SessionSummary>> =
-        trainingDao.observeSessionsForDate(date.toEpochDay()).map { sessions -> sessions.map(SessionEntity::toSummary) }
+        trainingDao.observeSessionsForDate(date.toEpochDay()).map { sessions -> sessions.map { it.toSummary() } }
 
     override fun observeRoutines(): Flow<List<RoutineSummary>> =
-        routineDao.observeRoutines().map { routines -> routines.map(RoutineEntity::toSummary) }
+        routineDao.observeRoutines().map { routines -> routines.map { it.toSummary() } }
 
     override suspend fun getSessionDetail(sessionId: String): SessionDetail? = database.withTransaction {
         val session = trainingDao.getSession(sessionId) ?: return@withTransaction null
@@ -532,7 +532,7 @@ class RoomTrainingRepository(
         incompleteReason = incompleteReason,
         isFinalized = isFinalized,
         status = deriveExerciseStatus(sets.map { it.actualConfirmed }),
-        sets = sets.map(SessionSetEntity::toDomain),
+        sets = sets.map { it.toDomain() },
     )
 
     private fun SessionSetEntity.toDomain(): TrainingSet = TrainingSet(
