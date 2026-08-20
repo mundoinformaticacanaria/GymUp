@@ -1,5 +1,6 @@
 package com.mundoinformaticacanaria.gymup.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
@@ -7,6 +8,12 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
+
+data class ExerciseUsageRow(
+    @ColumnInfo(name = "exercise_id") val exerciseId: String,
+    @ColumnInfo(name = "session_date_epoch_day") val sessionDateEpochDay: Long,
+    @ColumnInfo(name = "order_in_day") val orderInDay: Int,
+)
 
 @Dao
 interface MetadataDao {
@@ -49,6 +56,7 @@ interface RoutineDao {
     @Query("SELECT * FROM routines ORDER BY name COLLATE NOCASE") fun observeRoutines(): Flow<List<RoutineEntity>>
     @Query("SELECT * FROM routines WHERE id = :id LIMIT 1") suspend fun getById(id: String): RoutineEntity?
     @Query("SELECT * FROM routine_exercises WHERE routine_id = :routineId ORDER BY position") suspend fun getExercises(routineId: String): List<RoutineExerciseEntity>
+    @Query("SELECT DISTINCT exercise_id FROM routine_exercises") fun observeRoutineExerciseIds(): Flow<List<String>>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertRoutine(item: RoutineEntity)
     @Update suspend fun updateRoutine(item: RoutineEntity)
     @Delete suspend fun deleteRoutine(item: RoutineEntity)
@@ -98,6 +106,39 @@ interface TrainingDao {
         """,
     )
     suspend fun getPriorExerciseExecutions(exerciseId: String, epochDay: Long, orderInDay: Int): List<SessionExerciseEntity>
+
+    @Query(
+        """
+        SELECT se.exercise_id AS exercise_id,
+               s.session_date_epoch_day AS session_date_epoch_day,
+               s.order_in_day AS order_in_day
+        FROM session_exercises se
+        INNER JOIN sessions s ON s.id = se.session_id
+        WHERE s.order_in_day > 0
+          AND EXISTS (
+              SELECT 1 FROM session_sets ss
+              WHERE ss.session_exercise_id = se.id AND ss.actual_confirmed = 1
+          )
+        ORDER BY s.session_date_epoch_day DESC, s.order_in_day DESC
+        """,
+    )
+    fun observeRealExerciseUsages(): Flow<List<ExerciseUsageRow>>
+
+    @Query(
+        """
+        SELECT se.* FROM session_exercises se
+        INNER JOIN sessions s ON s.id = se.session_id
+        WHERE se.exercise_id = :exerciseId
+          AND s.order_in_day > 0
+          AND EXISTS (
+              SELECT 1 FROM session_sets ss
+              WHERE ss.session_exercise_id = se.id AND ss.actual_confirmed = 1
+          )
+        ORDER BY s.session_date_epoch_day DESC, s.order_in_day DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun getValidExerciseExecutions(exerciseId: String, limit: Int): List<SessionExerciseEntity>
 
     @Query("SELECT COUNT(*) FROM session_exercises WHERE exercise_id = :exerciseId") suspend fun countHistoricalExerciseReferences(exerciseId: String): Int
 }
