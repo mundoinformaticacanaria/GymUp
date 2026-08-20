@@ -14,7 +14,7 @@ import java.time.LocalDate
 data class SessionHistoryFilter(
     val operationalState: SessionOperationalState? = null,
     val executionResult: SessionExecutionResult? = null,
-    val sessionTypeId: String? = null,
+    val sessionTypeName: String? = null,
     val from: LocalDate? = null,
     val to: LocalDate? = null,
 )
@@ -84,7 +84,7 @@ fun filterSessionHistory(sessions: List<SessionSummary>, filter: SessionHistoryF
     sessions.filter { session ->
         (filter.operationalState == null || session.operationalState == filter.operationalState) &&
             (filter.executionResult == null || session.executionResult == filter.executionResult) &&
-            (filter.sessionTypeId == null || session.sessionTypeId == filter.sessionTypeId) &&
+            (filter.sessionTypeName == null || session.sessionTypeName == filter.sessionTypeName) &&
             (filter.from == null || !session.date.isBefore(filter.from)) &&
             (filter.to == null || !session.date.isAfter(filter.to))
     }
