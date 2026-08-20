@@ -1,0 +1,42 @@
+name: Fix Issue 5 member extensions
+
+on:
+  push:
+    branches:
+      - 'tech/issue-5-sessions-routines'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Replace prohibited member-extension references
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/mundoinformaticacanaria/gymup/data/repository/RoomTrainingRepository.kt')
+          s = p.read_text()
+          replacements = {
+              'sessions.map(SessionEntity::toSummary)': 'sessions.map { it.toSummary() }',
+              'routines.map(RoutineEntity::toSummary)': 'routines.map { it.toSummary() }',
+              'sets.map(SessionSetEntity::toDomain)': 'sets.map { it.toDomain() }',
+          }
+          for old, new in replacements.items():
+              s = s.replace(old, new)
+          p.write_text(s)
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/mundoinformaticacanaria/gymup/data/repository/RoomTrainingRepository.kt
+          if git diff --cached --quiet; then
+            echo "Nothing to change"
+          else
+            git commit -m "fix: replace member extension references (#5) [skip ci]"
+            git push origin HEAD:${GITHUB_REF_NAME}
+          fi
