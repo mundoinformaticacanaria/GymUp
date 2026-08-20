@@ -1,0 +1,54 @@
+name: Fix Issue 5 date ordering
+
+on:
+  push:
+    branches:
+      - 'tech/issue-5-sessions-routines'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Fix origin compaction when moving session to another date
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/mundoinformaticacanaria/gymup/data/repository/RoomTrainingRepository.kt')
+          s = p.read_text()
+          old = '''        } else {
+            trainingDao.updateSession(session.copy(orderInDay = -100000))
+            compactSessionOrders(oldEpoch)
+            val destination = trainingDao.getSessionsForDate(newEpoch).toMutableList()
+            val index = (orderInDay - 1).coerceIn(0, destination.size)
+            destination.add(index, session.copy(sessionDateEpochDay = newEpoch, orderInDay = -100000))
+            assignSessionOrder(destination, newEpoch)
+        }
+'''
+          new = '''        } else {
+            val parked = session.copy(sessionDateEpochDay = newEpoch, orderInDay = -100000)
+            trainingDao.updateSession(parked)
+            compactSessionOrders(oldEpoch)
+            val destination = trainingDao.getSessionsForDate(newEpoch)
+                .filterNot { it.id == sessionId }
+                .toMutableList()
+            val index = (orderInDay - 1).coerceIn(0, destination.size)
+            destination.add(index, parked)
+            assignSessionOrder(destination, newEpoch)
+        }
+'''
+          if old not in s:
+              raise SystemExit('Expected changeSessionPosition block not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/mundoinformaticacanaria/gymup/data/repository/RoomTrainingRepository.kt
+          git commit -m "fix: compact source day when moving sessions (#5) [skip ci]"
+          git push origin HEAD:${GITHUB_REF_NAME}
