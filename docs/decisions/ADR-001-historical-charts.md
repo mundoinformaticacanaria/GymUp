@@ -4,7 +4,19 @@ Estado: Aprobado
 
 ## Decisión
 
-La v1 mostrará la evolución histórica de cada ejercicio usando las últimas 10 ejecuciones del ejercicio.
+La v1 mostrará la evolución histórica de cada ejercicio usando las últimas 10 ejecuciones válidas del ejercicio.
+
+Una ejecución es válida para la gráfica cuando contiene **al menos una serie realizada**. Por tanto:
+
+- `Parcial` se incluye;
+- `Completado` se incluye;
+- `No realizado` se excluye.
+
+La gráfica utiliza exclusivamente datos **reales ejecutados**. Las series planificadas que quedaron pendientes no generan puntos ni valores en la gráfica.
+
+Las ejecuciones `Parcial` deben ser distinguibles visualmente respecto de las `Completado`, mediante un indicador visible en el punto, en el detalle al seleccionarlo o mediante una solución equivalente que no induzca a interpretar una ejecución incompleta como completa.
+
+No se incluye en v1 un filtro `Solo completadas`.
 
 La gráfica tendrá selector entre:
 
@@ -19,17 +31,17 @@ La opción `Carga` se oculta cuando el ejercicio no tiene un valor numérico de 
 
 Para modalidades `peso corporal + X kg` y `peso corporal - X kg asistencia`, la gráfica de carga representa únicamente el valor adicional `X`. Nunca se suma ni se infiere el peso corporal del usuario.
 
-Para `kg/mano`, `kg/lado` y `kg total`, se representa el valor introducido tal cual, pero solo se compara dentro de la misma modalidad.
+Las modalidades de carga son comparables únicamente consigo mismas:
 
-Reglas de comparabilidad de carga:
+- `kg/mano` con `kg/mano`;
+- `kg/lado` con `kg/lado`;
+- `kg total` con `kg total`;
+- y de forma equivalente para el resto de modalidades numéricas aplicables.
 
-- `kg/mano` solo se compara con `kg/mano`;
-- `kg/lado` solo se compara con `kg/lado`;
-- `kg total` solo se compara con `kg total`;
-- no se realizan conversiones automáticas entre modalidades;
-- si un ejercicio cambia de modalidad entre sesiones, la gráfica debe cortar la línea o representar una serie diferenciada para hacer visible el cambio de modalidad;
-- no debe dibujarse una línea continua entre valores expresados en modalidades distintas.
+Se representa el valor introducido tal cual. Nunca se convierten automáticamente modalidades de carga.
 
-Ejemplo: `10 kg/mano → 12,5 kg/mano → 25 kg total` no debe representarse como una progresión continua `10 → 12,5 → 25`.
+Si la modalidad cambia entre ejecuciones, la gráfica no une esos valores como una única progresión continua. Debe cortar la línea o representar una serie visual distinta por modalidad, dejando visible el cambio.
+
+Ejemplo: `10 kg/mano → 12,5 kg/mano → 25 kg total` no puede mostrarse como una línea continua `10 → 12,5 → 25`.
 
 No se calculan pesos efectivos derivados.
