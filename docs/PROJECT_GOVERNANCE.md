@@ -32,6 +32,8 @@ Responsabilidades:
 Responsabilidades:
 
 - dirigir técnicamente el proyecto;
+- ejercer la máxima responsabilidad sobre el gobierno, orden, coherencia y administración operativa del GitHub del proyecto;
+- decidir cuándo una Issue está suficientemente resuelta para cerrarse y efectuar su cierre cuando corresponda;
 - elegir stack, arquitectura, librerías y estrategia de pruebas dentro de las restricciones acordadas;
 - mantener coherencia entre requisitos, modelo y código;
 - detectar contradicciones, riesgos y ambigüedades;
@@ -139,7 +141,9 @@ Cuando el usuario indique al Tech Lead **“Revisa GitHub”** o una instrucció
 4. actualizar el contrato y la documentación cuando la respuesta cierre una decisión;
 5. detectar contradicciones, huecos o nuevas preguntas relevantes;
 6. si necesita nueva intervención funcional, comentar la issue con las cuestiones pendientes y devolverla a `FUNCIONAL`;
-7. si no quedan dudas funcionales, continuar con el siguiente paso técnico o cerrar la issue cuando corresponda.
+7. si no quedan dudas funcionales, contradicciones, dependencias pendientes ni entregables abiertos, consolidar la documentación y **cerrar la Issue sin requerir una autorización adicional del Product Owner**.
+
+El Tech Lead es quien determina, tras su revisión, si una Issue del circuito está realmente resuelta y lista para cierre.
 
 No es necesario que el usuario copie las respuestas del funcional al chat: GitHub es la fuente de verdad del circuito.
 
