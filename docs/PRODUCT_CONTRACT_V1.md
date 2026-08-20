@@ -2,15 +2,15 @@
 
 Estado: **vivo / en definición**
 
-Este documento recoge las decisiones de producto cerradas para GymUp v1. Si una conversación, issue o implementación contradice este documento, debe detenerse el trabajo y resolver la discrepancia antes de continuar.
+Este documento recoge las decisiones de producto vigentes para GymUp v1. Si una conversación, Issue, ADR o implementación contradice este documento, el trabajo afectado debe detenerse hasta resolver explícitamente la discrepancia.
 
 ## 1. Alcance general
 
-GymUp v1 es una aplicación Android monousuario, offline, orientada a móvil en vertical, para:
+GymUp v1 es una aplicación Android monousuario y offline para:
 
 - planificar sesiones de entrenamiento;
 - ejecutar y registrar sesiones;
-- mantener catálogo de ejercicios y datos maestros relacionados;
+- mantener catálogos maestros relacionados con el entrenamiento;
 - reutilizar rutinas;
 - consultar histórico;
 - visualizar evolución por ejercicio;
@@ -21,27 +21,31 @@ Distribución inicial: APK instalada manualmente.
 
 Compatibilidad mínima: Android 15. Dispositivo principal objetivo: Android 16.
 
+Diseño objetivo: teléfono en orientación vertical.
+
 Interfaz: español. Los ejercicios muestran nombre en español e inglés.
+
+No existe autenticación, perfiles, PIN ni biometría en v1.
 
 ## 2. Principios de producto
 
 - La aplicación debe reducir fricción y clics durante el entrenamiento.
 - Los defaults deben ser fuertes, pero nunca rígidos.
-- El histórico debe conservar el contexto con el que fue registrado.
-- Los datos maestros evolucionan; el histórico no debe reescribirse automáticamente por cambios posteriores.
-- No se bloquea la edición de sesiones por haber sido finalizadas.
-- No se deben inferir datos de ejecución que el usuario no haya confirmado.
+- No se deben inferir datos reales de ejecución que el usuario no haya confirmado.
+- Los datos maestros pueden evolucionar; el histórico no se reescribe automáticamente por esos cambios.
+- Las sesiones históricas conservan snapshots suficientes para interpretar exactamente cómo estaban configuradas cuando se registraron.
+- Las métricas y gráficas utilizan exclusivamente trabajo realmente ejecutado.
 - Toda funcionalidad principal debe funcionar sin conexión a Internet.
 
 ## 3. Sesiones
 
-### 3.1 Identidad y orden
+### 3.1 Identidad, fecha y orden
 
 Una sesión tiene, como mínimo:
 
-- identificador interno propio;
+- identificador interno;
 - fecha;
-- `orden_en_dia` numérico;
+- `orden_en_dia`;
 - tipo de sesión;
 - nombre visible;
 - nota general opcional;
@@ -52,9 +56,9 @@ No existen `hora_inicio` ni `hora_fin` en v1.
 
 Se permiten múltiples sesiones en una misma fecha.
 
-`orden_en_dia` sirve para ordenar sesiones de la misma fecha y puede modificarse manualmente. No debe depender del ID técnico ni del nombre visible.
+`orden_en_dia` es un orden de negocio editable entre sesiones del mismo día. No depende del ID técnico ni del nombre visible.
 
-El nombre automático usa:
+Nombre automático:
 
 `<Día de semana> <dd/mm/aaaa> S<n>`
 
@@ -64,11 +68,11 @@ Ejemplo:
 
 El nombre es opcional para el usuario, autogenerado si queda vacío y siempre editable.
 
-Si el nombre sigue siendo autogenerado y cambia `orden_en_dia`, el nombre se actualiza automáticamente. Si fue personalizado, se respeta.
+Si el nombre sigue siendo autogenerado y cambia `orden_en_dia`, el nombre se actualiza. Si fue personalizado, se conserva.
 
-### 3.2 Estados
+### 3.2 Estado operativo
 
-Estado operativo:
+Valores:
 
 - `Planificada`
 - `En curso`
@@ -76,21 +80,23 @@ Estado operativo:
 
 Reglas:
 
-- una sesión planificada pasa automáticamente a `En curso` cuando comienzan a registrarse datos reales;
+- una sesión `Planificada` pasa automáticamente a `En curso` cuando se registra el primer dato real;
 - solo pasa a `Realizada` cuando el usuario pulsa `Finalizar sesión`;
-- puede finalizarse con ejercicios o series sin completar;
-- puede finalizarse sin ningún dato de ejecución; en ese caso queda `Realizada + No iniciada`;
-- editar posteriormente una sesión `Realizada` no cambia su estado;
-- cualquier cambio desde `Realizada` a otro estado debe ser manual;
+- puede finalizarse aunque existan ejercicios o series sin completar;
+- puede finalizarse sin ningún dato real, quedando `Realizada + No iniciada`;
+- editar una sesión `Realizada` no la devuelve automáticamente a `En curso`;
+- cualquier cambio desde `Realizada` a otro estado es manual;
 - no existe estado `Cancelada` en v1.
 
-Resultado de ejecución:
+### 3.3 Resultado de ejecución
+
+Valores:
 
 - `No iniciada`
 - `Parcial`
 - `Completada`
 
-Este resultado se deriva automáticamente del estado real de los ejercicios y se recalcula cuando cambian datos de ejecución, incluso en sesiones ya `Realizada`.
+El resultado se recalcula automáticamente cuando cambian datos reales, incluso si la sesión ya está `Realizada`.
 
 Estado operativo y resultado son conceptos independientes.
 
@@ -102,9 +108,9 @@ Ejemplos válidos:
 - `Realizada + Parcial`
 - `Realizada + Completada`
 
-### 3.3 Creación
+### 3.4 Creación
 
-Al pulsar `Nueva sesión` se elige primero uno de estos orígenes:
+Al pulsar `Nueva sesión`, el usuario elige primero:
 
 1. `Desde rutina`
 2. `Duplicar sesión`
@@ -112,105 +118,94 @@ Al pulsar `Nueva sesión` se elige primero uno de estos orígenes:
 
 Después se muestra una pantalla común breve:
 
-- Fecha: obligatoria, precargada con hoy y editable a pasado o futuro.
+- Fecha: obligatoria, por defecto hoy, editable a pasado o futuro.
 - Tipo de sesión: obligatorio.
 - Nombre: opcional, autogenerado si queda vacío.
 - Nota general: opcional.
 
-`Duplicar sesión` copia únicamente la lista de ejercicios y su orden. No copia objetivos ni datos reales. El tipo de sesión se hereda como valor sugerido, pero sigue siendo editable.
+`Duplicar sesión` copia únicamente lista de ejercicios + orden. No copia series, objetivos ni datos reales. El tipo de sesión original se precarga como sugerencia y sigue siendo editable.
 
-`Desde rutina` copia únicamente la lista ordenada de ejercicios. El tipo sugerido de la rutina, si existe, se precarga y sigue siendo editable.
+`Desde rutina` copia únicamente lista de ejercicios + orden. Si la rutina tiene tipo sugerido, se precarga y sigue siendo editable.
 
-### 3.4 Edición y borrado
+### 3.5 Edición, reordenación y borrado
 
-Una sesión puede editarse siempre, antes, durante o después de finalizarse.
+Una sesión puede editarse siempre, antes, durante o después de finalizarla.
 
-Los ejercicios de una sesión pueden reordenarse antes, durante y después.
+Los ejercicios pueden reordenarse antes, durante y después.
 
-Se permite eliminar cualquier sesión, incluida una planificada, en curso o realizada, con confirmación previa.
+Se puede eliminar cualquier sesión —`Planificada`, `En curso` o `Realizada`— con confirmación previa.
 
-Una sesión que finalmente no se ejecutó puede conservarse finalizándola como `Realizada + No iniciada` o eliminarse si el usuario no desea mantenerla en el histórico.
+Una sesión que no llegó a ejecutarse puede conservarse como `Realizada + No iniciada` o eliminarse.
 
 No existe archivado en v1.
 
 ## 4. Ejercicios dentro de una sesión
 
-### 4.1 Independencia respecto al catálogo
+### 4.1 Instancia y snapshot
 
-Al añadir un ejercicio a una sesión se crea una instancia propia de esa sesión.
+Al añadir un ejercicio maestro a una sesión se crea una instancia propia de esa sesión.
 
-Un mismo ejercicio maestro no puede aparecer más de una vez dentro de la misma sesión. Si ya está añadido, la aplicación debe impedir una segunda incorporación y facilitar el acceso al ejercicio existente.
+Un mismo ejercicio maestro no puede aparecer más de una vez en la misma sesión. Si ya existe, la app impide añadirlo de nuevo y facilita acceder al existente.
 
 La instancia guarda snapshot de los datos necesarios para interpretar el histórico, incluyendo al menos:
 
 - nombre español;
 - nombre inglés;
 - grupo muscular mostrado;
-- equipo mostrado si existe;
+- equipo mostrado, si existe;
 - modalidad de carga;
 - unidad de medición;
-- demás defaults necesarios para interpretar la sesión.
+- demás defaults necesarios para interpretar la ejecución.
 
-Editar una instancia dentro de una sesión solo modifica esa instancia.
+Editar la instancia de una sesión no modifica el maestro.
 
-Editar el catálogo maestro solo modifica defaults para usos futuros.
+Editar el maestro no modifica instancias ya creadas ni el histórico.
 
-### 4.2 Series
+### 4.2 Series: objetivo y real
 
-Cada ejercicio tiene un número de series.
+Cada serie separa explícitamente:
 
-Ese número se precarga desde la última ejecución completada válida o, si no existe, desde objetivos iniciales opcionales de la ficha maestra.
-
-Dentro de la sesión se pueden añadir o eliminar series libremente.
-
-Cada serie es editable de forma independiente.
-
-La presentación funcional debe separar claramente:
-
-- objetivo;
-- real.
-
-Como mínimo, por serie se contempla:
-
-- peso objetivo;
-- peso real;
+- peso/carga objetivo;
+- peso/carga real;
 - medición objetivo;
 - medición real;
 - RIR;
 - descanso aplicable.
 
-Existe una acción rápida `Cumplido` que copia a `Real` el peso objetivo y la medición objetivo. Los valores resultantes siguen siendo editables.
+Los valores precargados pertenecen a `Objetivo`. `Real` comienza vacío/no confirmado.
 
-`Cumplido` nunca autocompleta RIR.
+Existe una acción rápida `Cumplido` que copia carga objetivo y medición objetivo a sus campos reales. Los valores copiados siguen siendo editables.
+
+`Cumplido` nunca completa RIR.
+
+Se pueden añadir y eliminar series libremente dentro de la sesión.
 
 ### 4.3 Estado de serie
 
-Una serie puede estar en:
+- `Pendiente`: no contiene ningún dato real confirmado de la sesión actual.
+- `Realizada`: contiene al menos un dato real de ejecución aplicable.
 
-- `Pendiente`: no tiene ningún dato real confirmado de la sesión actual.
-- `Realizada`: tiene al menos un dato real de ejecución aplicable.
-
-Los valores precargados de objetivo no cuentan como datos reales mientras no se confirmen o introduzcan como datos de la sesión actual.
+Los valores de objetivo no convierten una serie en realizada hasta que el usuario los copie/confirme como reales o introduzca datos reales.
 
 ### 4.4 Estado de ejercicio
 
-El ejercicio puede estar en:
+Valores:
 
 - `No realizado`
 - `Parcial`
 - `Completado`
 
-Regla automática al finalizar el ejercicio o la sesión:
+Cálculo automático:
 
 - 0 series realizadas → `No realizado`;
-- algunas series realizadas y alguna pendiente → `Parcial`;
+- al menos una realizada y alguna pendiente → `Parcial`;
 - todas las series realizadas → `Completado`.
 
-El ejercicio puede finalizarse manualmente en cualquier momento. Los ejercicios que sigan abiertos se finalizan automáticamente al finalizar la sesión.
+El ejercicio puede finalizarse manualmente en cualquier momento. Al finalizar la sesión se finalizan los ejercicios aún abiertos.
 
-El estado calculado puede modificarse manualmente después.
+El estado calculado puede modificarse manualmente después. El efecto exacto de ese override sobre resultado de sesión y futuras precargas permanece pendiente de cierre funcional en la Issue #1; no debe inferirse.
 
-Si un ejercicio no queda completado, puede registrarse un motivo opcional a nivel de ejercicio, por ejemplo:
+Si un ejercicio no queda completado, puede registrarse opcionalmente un motivo a nivel de ejercicio:
 
 - máquina ocupada;
 - falta de tiempo;
@@ -223,31 +218,35 @@ No se requiere motivo por serie.
 
 ## 5. Precarga de objetivos
 
-Para una sesión con fecha y orden determinados, la precarga de un ejercicio busca la referencia temporalmente coherente.
+Para una sesión con fecha y `orden_en_dia` determinados, la fuente de referencia es temporalmente coherente.
 
 Prioridad:
 
-1. última ejecución `Completada` de ese ejercicio anterior a la sesión actual;
+1. última ejecución `Completado` del mismo ejercicio estrictamente anterior a la posición temporal de la sesión;
 2. si no existe, objetivos iniciales opcionales de la ficha maestra;
 3. si tampoco existen, campos vacíos.
 
-Solo las ejecuciones `Completadas` sirven para precarga. Se ignoran `Parcial` y `No realizado`.
+`Parcial` y `No realizado` no sirven como fuente de precarga.
 
-En el mismo día, una sesión posterior puede usar una ejecución válida de una sesión anterior del mismo día según `orden_en_dia`.
+Una sesión posterior del mismo día puede usar una ejecución completada de una sesión anterior según `orden_en_dia`. Una sesión nunca utiliza como referencia una ejecución posterior a su posición temporal.
 
-Nunca debe usarse una ejecución posterior en el tiempo para precargar una sesión pasada.
+La última ejecución completada aporta también el número inicial de series.
 
-Objetivos iniciales de ficha maestra:
+Si no existe histórico completado, el maestro puede aportar opcionalmente:
 
-- número de series opcional;
-- carga inicial opcional;
-- objetivo inicial de medición opcional.
+- número de series;
+- carga inicial;
+- medición inicial.
 
-Existe un único objetivo inicial común que se replica en todas las series iniciales.
+El objetivo inicial del maestro es común y se replica en las series iniciales.
+
+Si la ejecución de referencia tiene N series y el usuario añade una serie N+1 o posteriores, las nuevas series copian los objetivos de la **última serie disponible de esa misma ejecución de referencia**. No se buscan antiguas series adicionales en otras ejecuciones históricas.
+
+Si un objetivo de la última serie de referencia está vacío, se conserva vacío; no se inventa.
 
 ## 6. Carga
 
-Modalidades de carga soportadas en v1:
+Modalidades v1:
 
 - `kg total`
 - `kg/mano`
@@ -257,34 +256,36 @@ Modalidades de carga soportadas en v1:
 - `peso corporal - X kg asistencia`
 - `sin peso`
 
-Se guarda la modalidad indicada; no se calcula un peso total efectivo derivado.
+Se guarda el valor exactamente según su modalidad. No se calcula una carga total efectiva derivada.
 
-Para `peso corporal + X kg` y `peso corporal - X kg asistencia`, el valor numérico registrado y representado es únicamente el valor adicional `X`. Nunca se suma ni se infiere el peso corporal del usuario.
+Para `peso corporal + X kg` y `peso corporal - X kg asistencia`, el valor numérico es exclusivamente `X`; nunca se suma ni se infiere el peso corporal del usuario.
 
-Las modalidades de carga no se convierten automáticamente entre sí. `kg/mano`, `kg/lado`, `kg total` y el resto de modalidades se consideran dominios distintos a efectos de comparación histórica.
+Las modalidades nunca se convierten automáticamente entre sí.
 
 Peso en kg: hasta 2 decimales.
 
-La interfaz usa coma decimal en español.
+La interfaz española usa coma decimal.
 
-## 7. Medición de la serie
+## 7. Medición
 
-Unidades de trabajo principales soportadas en v1:
+Unidades v1:
 
-- repeticiones;
-- repeticiones/lado;
-- segundos;
-- segundos/lado.
+- `repeticiones`
+- `repeticiones/lado`
+- `segundos`
+- `segundos/lado`
 
 Repeticiones y segundos son enteros.
 
-`Distancia` queda prevista para evolución futura, pero fuera de la interfaz v1.
+`Distancia` queda prevista para evolución futura del modelo, pero fuera de la interfaz v1.
+
+Las unidades no se convierten automáticamente entre sí.
 
 ## 8. RIR
 
-RIR no es obligatorio a nivel de base de datos.
+RIR es nullable en persistencia.
 
-Cada ejercicio tiene `RIR obligatorio`, activado por defecto y editable.
+Cada ejercicio maestro tiene `RIR obligatorio`, activado por defecto y editable.
 
 Valores permitidos en v1:
 
@@ -292,44 +293,48 @@ Valores permitidos en v1:
 - `1`
 - `2`
 
-La interfaz usa tres botones rápidos `0 / 1 / 2`.
+La interfaz utiliza tres botones rápidos `0 / 1 / 2`.
 
-Si `RIR obligatorio` está desactivado, no se solicita ni se muestra aviso obligatorio.
+Si `RIR obligatorio` está desactivado, no se solicita ni genera aviso obligatorio.
 
-Si está activado y una serie tiene datos reales, no puede quedar sin RIR al validar/finalizar. La aplicación debe solicitarlo mediante modal.
+Si está activado y una serie tiene datos reales, esa serie no puede validarse/finalizarse con RIR vacío.
 
-Al finalizar una sesión, si existen varias series realizadas con RIR obligatorio pendiente, se solicitan antes de permitir finalizar.
+Al finalizar una sesión, si existen series realizadas con RIR obligatorio pendiente, la aplicación solicita los RIR faltantes antes de permitir el cierre.
 
 Las series pendientes no requieren RIR.
 
-Cambiar un ejercicio histórico de RIR opcional a obligatorio no invalida RIR vacíos ya existentes.
+Cambiar posteriormente el maestro de RIR opcional a obligatorio no invalida históricos antiguos con RIR nulo.
 
-## 9. Descanso
+## 9. Descanso y notas
+
+### 9.1 Descanso
 
 El descanso se introduce manualmente.
 
 Puede definirse:
 
-- por ejercicio, aplicándose por defecto a sus series;
-- por serie, permitiendo excepción individual.
+- por ejercicio, como default para sus series;
+- por serie, como override individual.
 
-Se puede introducir en segundos o minutos.
-
-Segundos es la unidad por defecto.
+Se puede introducir en segundos o minutos. Segundos es la unidad por defecto.
 
 Internamente puede normalizarse a segundos.
 
-## 10. Notas
+### 9.2 Notas
 
 - Nota general de sesión: opcional.
-- Nota por ejercicio: opcional y necesaria para registrar molestias, fatiga, incidencias u observaciones.
-- No se requiere nota por serie en v1.
+- Nota por ejercicio: opcional, para molestias, fatiga, incidencias u observaciones.
+- No existe requisito de nota por serie en v1.
 
-## 11. Catálogo maestro de ejercicios
+## 10. Catálogo maestro de ejercicios
 
-La v1 debe arrancar con un catálogo curado, no gigantesco, aproximadamente 60–100 ejercicios aportados como datos iniciales.
+La v1 arranca con un catálogo curado de aproximadamente 60–100 ejercicios.
 
-Cada ejercicio maestro contempla como mínimo:
+FUNCIONAL es responsable de preparar y validar el contenido funcional inicial siguiendo `docs/data/EXERCISE_CATALOG_TEMPLATE.md`. El Tech Lead validará estructura, enums, duplicados, catálogos referenciados y licencias antes de aceptar el seed.
+
+No se inventarán objetivos iniciales solo para completar campos.
+
+Campos contemplados:
 
 - `nombre_es`;
 - `nombre_en`;
@@ -337,77 +342,88 @@ Cada ejercicio maestro contempla como mínimo:
 - equipo opcional;
 - modalidad de carga por defecto;
 - unidad de medición por defecto;
-- RIR obligatorio sí/no;
-- objetivos iniciales opcionales;
+- `RIR obligatorio`;
+- número inicial de series opcional;
+- carga inicial opcional;
+- medición inicial opcional;
 - descripción/instrucciones breves opcionales;
-- entre 1 y 3 imágenes estáticas;
+- 0–3 imágenes estáticas;
 - favorito sí/no;
-- estado activo/inactivo si tiene histórico.
+- activo/inactivo cuando corresponda.
 
-No se duplican ejercicios por idioma: español e inglés son atributos del mismo ejercicio.
+Español e inglés son atributos del mismo ejercicio; no se duplican ejercicios por idioma.
 
-El catálogo maestro no permite nombres repetidos ni en `nombre_es` ni en `nombre_en`.
+El catálogo no permite nombres repetidos en `nombre_es` ni en `nombre_en`.
 
-La validación de unicidad usa la misma normalización básica de la búsqueda: ignora mayúsculas/minúsculas y tildes/diacríticos. Por ejemplo, `Press`, `PRESS` y `PrÉss` se consideran el mismo nombre a efectos de unicidad.
+La unicidad normaliza mayúsculas/minúsculas y tildes/diacríticos. Ejemplo: `Press`, `PRESS` y `PrÉss` se consideran el mismo nombre.
 
-El formato visual de nombres es:
+Formato visual:
 
 `Nombre español · English name`
 
 con el mismo peso visual.
 
-Los ejercicios personalizados pueden crearse y pueden añadir 1–3 imágenes desde la galería.
+Los favoritos los marca/desmarca explícitamente el usuario; no se infieren por frecuencia.
 
-No se usa cámara en v1.
+Los ejercicios personalizados pueden crearse y pueden añadir imágenes desde galería. No se usa cámara en v1.
 
-Durante una sesión deben poder abrirse imágenes e instrucciones técnicas sin abandonar el registro.
+Durante una sesión se deben poder abrir imágenes e instrucciones sin abandonar el registro.
 
-### 11.1 Favoritos
+### 10.1 Baja y borrado
 
-Los favoritos los marca y desmarca explícitamente el usuario. No se infieren automáticamente por frecuencia.
+Si un ejercicio tiene histórico, eliminarlo desde mantenimiento implica baja lógica:
 
-### 11.2 Baja de ejercicios
-
-Si un ejercicio tiene histórico, eliminarlo desde mantenimiento significa baja lógica/desactivación:
-
-- deja de aparecer para nuevas sesiones;
+- deja de estar disponible para nuevas incorporaciones normales;
 - deja de aparecer en búsquedas normales;
-- conserva intacto el histórico.
+- conserva el histórico.
 
-Solo ejercicios sin histórico pueden borrarse definitivamente desde gestión normal.
+Solo ejercicios sin histórico pueden optar a borrado definitivo desde gestión normal.
 
-## 12. Búsqueda de ejercicios
+El comportamiento cuando un ejercicio desactivado o borrable está referenciado por una rutina o por una duplicación histórica está pendiente de cierre funcional en la Issue #1.
 
-La búsqueda es incremental y se actualiza con cada carácter; no requiere botón.
+## 11. Búsqueda de ejercicios
 
-Busca solo en `nombre_es` y `nombre_en` en v1.
+Búsqueda incremental/reactiva por `nombre_es` y `nombre_en`; no existe botón de búsqueda.
 
 Normalización:
 
-- insensible a mayúsculas/minúsculas;
+- ignora mayúsculas/minúsculas;
 - ignora tildes/diacríticos.
-
-Orden de coincidencia textual:
-
-1. ejercicios cuyo nombre empiece por el texto buscado;
-2. ejercicios cuyo nombre contenga la secuencia;
-3. sin duplicar resultados ya listados.
 
 No existe tolerancia a errores tipográficos en v1.
 
-Filtro mínimo disponible: grupo muscular.
+Orden principal de coincidencia:
+
+1. nombres que empiezan por el texto buscado;
+2. nombres que contienen el texto buscado.
+
+Dentro de **cada bloque** se aplica esta prioridad secundaria:
+
+1. Favoritos.
+2. Ejercicios usados anteriormente, ordenados por su última ejecución real de más reciente a más antigua.
+3. Ejercicios presentes en alguna rutina y no priorizados por los criterios anteriores.
+4. Resto.
+5. Desempate estable: `nombre_es` normalizado alfabéticamente y después `nombre_en`.
+
+Si un ejercicio cumple varios criterios, pertenece únicamente al nivel de mayor prioridad aplicable.
+
+No existe umbral temporal adicional para considerar uso reciente.
+
+Filtro v1: grupo muscular.
 
 Filtro por equipo: fuera de v1.
 
 Filtro por patrón de movimiento: fuera de v1.
 
-## 13. Grupos musculares
+## 12. Catálogos auxiliares
+
+### 12.1 Grupo muscular
 
 Cada ejercicio tiene un único grupo muscular principal en v1.
 
-Grupo muscular es catálogo editable con lista inicial.
+Catálogo editable: crear, renombrar y desactivar.
 
-Valores iniciales propuestos:
+Lista inicialmente propuesta, pendiente de confirmación funcional en Issue #1:
 
 - Pecho
 - Espalda
@@ -420,19 +436,15 @@ Valores iniciales propuestos:
 - Core
 - Antebrazo/Agarre
 
-Se permite:
+Los cambios del maestro no reescriben snapshots históricos.
 
-- crear;
-- renombrar;
-- desactivar.
+### 12.2 Equipo
 
-Si existe histórico, los cambios del maestro no reescriben sesiones antiguas.
+Equipo es opcional en el ejercicio.
 
-## 14. Equipo
+Catálogo editable: crear, renombrar y desactivar.
 
-Equipo es catálogo editable, opcional en la ficha de ejercicio.
-
-Valores iniciales propuestos:
+Lista inicialmente propuesta, pendiente de confirmación funcional en Issue #1:
 
 - Mancuernas
 - Barra
@@ -445,29 +457,37 @@ Valores iniciales propuestos:
 - Kettlebell
 - Otro
 
-Se permite crear, renombrar y desactivar.
+Los cambios del maestro no reescriben snapshots históricos.
 
-El histórico conserva el valor existente en el momento de la sesión.
+### 12.3 Tipo de sesión
 
-## 15. Patrón de movimiento
+Tipo de sesión es obligatorio al crear sesión y pertenece a un catálogo editable.
 
-Fuera de v1.
+Lista inicial aprobada:
 
-Debe poder añadirse en una versión futura sin romper el modelo existente. Candidato futuro: catálogo editable.
+- `Fuerza`
+- `Hipertrofia`
+- `Cardio`
+- `Movilidad`
+- `Deporte`
+- `Recuperación`
+- `Otro`
 
-## 16. Tipos de sesión
+Nombres específicos como `Pádel`, `Full body` o `Pre-pádel` pueden añadirse por el usuario; no forman parte del seed inicial.
 
-Tipo de sesión es catálogo editable y obligatorio al crear una sesión.
+La selección debe ser rápida y puede recordar el último tipo usado cuando tenga sentido.
 
-Debe ofrecer selección rápida, recordar el último tipo usado cuando tenga sentido y disponer de `Otro` como opción de escape.
+Si un tipo usado históricamente deja de estar activo, las sesiones antiguas conservan su snapshot.
 
-Si un tipo usado históricamente se elimina del maestro, las sesiones antiguas lo conservan y deja de estar disponible para nuevas sesiones.
+La protección concreta de `Otro` y las reglas de unicidad de los catálogos editables permanecen pendientes en Issue #1.
 
-El listado inicial será aportado posteriormente.
+### 12.4 Patrón de movimiento
 
-## 17. Rutinas
+Fuera de v1. El modelo debe permitir incorporarlo en una evolución posterior sin romper datos existentes.
 
-Una rutina es una plantilla maestra sin vínculo posterior con las sesiones que crea.
+## 13. Rutinas
+
+Una rutina es una plantilla maestra sin vínculo persistente con las sesiones creadas a partir de ella.
 
 Campos v1:
 
@@ -476,84 +496,90 @@ Campos v1:
 - descripción/nota opcional;
 - lista ordenada de ejercicios.
 
-Una misma rutina no puede contener dos veces el mismo ejercicio maestro.
+Una rutina no puede contener dos veces el mismo ejercicio maestro.
 
-No contiene objetivos propios de peso, series o repeticiones.
+No guarda objetivos de peso, series o medición.
 
 Al crear una sesión desde rutina:
 
 - se copian ejercicios + orden;
-- cada ejercicio calcula objetivos por histórico/defaults;
-- el tipo sugerido se precarga si existe, pero sigue siendo editable;
+- cada ejercicio calcula objetivos desde histórico/defaults;
+- el tipo sugerido se precarga si existe y sigue siendo editable;
 - la descripción de la rutina no se copia a la nota de sesión.
 
-Las rutinas pueden editarse o eliminarse.
+Editar una rutina afecta solo a sesiones futuras.
 
-No existe activación/desactivación de rutinas en v1.
+Las rutinas pueden editarse o eliminarse. No existe activar/desactivar rutina en v1.
 
-Eliminar o editar una rutina nunca modifica sesiones ya creadas.
+Eliminar una rutina nunca modifica sesiones ya creadas.
 
-## 18. Histórico de sesiones
+## 14. Histórico de sesiones
 
-El histórico permite filtrar simultáneamente por:
+Filtros combinables:
 
 - estado operativo;
 - resultado de ejecución;
 - tipo de sesión;
-- rango exacto de fechas.
+- rango exacto desde/hasta.
 
-Los filtros pueden combinarse.
+Los filtros pueden mantenerse mientras el usuario permanece en la pantalla, pero no persisten entre reaperturas del histórico en v1.
 
-Los filtros no se persisten entre aperturas de la pantalla en v1.
+Las sesiones históricas pueden editarse.
 
-## 19. Histórico por ejercicio y gráfica
+## 15. Histórico por ejercicio y gráficas
 
-Al consultar un ejercicio se muestran sus ejecuciones históricas.
+La gráfica utiliza las **últimas 10 ejecuciones válidas de ese ejercicio**, no las últimas 10 sesiones generales.
 
-La gráfica de evolución usa las últimas 10 ejecuciones válidas de ese ejercicio.
+Una ejecución es válida si tiene al menos una serie realizada:
 
-Una ejecución es válida para la gráfica si tiene al menos una serie realizada:
+- `Parcial` entra;
+- `Completado` entra;
+- `No realizado` queda fuera.
 
-- `Parcial` se incluye;
-- `Completado` se incluye;
-- `No realizado` se excluye.
+Solo se grafican datos reales ejecutados. Las series planificadas pendientes no generan puntos.
 
-Solo se representan datos reales ejecutados. Las series planificadas que quedaron pendientes no generan puntos.
-
-Las ejecuciones `Parcial` deben quedar claramente identificables visualmente respecto de las `Completado`, mediante indicador en el punto, detalle al pulsarlo o solución equivalente.
+Las ejecuciones `Parcial` deben ser visualmente identificables respecto de las `Completado`.
 
 No existe filtro `Solo completadas` en v1.
 
-Selector de métrica:
+Selector:
 
 - `Carga`
 - `Medición`
 
-`Medición` representa la unidad principal aplicable al ejercicio: repeticiones, repeticiones/lado, segundos o segundos/lado.
+Cada serie se representa como línea independiente. Si una serie no existe en una ejecución, no genera punto.
 
-La opción `Carga` se oculta cuando el ejercicio no tiene un valor numérico de carga aplicable.
+### 15.1 Gráfica Carga
 
-Cada serie se representa como línea independiente.
+`Carga` se oculta cuando el ejercicio no tiene valor numérico de carga aplicable.
 
-Para `peso corporal + X kg` y `peso corporal - X kg asistencia`, `Carga` representa solo `X`.
+Para lastre/asistencia se representa solo `X`.
 
-La gráfica de `Carga` compara valores únicamente dentro de la misma modalidad. Nunca convierte modalidades automáticamente.
+Cada modalidad se compara exclusivamente consigo misma. Nunca se convierten modalidades automáticamente.
 
-Si un ejercicio cambia de modalidad entre ejecuciones, la gráfica debe cortar la línea o crear una serie visual distinta, dejando visible el cambio y evitando una progresión continua engañosa.
+Si cambia la modalidad entre ejecuciones, se corta la línea o se crea una serie visual distinta por modalidad.
 
-Ejemplo: `10 kg/mano → 12,5 kg/mano → 25 kg total` no se representa como una línea continua `10 → 12,5 → 25`.
+Ejemplo: `10 kg/mano → 12,5 kg/mano → 25 kg total` no se representa como una progresión continua.
 
-No se incluyen en v1 métricas derivadas como volumen total o 1RM estimado.
+### 15.2 Gráfica Medición
 
-## 20. Informes por sesión
+`repeticiones`, `repeticiones/lado`, `segundos` y `segundos/lado` son dominios diferentes.
 
-Solo las sesiones `Realizada` pueden generar informe.
+Cada unidad se compara exclusivamente consigo misma. Nunca se convierten unidades automáticamente.
 
-Se genera un archivo JSON independiente por sesión.
+Si cambia la unidad entre ejecuciones, se corta la línea o se crea una serie visual distinta por unidad.
 
-El JSON debe ser estructurado, versionado y apto para lectura/explotación posterior por ChatGPT u otros procesos.
+Ejemplo: `30 segundos → 40 segundos → 12 repeticiones` no se representa como una progresión continua.
 
-Incluye al menos:
+No se incluyen métricas derivadas como volumen total o 1RM estimado en v1.
+
+## 16. Informes de sesión
+
+Solo una sesión en estado `Realizada` puede generar informe.
+
+Cada sesión genera un JSON independiente, estructurado y versionado.
+
+Contenido mínimo:
 
 Datos generales:
 
@@ -570,85 +596,83 @@ Detalle:
 - estado de cada ejercicio;
 - series planificadas;
 - series realizadas;
-- carga prevista y real;
-- medición prevista y real;
+- carga objetivo y real;
+- medición objetivo y real;
 - RIR cuando exista;
 - descansos;
 - notas/incidencias;
-- motivo opcional si no se completó.
+- motivo opcional de no finalización.
 
-Debe diferenciar claramente planificado vs ejecutado.
-
-Cualquier métrica futura de volumen/carga/repeticiones debe contar solo datos realmente ejecutados.
+Planificado y ejecutado deben quedar inequívocamente separados.
 
 El archivo puede:
 
-- guardarse en almacenamiento mediante selector estándar de Android;
+- guardarse mediante el selector estándar de Android;
 - compartirse mediante el menú estándar de Android.
 
-Nombre del archivo: fecha + nombre visible de sesión, saneando caracteres técnicamente inválidos.
+Nombre de archivo: `fecha + nombre visible de sesión`, saneando únicamente caracteres técnicamente inválidos.
 
-## 21. Copia de seguridad e importación
+## 17. Copia de seguridad e importación
 
-Los datos se almacenan localmente.
+Persistencia local; no existe sincronización multidispositivo en v1.
 
-No existe sincronización entre dispositivos en v1.
-
-La app permite:
+La aplicación permite:
 
 - exportación completa;
 - importación completa.
 
-Cada importación reemplaza todos los datos existentes. No existen cargas incrementales ni fusiones.
+La copia completa es un único archivo ZIP directamente exportable e importable por GymUp, sin descomprimir ni manipular manualmente.
 
-La copia se maneja como un único archivo ZIP directamente exportable e importable por la app, sin manipulación manual.
+Incluye:
 
-El ZIP incluye:
-
-- JSON versionado con los datos;
+- JSON versionado con datos;
 - imágenes necesarias.
 
-La importación debe validar compatibilidad e integridad antes de sobrescribir.
+Cada importación reemplaza **todos** los datos existentes. No existen merge ni importaciones incrementales.
 
-## 22. Limpieza histórica
+Antes de sobrescribir, la aplicación valida compatibilidad e integridad.
 
-Existe eliminación masiva de datos transaccionales anteriores a una fecha de corte exacta.
+La necesidad o no de protección adicional del ZIP mediante contraseña/cifrado queda pendiente de cierre funcional en Issue #1.
 
-No elimina datos maestros.
+## 18. Limpieza histórica
 
-Antes del borrado se muestra:
+Existe una función para eliminar datos transaccionales anteriores a una fecha de corte exacta.
+
+Nunca elimina datos maestros.
+
+Antes del borrado muestra:
 
 - fecha de corte;
 - número de sesiones afectadas;
-- número de ejercicios/series asociados;
-- espacio estimado que podría liberarse cuando sea calculable de forma fiable.
+- número de ejercicios/series/registros asociados;
+- espacio estimado a liberar cuando pueda calcularse razonablemente.
 
-La confirmación debe ser fuerte e indicar que el borrado es irreversible.
+La confirmación debe ser fuerte e indicar irreversibilidad.
 
-Desde esa misma confirmación se recomienda y se ofrece generar copia de seguridad.
+Desde la misma confirmación se recomienda y ofrece generar backup.
 
-Después del borrado:
+Tras el borrado:
 
-- se compacta automáticamente la base de datos para intentar recuperar espacio físico;
-- se muestra resumen con registros eliminados y espacio realmente recuperado.
+- se compacta la base de datos para intentar recuperar espacio físico;
+- se muestran registros eliminados y espacio realmente recuperado.
 
-## 23. Pantalla principal
+## 19. Pantalla principal
 
-La pantalla principal es un panel simple, no un dashboard de métricas.
+Panel simple, no dashboard de métricas.
 
 Bloque principal: `Hoy`.
 
-Si existen sesiones hoy, se muestran todas con prioridad:
+Si existen varias sesiones hoy, se priorizan:
 
-1. `En curso` → acción principal `Continuar`;
-2. `Planificadas` → `Empezar`;
-3. `Realizadas` → `Ver`.
+1. `En curso` → `Continuar`
+2. `Planificada` → `Empezar`
+3. `Realizada` → `Ver`
 
-Si hay una sola sesión, puede mostrarse como tarjeta principal única.
+Si existe una sola sesión, puede mostrarse como tarjeta principal única.
 
 `Nueva sesión` permanece siempre accesible.
 
-Cuando existe una sesión `En curso`, `Continuar` tiene mayor protagonismo visual y `Nueva sesión` queda como acción secundaria.
+Si hay una sesión `En curso`, `Continuar` tiene más protagonismo visual y `Nueva sesión` queda como acción secundaria.
 
 Accesos rápidos:
 
@@ -657,63 +681,70 @@ Accesos rápidos:
 - Ejercicios
 - Histórico
 
-## 24. Apariencia y accesibilidad
+## 20. Apariencia y accesibilidad
 
-Modos de tema:
+Tema:
 
-- Sistema
-- Claro
-- Oscuro
+- `Sistema`
+- `Claro`
+- `Oscuro`
 
-Valor inicial: Sistema.
+Valor inicial: `Sistema`.
 
-La aplicación respeta el tamaño de texto configurado en Android.
+La aplicación respeta el tamaño de texto configurado en Android y debe mantener tablas/formularios utilizables con escalado de fuente.
 
-Diseño objetivo v1: teléfono en orientación vertical.
+## 21. Imágenes
 
-## 25. Imágenes
+Un ejercicio puede tener **0–3 imágenes estáticas**.
 
-Cada ejercicio puede mostrar entre 1 y 3 imágenes estáticas.
+Las imágenes son deseables pero opcionales y su ausencia no bloquea un ejercicio ni la v1.
 
-Las imágenes del catálogo inicial deben ser legalmente utilizables con el proyecto y no depender de recursos remotos para funcionar.
+Cuando se incluyan:
 
-Los ejercicios personalizados permiten añadir imágenes desde galería.
+- deben ser recursos propios o con licencia compatible;
+- deben estar disponibles offline en ejecución;
+- se priorizan cuando aportan valor real para identificar o ejecutar el movimiento;
+- forman parte del backup completo cuando corresponda a datos del usuario.
 
-Las imágenes forman parte de la copia completa de seguridad.
+Los ejercicios personalizados pueden seleccionar imágenes desde galería.
 
-Animaciones/GIF quedan fuera de v1.
+No se usa cámara en v1.
 
-## 26. Fuera de alcance v1
+Animaciones y GIF quedan fuera de v1.
+
+## 22. Fuera de alcance v1
 
 Entre otros:
 
 - sincronización multi-dispositivo;
 - autenticación, PIN o biometría;
-- Google Play;
+- publicación en Google Play;
 - notificaciones/recordatorios;
-- orientación horizontal/tablet;
+- tablet/horizontal;
 - tolerancia a errores tipográficos en búsqueda;
-- filtro por equipo;
+- filtro de búsqueda por equipo;
 - patrón de movimiento;
-- distancia como unidad activa en interfaz;
+- distancia activa en la interfaz;
 - animaciones/GIF;
 - métricas derivadas avanzadas;
-- comparación automática en el informe con sesiones anteriores;
+- comparación automática del informe con sesiones anteriores;
 - archivado de sesiones;
-- filtro histórico `Solo completadas` en la gráfica de ejercicio.
+- filtro histórico `Solo completadas`.
 
-## 27. Decisiones todavía pendientes y circuito de cierre
+## 23. Decisiones pendientes y circuito de cierre
 
-Las dudas funcionales pendientes del MVP v1 se centralizan en la issue `#1 — [FUNCIONAL] Cierre de dudas pendientes — MVP v1`.
+Las dudas funcionales pendientes del MVP v1 se centralizan en la Issue `#1 — [FUNCIONAL] Cierre de dudas pendientes — MVP v1`.
 
 Circuito:
 
-1. label `FUNCIONAL`: responde el funcional;
-2. el funcional cambia la label a `TECH LEAD` cuando termina;
-3. el Tech Lead revisa coherencia, actualiza contrato/ADR y decide si quedan nuevas dudas;
-4. si quedan cuestiones, las publica en la misma issue y devuelve la label a `FUNCIONAL`;
+1. label `FUNCIONAL`: trabaja el funcional;
+2. al terminar cambia a `TECH LEAD`;
+3. el Tech Lead revisa respuestas, coherencia, contrato y ADR;
+4. si quedan dudas/contradicciones, el Tech Lead comenta únicamente lo pendiente y devuelve la label a `FUNCIONAL`;
 5. el ciclo se repite hasta cerrar funcionalmente el MVP v1.
 
-No debe inferirse ninguna decisión que no esté recogida aquí o en una issue/ADR aprobada.
+Cuando el usuario indique `Revisa GitHub` o equivalente, el Tech Lead debe localizar todas las Issues abiertas con label `TECH LEAD` y procesarlas sin pedir que se copie su contenido en el chat.
+
+No debe inferirse una decisión funcional pendiente.
 
 El Tech Lead es responsable de mantener GitHub y este contrato actualizados durante todo el circuito.
