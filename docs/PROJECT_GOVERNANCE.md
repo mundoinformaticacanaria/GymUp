@@ -124,6 +124,25 @@ Una Issue debe contener suficiente contexto para ejecutarse sin depender de una 
 
 Las Issues no deben introducir requisitos nuevos de producto sin aprobación.
 
+### 6.1 Circuito FUNCIONAL ↔ TECH LEAD
+
+Las dudas funcionales del MVP v1 se gestionan mediante Issues y labels de rol.
+
+- `FUNCIONAL`: la issue está pendiente de respuesta o aclaración funcional.
+- `TECH LEAD`: la issue está pendiente de análisis del Tech Lead.
+
+Cuando el usuario indique al Tech Lead **“Revisa GitHub”** o una instrucción equivalente, el Tech Lead debe:
+
+1. buscar las Issues abiertas del repositorio con la label `TECH LEAD`;
+2. leer la issue completa y sus comentarios recientes;
+3. contrastar las respuestas con `docs/PRODUCT_CONTRACT_V1.md`, ADRs y decisiones vigentes;
+4. actualizar el contrato y la documentación cuando la respuesta cierre una decisión;
+5. detectar contradicciones, huecos o nuevas preguntas relevantes;
+6. si necesita nueva intervención funcional, comentar la issue con las cuestiones pendientes y devolverla a `FUNCIONAL`;
+7. si no quedan dudas funcionales, continuar con el siguiente paso técnico o cerrar la issue cuando corresponda.
+
+No es necesario que el usuario copie las respuestas del funcional al chat: GitHub es la fuente de verdad del circuito.
+
 ## 7. Arquitectura y ADR
 
 Las decisiones arquitectónicas con impacto duradero se documentarán como Architecture Decision Records (ADR), por ejemplo:
