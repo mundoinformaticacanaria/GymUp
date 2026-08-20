@@ -102,7 +102,6 @@ interface TrainingRepository {
 
     suspend fun getSessionDetail(sessionId: String): SessionDetail?
     suspend fun getRoutineDetail(routineId: String): RoutineDetail?
-    suspend fun previewOmittedExercises(source: SessionSource): List<String>
 
     suspend fun createSession(
         date: LocalDate,
