@@ -139,6 +139,8 @@ No existe archivado en v1.
 
 Al añadir un ejercicio a una sesión se crea una instancia propia de esa sesión.
 
+Un mismo ejercicio maestro no puede aparecer más de una vez dentro de la misma sesión. Si ya está añadido, la aplicación debe impedir una segunda incorporación y facilitar el acceso al ejercicio existente.
+
 La instancia guarda snapshot de los datos necesarios para interpretar el histórico, incluyendo al menos:
 
 - nombre español;
@@ -257,6 +259,10 @@ Modalidades de carga soportadas en v1:
 
 Se guarda la modalidad indicada; no se calcula un peso total efectivo derivado.
 
+Para `peso corporal + X kg` y `peso corporal - X kg asistencia`, el valor numérico registrado y representado es únicamente el valor adicional `X`. Nunca se suma ni se infiere el peso corporal del usuario.
+
+Las modalidades de carga no se convierten automáticamente entre sí. `kg/mano`, `kg/lado`, `kg total` y el resto de modalidades se consideran dominios distintos a efectos de comparación histórica.
+
 Peso en kg: hasta 2 decimales.
 
 La interfaz usa coma decimal en español.
@@ -339,6 +345,10 @@ Cada ejercicio maestro contempla como mínimo:
 - estado activo/inactivo si tiene histórico.
 
 No se duplican ejercicios por idioma: español e inglés son atributos del mismo ejercicio.
+
+El catálogo maestro no permite nombres repetidos ni en `nombre_es` ni en `nombre_en`.
+
+La validación de unicidad usa la misma normalización básica de la búsqueda: ignora mayúsculas/minúsculas y tildes/diacríticos. Por ejemplo, `Press`, `PRESS` y `PrÉss` se consideran el mismo nombre a efectos de unicidad.
 
 El formato visual de nombres es:
 
@@ -466,6 +476,8 @@ Campos v1:
 - descripción/nota opcional;
 - lista ordenada de ejercicios.
 
+Una misma rutina no puede contener dos veces el mismo ejercicio maestro.
+
 No contiene objetivos propios de peso, series o repeticiones.
 
 Al crear una sesión desde rutina:
@@ -498,14 +510,38 @@ Los filtros no se persisten entre aperturas de la pantalla en v1.
 
 Al consultar un ejercicio se muestran sus ejecuciones históricas.
 
-La gráfica de evolución usa las últimas 10 ejecuciones de ese ejercicio.
+La gráfica de evolución usa las últimas 10 ejecuciones válidas de ese ejercicio.
+
+Una ejecución es válida para la gráfica si tiene al menos una serie realizada:
+
+- `Parcial` se incluye;
+- `Completado` se incluye;
+- `No realizado` se excluye.
+
+Solo se representan datos reales ejecutados. Las series planificadas que quedaron pendientes no generan puntos.
+
+Las ejecuciones `Parcial` deben quedar claramente identificables visualmente respecto de las `Completado`, mediante indicador en el punto, detalle al pulsarlo o solución equivalente.
+
+No existe filtro `Solo completadas` en v1.
 
 Selector de métrica:
 
-- Peso
-- Repeticiones
+- `Carga`
+- `Medición`
+
+`Medición` representa la unidad principal aplicable al ejercicio: repeticiones, repeticiones/lado, segundos o segundos/lado.
+
+La opción `Carga` se oculta cuando el ejercicio no tiene un valor numérico de carga aplicable.
 
 Cada serie se representa como línea independiente.
+
+Para `peso corporal + X kg` y `peso corporal - X kg asistencia`, `Carga` representa solo `X`.
+
+La gráfica de `Carga` compara valores únicamente dentro de la misma modalidad. Nunca convierte modalidades automáticamente.
+
+Si un ejercicio cambia de modalidad entre ejecuciones, la gráfica debe cortar la línea o crear una serie visual distinta, dejando visible el cambio y evitando una progresión continua engañosa.
+
+Ejemplo: `10 kg/mano → 12,5 kg/mano → 25 kg total` no se representa como una línea continua `10 → 12,5 → 25`.
 
 No se incluyen en v1 métricas derivadas como volumen total o 1RM estimado.
 
@@ -663,8 +699,21 @@ Entre otros:
 - animaciones/GIF;
 - métricas derivadas avanzadas;
 - comparación automática en el informe con sesiones anteriores;
-- archivado de sesiones.
+- archivado de sesiones;
+- filtro histórico `Solo completadas` en la gráfica de ejercicio.
 
-## 27. Decisiones todavía pendientes
+## 27. Decisiones todavía pendientes y circuito de cierre
 
-Este documento seguirá creciendo durante el cierre de producto. No debe inferirse ninguna decisión que no esté recogida aquí o en una issue/ADR aprobada.
+Las dudas funcionales pendientes del MVP v1 se centralizan en la issue `#1 — [FUNCIONAL] Cierre de dudas pendientes — MVP v1`.
+
+Circuito:
+
+1. label `FUNCIONAL`: responde el funcional;
+2. el funcional cambia la label a `TECH LEAD` cuando termina;
+3. el Tech Lead revisa coherencia, actualiza contrato/ADR y decide si quedan nuevas dudas;
+4. si quedan cuestiones, las publica en la misma issue y devuelve la label a `FUNCIONAL`;
+5. el ciclo se repite hasta cerrar funcionalmente el MVP v1.
+
+No debe inferirse ninguna decisión que no esté recogida aquí o en una issue/ADR aprobada.
+
+El Tech Lead es responsable de mantener GitHub y este contrato actualizados durante todo el circuito.
