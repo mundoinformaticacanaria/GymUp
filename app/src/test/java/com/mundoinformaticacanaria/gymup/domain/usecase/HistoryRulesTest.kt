@@ -21,7 +21,7 @@ class HistoryRulesTest {
     fun searchUsesStartsBeforeContainsThenFavoriteUsageRoutineAndStableName() {
         val exercises = listOf(
             exercise("favorite-contains", "Elevación press", favorite = true),
-            exercise("used-start", "Prensa inclinada"),
+            exercise("used-start", "Press inclinado"),
             exercise("favorite-start", "Press banca", favorite = true),
             exercise("routine-start", "Press militar"),
             exercise("rest-start", "Préss cerrado"),
