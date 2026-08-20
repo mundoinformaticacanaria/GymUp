@@ -9,6 +9,8 @@ navigation = "2.9.8"
 dataStore = "1.2.1"
 room = "2.8.4"
 serialization = "1.11.0"
+androidxTestCore = "1.7.0"
+robolectric = "4.16.1"
 junit = "4.13.2"
 
 [libraries]
@@ -25,7 +27,10 @@ datastore-preferences = { module = "androidx.datastore:datastore-preferences", v
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 junit = { module = "junit:junit", version.ref = "junit" }
 
 [plugins]
