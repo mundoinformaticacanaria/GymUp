@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gymup.local/schemas/session-report-v1.schema.json",
+  "title": "GymUp Session Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "exported_at", "session"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "exported_at": {"type": "string", "format": "date-time"},
+    "session": {"$ref": "#/$defs/session"}
+  },
+  "$defs": {
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "date", "order_in_day", "name", "session_type", "operational_state", "execution_result", "exercises"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"},
+        "date": {"type": "string", "format": "date"},
+        "order_in_day": {"type": "integer", "minimum": 1},
+        "name": {"type": "string", "minLength": 1},
+        "session_type": {"$ref": "#/$defs/namedSnapshot"},
+        "operational_state": {"enum": ["PLANNED", "IN_PROGRESS", "REALIZED"]},
+        "execution_result": {"enum": ["NOT_STARTED", "PARTIAL", "COMPLETED"]},
+        "general_note": {"type": ["string", "null"]},
+        "exercises": {"type": "array", "items": {"$ref": "#/$defs/exercise"}}
+      }
+    },
+    "namedSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"},
+        "name": {"type": "string"}
+      }
+    },
+    "exercise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_exercise_id", "exercise_id", "position", "name_es", "name_en", "muscle_group", "load_mode_default", "measurement_unit_default", "rir_required", "execution_state", "sets"],
+      "properties": {
+        "session_exercise_id": {"type": "string", "format": "uuid"},
+        "exercise_id": {"type": "string", "format": "uuid"},
+        "position": {"type": "integer", "minimum": 1},
+        "name_es": {"type": "string"},
+        "name_en": {"type": "string"},
+        "muscle_group": {"type": "string"},
+        "equipment": {"type": ["string", "null"]},
+        "load_mode_default": {"$ref": "#/$defs/loadMode"},
+        "measurement_unit_default": {"$ref": "#/$defs/measurementUnit"},
+        "rir_required": {"type": "boolean"},
+        "execution_state": {"enum": ["NOT_PERFORMED", "PARTIAL", "COMPLETED"]},
+        "note": {"type": ["string", "null"]},
+        "incomplete_reason": {"type": ["string", "null"]},
+        "exercise_rest_seconds": {"type": ["integer", "null"], "minimum": 0},
+        "sets": {"type": "array", "items": {"$ref": "#/$defs/set"}}
+      }
+    },
+    "set": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "position", "load_mode", "measurement_unit", "target", "actual", "performed"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"},
+        "position": {"type": "integer", "minimum": 1},
+        "load_mode": {"$ref": "#/$defs/loadMode"},
+        "measurement_unit": {"$ref": "#/$defs/measurementUnit"},
+        "target": {"$ref": "#/$defs/target"},
+        "actual": {"$ref": "#/$defs/actual"},
+        "performed": {"type": "boolean"},
+        "rir": {"type": ["integer", "null"], "minimum": 0, "maximum": 2},
+        "rest_seconds": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["load", "measurement"],
+      "properties": {
+        "load": {"type": ["number", "null"], "minimum": 0},
+        "measurement": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "actual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["load", "measurement"],
+      "properties": {
+        "load": {"type": ["number", "null"], "minimum": 0},
+        "measurement": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "loadMode": {
+      "enum": ["KG_TOTAL", "KG_PER_HAND", "KG_PER_SIDE", "BODYWEIGHT", "BODYWEIGHT_PLUS_LOAD", "BODYWEIGHT_MINUS_ASSISTANCE", "NO_WEIGHT"]
+    },
+    "measurementUnit": {
+      "enum": ["REPETITIONS", "REPETITIONS_PER_SIDE", "SECONDS", "SECONDS_PER_SIDE"]
+    }
+  }
+}
