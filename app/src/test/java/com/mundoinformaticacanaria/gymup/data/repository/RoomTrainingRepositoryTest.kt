@@ -108,3 +108,5 @@ class RoomTrainingRepositoryTest {
         assertEquals(listOf(1, 2), destinationSessions.map { it.orderInDay })
     }
 }
+
+// Keeps the date-order regression test on the branch while the repository fix is applied.
