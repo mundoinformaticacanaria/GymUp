@@ -24,7 +24,6 @@ data class SessionSummary(
     val date: LocalDate,
     val orderInDay: Int,
     val name: String,
-    val sessionTypeId: String,
     val sessionTypeName: String,
     val operationalState: SessionOperationalState,
     val executionResult: SessionExecutionResult,
