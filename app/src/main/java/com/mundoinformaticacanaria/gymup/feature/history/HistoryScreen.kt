@@ -1,5 +1,8 @@
 package com.mundoinformaticacanaria.gymup.feature.history
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,18 +24,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mundoinformaticacanaria.gymup.core.model.SessionExecutionResult
 import com.mundoinformaticacanaria.gymup.core.model.SessionOperationalState
+import com.mundoinformaticacanaria.gymup.data.export.AndroidSessionReportFiles
+import com.mundoinformaticacanaria.gymup.domain.export.SessionReportFactory
 import com.mundoinformaticacanaria.gymup.domain.repository.HistoryRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
 import com.mundoinformaticacanaria.gymup.domain.usecase.SessionHistoryFilter
 import com.mundoinformaticacanaria.gymup.domain.usecase.filterSessionHistory
 import java.time.LocalDate
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,6 +51,8 @@ fun HistoryScreen(
     onOpenSession: (String) -> Unit,
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val sessions by trainingRepository.observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
     val sessionTypes by masterCatalogRepository.observeSessionTypes().collectAsStateWithLifecycle(initialValue = emptyList())
     val sessionTypeIds by historyRepository.observeSessionTypeIds().collectAsStateWithLifecycle(initialValue = emptyMap())
@@ -51,6 +61,18 @@ fun HistoryScreen(
     var typeId by remember { mutableStateOf<String?>(null) }
     var fromText by remember { mutableStateOf("") }
     var toText by remember { mutableStateOf("") }
+    var pendingSaveJson by remember { mutableStateOf<String?>(null) }
+    var exportError by remember { mutableStateOf<String?>(null) }
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(AndroidSessionReportFiles.MIME_TYPE),
+    ) { destination ->
+        val json = pendingSaveJson
+        if (destination != null && json != null) {
+            runCatching { AndroidSessionReportFiles.writeToDocument(context, destination, json) }
+                .onFailure { exportError = it.message ?: "No se pudo guardar el informe" }
+        }
+        pendingSaveJson = null
+    }
     val from = fromText.parseDateOrNull()
     val to = toText.parseDateOrNull()
     val filtered = remember(sessions, sessionTypeIds, state, result, typeId, from, to) {
@@ -65,6 +87,23 @@ fun HistoryScreen(
             ),
             sessionTypeIds,
         )
+    }
+
+    fun exportSession(sessionId: String, action: (fileName: String, json: String) -> Unit) {
+        scope.launch {
+            exportError = null
+            runCatching {
+                val detail = requireNotNull(trainingRepository.getSessionDetail(sessionId)) {
+                    "La sesión ya no está disponible"
+                }
+                val report = SessionReportFactory.create(detail)
+                SessionReportFactory.fileName(detail) to SessionReportFactory.encode(report)
+            }.onSuccess { (fileName, json) ->
+                action(fileName, json)
+            }.onFailure {
+                exportError = it.message ?: "No se pudo generar el informe"
+            }
+        }
     }
 
     Scaffold(
@@ -143,6 +182,9 @@ fun HistoryScreen(
                     }
                 }
             }
+            exportError?.let { message ->
+                item { Text(message, color = MaterialTheme.colorScheme.error) }
+            }
             item { Text("${filtered.size} sesión(es)", style = MaterialTheme.typography.labelLarge) }
             items(filtered, key = { it.id }) { session ->
                 Card(Modifier.fillMaxWidth()) {
@@ -151,6 +193,33 @@ fun HistoryScreen(
                         Text("${session.date} · ${session.sessionTypeName}")
                         Text("${session.operationalState.label()} · ${session.executionResult.label()}")
                         TextButton(onClick = { onOpenSession(session.id) }, modifier = Modifier.fillMaxWidth()) { Text("Ver / editar") }
+                        if (session.operationalState == SessionOperationalState.REALIZED) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        exportSession(session.id) { fileName, json ->
+                                            pendingSaveJson = json
+                                            saveLauncher.launch(fileName)
+                                        }
+                                    },
+                                ) { Text("Guardar JSON") }
+                                TextButton(
+                                    onClick = {
+                                        exportSession(session.id) { fileName, json ->
+                                            runCatching {
+                                                val intent = AndroidSessionReportFiles.prepareShare(context, fileName, json)
+                                                context.startActivity(Intent.createChooser(intent, "Compartir informe"))
+                                            }.onFailure {
+                                                exportError = it.message ?: "No se pudo compartir el informe"
+                                            }
+                                        }
+                                    },
+                                ) { Text("Compartir JSON") }
+                            }
+                        }
                     }
                 }
             }
