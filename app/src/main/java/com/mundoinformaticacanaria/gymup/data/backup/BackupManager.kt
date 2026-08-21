@@ -2,6 +2,7 @@ package com.mundoinformaticacanaria.gymup.data.backup
 
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupArchiveCodec
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupArchiveReadResult
+import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import java.time.Instant
 
 /**
@@ -12,30 +13,32 @@ import java.time.Instant
  * ZIP has been parsed and validated successfully.
  */
 interface BackupDataSource {
-    fun exportFiles(): Map<String, ByteArray>
+    suspend fun exportSnapshot(): BackupSnapshot
 
-    fun replaceAll(files: Map<String, ByteArray>)
+    suspend fun replaceAll(snapshot: BackupSnapshot)
 }
 
 sealed interface BackupImportResult {
-    data class Imported(val fileCount: Int) : BackupImportResult
+    data class Imported(val imageCount: Int) : BackupImportResult
     data class Rejected(val reason: String) : BackupImportResult
 }
 
 class BackupManager(
     private val dataSource: BackupDataSource,
+    private val appVersion: String,
 ) {
-    fun export(exportedAt: Instant = Instant.now()): ByteArray =
+    suspend fun export(exportedAt: Instant = Instant.now()): ByteArray =
         BackupArchiveCodec.create(
-            files = dataSource.exportFiles(),
+            snapshot = dataSource.exportSnapshot(),
+            appVersion = appVersion,
             exportedAt = exportedAt,
         )
 
-    fun importReplaceAll(archive: ByteArray): BackupImportResult =
+    suspend fun importReplaceAll(archive: ByteArray): BackupImportResult =
         when (val result = BackupArchiveCodec.readAndValidate(archive)) {
             is BackupArchiveReadResult.Valid -> {
-                dataSource.replaceAll(result.files)
-                BackupImportResult.Imported(result.files.size)
+                dataSource.replaceAll(result.snapshot)
+                BackupImportResult.Imported(result.snapshot.images.size)
             }
 
             is BackupArchiveReadResult.Invalid -> BackupImportResult.Rejected(result.reason)
