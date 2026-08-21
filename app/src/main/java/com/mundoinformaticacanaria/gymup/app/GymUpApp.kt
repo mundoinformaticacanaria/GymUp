@@ -108,6 +108,7 @@ fun GymUpApp(container: AppContainer) {
             composable(Routes.SETTINGS) {
                 SettingsScreen(
                     currentMode = themeMode,
+                    backupManager = container.backupManager,
                     historicalCleanupManager = container.historicalCleanupManager,
                     onThemeModeSelected = { mode -> scope.launch { userPreferencesRepository.setThemeMode(mode) } },
                     onBack = navController::popBackStack,
