@@ -60,6 +60,7 @@ class RoomCatalogMaintenanceRepositoryTest {
         assertThrows(IllegalArgumentException::class.java) {
             runBlocking { maintenance.deactivateMaster(MasterCatalogKind.SESSION_TYPE, other.id) }
         }
+        Unit
     }
 
     @Test
