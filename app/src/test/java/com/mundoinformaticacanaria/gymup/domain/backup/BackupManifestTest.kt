@@ -64,7 +64,7 @@ class BackupManifestTest {
     fun `validate rejects tampered contents`() {
         val original = mapOf(BackupManifestV1.DATA_PATH to "original".encodeToByteArray())
         val manifest = BackupManifestCodec.create(original, exportedAt)
-        val tampered = mapOf(BackupManifestV1.DATA_PATH to "tampered".encodeToByteArray())
+        val tampered = mapOf(BackupManifestV1.DATA_PATH to "tampered!".encodeToByteArray())
 
         assertTrue(BackupManifestCodec.validate(manifest, tampered) is BackupValidationResult.SizeMismatch)
     }
