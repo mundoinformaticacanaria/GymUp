@@ -49,6 +49,21 @@ interface ExerciseDao {
     @Query("UPDATE exercises SET is_active = 0 WHERE id = :id") suspend fun deactivate(id: String)
     @Query("UPDATE exercises SET is_favorite = :favorite WHERE id = :id") suspend fun setFavorite(id: String, favorite: Boolean)
     @Query("DELETE FROM exercises WHERE id = :id") suspend fun deleteById(id: String)
+
+    @Query("SELECT * FROM exercise_images WHERE exercise_id = :exerciseId ORDER BY position")
+    fun observeImages(exerciseId: String): Flow<List<ExerciseImageEntity>>
+
+    @Query("SELECT * FROM exercise_images WHERE exercise_id = :exerciseId ORDER BY position")
+    suspend fun getImages(exerciseId: String): List<ExerciseImageEntity>
+
+    @Query("SELECT * FROM exercise_images WHERE id = :imageId LIMIT 1")
+    suspend fun getImageById(imageId: String): ExerciseImageEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertImage(image: ExerciseImageEntity)
+
+    @Delete
+    suspend fun deleteImage(image: ExerciseImageEntity)
 }
 
 @Dao
