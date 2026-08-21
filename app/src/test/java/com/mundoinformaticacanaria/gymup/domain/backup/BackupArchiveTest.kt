@@ -10,29 +10,38 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BackupArchiveTest {
+    private val imageKey = "user:00000000-0000-0000-0000-000000000001"
+
     @Test
-    fun `create and read round trip preserves declared files`() {
-        val files = mapOf(
-            BackupManifestV1.DATA_PATH to "{\"sessions\":[]}".encodeToByteArray(),
-            "images/custom-1.jpg" to byteArrayOf(1, 2, 3, 4),
+    fun `create and read round trip preserves data and images`() {
+        val snapshot = BackupSnapshot(
+            data = "{\"sessions\":[]}".encodeToByteArray(),
+            images = mapOf(imageKey to byteArrayOf(1, 2, 3, 4)),
         )
 
-        val archive = BackupArchiveCodec.create(files, Instant.parse("2026-08-21T00:00:00Z"))
+        val archive = BackupArchiveCodec.create(
+            snapshot = snapshot,
+            appVersion = "0.1.0",
+            exportedAt = Instant.parse("2026-08-21T00:00:00Z"),
+        )
         val result = BackupArchiveCodec.readAndValidate(archive)
 
         assertTrue(result is BackupArchiveReadResult.Valid)
         result as BackupArchiveReadResult.Valid
         assertEquals(1, result.manifest.schemaVersion)
-        assertEquals(files.keys, result.files.keys)
-        files.forEach { (path, expected) -> assertArrayEquals(expected, result.files.getValue(path)) }
+        assertEquals("0.1.0", result.manifest.appVersion)
+        assertArrayEquals(snapshot.data, result.snapshot.data)
+        assertArrayEquals(snapshot.images.getValue(imageKey), result.snapshot.images.getValue(imageKey))
     }
 
     @Test
     fun `read rejects undeclared file`() {
         val data = "{}".encodeToByteArray()
         val manifest = BackupManifestCodec.create(
-            mapOf(BackupManifestV1.DATA_PATH to data),
-            Instant.parse("2026-08-21T00:00:00Z"),
+            data = data,
+            images = emptyMap(),
+            appVersion = "0.1.0",
+            exportedAt = Instant.parse("2026-08-21T00:00:00Z"),
         )
         val archive = zipOf(
             BackupManifestV1.MANIFEST_PATH to BackupManifestCodec.encode(manifest).encodeToByteArray(),
@@ -60,8 +69,10 @@ class BackupArchiveTest {
     fun `read reports checksum mismatch for tampered declared file`() {
         val original = "original".encodeToByteArray()
         val manifest = BackupManifestCodec.create(
-            mapOf(BackupManifestV1.DATA_PATH to original),
-            Instant.parse("2026-08-21T00:00:00Z"),
+            data = original,
+            images = emptyMap(),
+            appVersion = "0.1.0",
+            exportedAt = Instant.parse("2026-08-21T00:00:00Z"),
         )
         val archive = zipOf(
             BackupManifestV1.MANIFEST_PATH to BackupManifestCodec.encode(manifest).encodeToByteArray(),
