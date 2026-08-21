@@ -1,6 +1,9 @@
 package com.mundoinformaticacanaria.gymup.app
 
 import android.content.Context
+import com.mundoinformaticacanaria.gymup.BuildConfig
+import com.mundoinformaticacanaria.gymup.data.backup.BackupManager
+import com.mundoinformaticacanaria.gymup.data.backup.RoomBackupDataSource
 import com.mundoinformaticacanaria.gymup.data.cleanup.HistoricalCleanupManager
 import com.mundoinformaticacanaria.gymup.data.cleanup.RoomHistoricalCleanupStore
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
@@ -26,6 +29,7 @@ interface AppContainer {
     val trainingRepository: TrainingRepository
     val historyRepository: HistoryRepository
     val historicalCleanupManager: HistoricalCleanupManager
+    val backupManager: BackupManager
 }
 
 class DefaultAppContainer(context: Context) : AppContainer {
@@ -38,6 +42,10 @@ class DefaultAppContainer(context: Context) : AppContainer {
     override val trainingRepository: TrainingRepository = RoomTrainingRepository(database)
     override val historyRepository: HistoryRepository = RoomHistoryRepository(database)
     override val historicalCleanupManager = HistoricalCleanupManager(RoomHistoricalCleanupStore(database))
+    override val backupManager = BackupManager(
+        dataSource = RoomBackupDataSource(appContext, database, userPreferencesRepository),
+        appVersion = BuildConfig.VERSION_NAME,
+    )
 
     init {
         applicationScope.launch { DatabaseSeeder(appContext, database).seedIfNeeded() }
