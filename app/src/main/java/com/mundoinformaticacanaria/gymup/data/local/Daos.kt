@@ -141,4 +141,29 @@ interface TrainingDao {
     suspend fun getValidExerciseExecutions(exerciseId: String, limit: Int): List<SessionExerciseEntity>
 
     @Query("SELECT COUNT(*) FROM session_exercises WHERE exercise_id = :exerciseId") suspend fun countHistoricalExerciseReferences(exerciseId: String): Int
+
+    @Query("SELECT COUNT(*) FROM sessions WHERE session_date_epoch_day < :cutoffEpochDay")
+    suspend fun countSessionsBefore(cutoffEpochDay: Long): Int
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM session_exercises se
+        INNER JOIN sessions s ON s.id = se.session_id
+        WHERE s.session_date_epoch_day < :cutoffEpochDay
+        """,
+    )
+    suspend fun countSessionExercisesBefore(cutoffEpochDay: Long): Int
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM session_sets ss
+        INNER JOIN session_exercises se ON se.id = ss.session_exercise_id
+        INNER JOIN sessions s ON s.id = se.session_id
+        WHERE s.session_date_epoch_day < :cutoffEpochDay
+        """,
+    )
+    suspend fun countSessionSetsBefore(cutoffEpochDay: Long): Int
+
+    @Query("DELETE FROM sessions WHERE session_date_epoch_day < :cutoffEpochDay")
+    suspend fun deleteSessionsBefore(cutoffEpochDay: Long): Int
 }
