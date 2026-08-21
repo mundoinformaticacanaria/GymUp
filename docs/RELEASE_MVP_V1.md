@@ -16,7 +16,9 @@ El CI genera y publica como artefacto:
 
 La variante `release` se firma para este MVP con la configuración debug estándar de Android. Esto permite instalar el APK directamente sin almacenar una clave de producción en GitHub.
 
-Esta firma **no es una firma de distribución comercial**. Antes de publicar en Google Play u otro canal público debe crearse una clave de producción controlada por el propietario, conservarla fuera del repositorio e incrementar `versionCode`.
+Esta firma **no es una firma de distribución comercial ni una identidad estable de actualización**. Los runners alojados de GitHub pueden generar una clave debug distinta en ejecuciones diferentes. Por tanto, el APK validado debe tratarse como un candidato instalable concreto, no como una cadena de actualizaciones firmadas entre runs de CI.
+
+Antes de distribuir actualizaciones conservando la instalación y los datos debe introducirse una clave estable controlada por el propietario, almacenada fuera del repositorio, e incrementar `versionCode`. Para Google Play u otro canal público esa clave de producción es obligatoria.
 
 ## Instalación
 
@@ -29,12 +31,10 @@ En el teléfono Android 15 o superior:
 También puede instalarse mediante ADB:
 
 ```bash
-adb install -r app-release.apk
+adb install app-release.apk
 ```
 
-## Actualizaciones del APK v1
-
-Mientras se conserve la misma firma y se incremente `versionCode`, Android puede actualizar la instalación existente sin borrar los datos locales. No debe cambiarse la estrategia de firma de una instalación ya distribuida sin planificar una migración/reinstalación.
+Si ya existe una instalación firmada con otra clave, Android rechazará la actualización directa. En ese caso debe exportarse antes un backup de GymUp, desinstalar la versión anterior, instalar el nuevo APK e importar el backup.
 
 ## Datos y copia de seguridad
 
