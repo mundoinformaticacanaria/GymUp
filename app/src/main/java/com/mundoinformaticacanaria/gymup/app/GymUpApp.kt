@@ -84,6 +84,7 @@ fun GymUpApp(container: AppContainer) {
                     exerciseCatalogRepository = container.exerciseCatalogRepository,
                     masterCatalogRepository = container.masterCatalogRepository,
                     historyRepository = container.historyRepository,
+                    exerciseImageManager = container.exerciseImageManager,
                     onOpenHistory = { navController.navigate(Routes.exerciseHistory(it)) },
                     onBack = navController::popBackStack,
                 )
