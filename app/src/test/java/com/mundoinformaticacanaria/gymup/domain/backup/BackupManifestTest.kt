@@ -7,52 +7,68 @@ import org.junit.Test
 
 class BackupManifestTest {
     private val exportedAt = Instant.parse("2026-08-21T00:00:00Z")
+    private val imageA = "user:00000000-0000-0000-0000-000000000001"
+    private val imageB = "user:00000000-0000-0000-0000-000000000002"
 
     @Test
-    fun `create produces stable sorted checksummed entries`() {
-        val files = mapOf(
-            "images/custom/b.jpg" to byteArrayOf(2, 3),
-            BackupManifestV1.DATA_PATH to "{}".encodeToByteArray(),
-            "images/custom/a.jpg" to byteArrayOf(1),
+    fun `create produces schema aligned checksummed manifest`() {
+        val data = "{}".encodeToByteArray()
+        val images = linkedMapOf(
+            imageB to byteArrayOf(2, 3),
+            imageA to byteArrayOf(1),
         )
 
-        val manifest = BackupManifestCodec.create(files, exportedAt)
+        val manifest = BackupManifestCodec.create(data, images, "0.1.0", exportedAt)
 
+        assertEquals(BackupManifestV1.FORMAT, manifest.format)
         assertEquals(1, manifest.schemaVersion)
         assertEquals(exportedAt.toString(), manifest.exportedAt)
-        assertEquals(
-            listOf(BackupManifestV1.DATA_PATH, "images/custom/a.jpg", "images/custom/b.jpg"),
-            manifest.files.map { it.path },
-        )
-        assertTrue(manifest.files.all { it.sha256.matches(Regex("[0-9a-f]{64}")) })
+        assertEquals("0.1.0", manifest.appVersion)
+        assertEquals(BackupManifestV1.DATA_PATH, manifest.data.path)
+        assertEquals(listOf(imageA, imageB), manifest.images.map { it.storageKey })
+        assertTrue(manifest.data.sha256.matches(Regex("[0-9a-f]{64}")))
+        assertTrue(manifest.images.all { it.sha256.matches(Regex("[0-9a-f]{64}")) })
     }
 
     @Test
     fun `validate accepts intact backup`() {
+        val data = "{\"schema_version\":1}".encodeToByteArray()
+        val images = mapOf(imageA to byteArrayOf(1, 2, 3, 4))
+        val manifest = BackupManifestCodec.create(data, images, "0.1.0", exportedAt)
         val files = mapOf(
-            BackupManifestV1.DATA_PATH to "{\"schema_version\":1}".encodeToByteArray(),
-            "images/custom/exercise.jpg" to byteArrayOf(1, 2, 3, 4),
+            BackupManifestV1.DATA_PATH to data,
+            BackupManifestCodec.imagePath(imageA) to images.getValue(imageA),
         )
-        val manifest = BackupManifestCodec.create(files, exportedAt)
 
         assertEquals(BackupValidationResult.Valid, BackupManifestCodec.validate(manifest, files))
     }
 
     @Test
     fun `validate rejects unsupported manifest version before import`() {
-        val files = mapOf(BackupManifestV1.DATA_PATH to "{}".encodeToByteArray())
-        val manifest = BackupManifestCodec.create(files, exportedAt).copy(schemaVersion = 2)
+        val data = "{}".encodeToByteArray()
+        val manifest = BackupManifestCodec.create(data, emptyMap(), "0.1.0", exportedAt).copy(schemaVersion = 2)
 
         assertEquals(
             BackupValidationResult.UnsupportedVersion(2),
-            BackupManifestCodec.validate(manifest, files),
+            BackupManifestCodec.validate(manifest, mapOf(BackupManifestV1.DATA_PATH to data)),
         )
     }
 
     @Test
-    fun `validate rejects missing file`() {
-        val files = mapOf(BackupManifestV1.DATA_PATH to "{}".encodeToByteArray())
-        val manifest = BackupManifestCodec.create(files, exportedAt)
+    fun `validate rejects unsupported format`() {
+        val data = "{}".encodeToByteArray()
+        val manifest = BackupManifestCodec.create(data, emptyMap(), "0.1.0", exportedAt).copy(format = "other")
+
+        assertEquals(
+            BackupValidationResult.UnsupportedFormat("other"),
+            BackupManifestCodec.validate(manifest, mapOf(BackupManifestV1.DATA_PATH to data)),
+        )
+    }
+
+    @Test
+    fun `validate rejects missing data file`() {
+        val data = "{}".encodeToByteArray()
+        val manifest = BackupManifestCodec.create(data, emptyMap(), "0.1.0", exportedAt)
 
         assertEquals(
             BackupValidationResult.MissingFile(BackupManifestV1.DATA_PATH),
@@ -62,8 +78,8 @@ class BackupManifestTest {
 
     @Test
     fun `validate rejects tampered contents`() {
-        val original = mapOf(BackupManifestV1.DATA_PATH to "original".encodeToByteArray())
-        val manifest = BackupManifestCodec.create(original, exportedAt)
+        val data = "original".encodeToByteArray()
+        val manifest = BackupManifestCodec.create(data, emptyMap(), "0.1.0", exportedAt)
         val tampered = mapOf(BackupManifestV1.DATA_PATH to "tampered!".encodeToByteArray())
 
         assertTrue(BackupManifestCodec.validate(manifest, tampered) is BackupValidationResult.SizeMismatch)
@@ -71,8 +87,8 @@ class BackupManifestTest {
 
     @Test
     fun `validate rejects checksum mismatch with same byte count`() {
-        val original = mapOf(BackupManifestV1.DATA_PATH to "abcd".encodeToByteArray())
-        val manifest = BackupManifestCodec.create(original, exportedAt)
+        val data = "abcd".encodeToByteArray()
+        val manifest = BackupManifestCodec.create(data, emptyMap(), "0.1.0", exportedAt)
         val tampered = mapOf(BackupManifestV1.DATA_PATH to "wxyz".encodeToByteArray())
 
         assertEquals(
@@ -82,14 +98,13 @@ class BackupManifestTest {
     }
 
     @Test
-    fun `unsafe zip paths are rejected`() {
+    fun `invalid user storage key is rejected`() {
         val result = runCatching {
             BackupManifestCodec.create(
-                mapOf(
-                    BackupManifestV1.DATA_PATH to "{}".encodeToByteArray(),
-                    "../outside.jpg" to byteArrayOf(1),
-                ),
-                exportedAt,
+                data = "{}".encodeToByteArray(),
+                images = mapOf("../outside.jpg" to byteArrayOf(1)),
+                appVersion = "0.1.0",
+                exportedAt = exportedAt,
             )
         }
 
@@ -98,8 +113,7 @@ class BackupManifestTest {
 
     @Test
     fun `manifest round trip preserves contract`() {
-        val files = mapOf(BackupManifestV1.DATA_PATH to "{}".encodeToByteArray())
-        val original = BackupManifestCodec.create(files, exportedAt)
+        val original = BackupManifestCodec.create("{}".encodeToByteArray(), emptyMap(), "0.1.0", exportedAt)
 
         val decoded = BackupManifestCodec.decode(BackupManifestCodec.encode(original)).getOrThrow()
 
