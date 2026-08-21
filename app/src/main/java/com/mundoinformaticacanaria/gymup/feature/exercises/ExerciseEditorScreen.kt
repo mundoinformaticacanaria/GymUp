@@ -92,6 +92,12 @@ fun ExerciseEditorScreen(
 
     fun buildInput(): ExerciseMaintenanceInput {
         val selectedGroup = requireNotNull(muscleGroupId) { "Selecciona un grupo muscular" }
+        val initialSets = initialSetsText.optionalInt("Series iniciales")
+        val initialLoad = initialLoadText.optionalDecimal("Carga inicial")
+        val initialMeasurement = initialMeasurementText.optionalInt("Medición inicial")
+        require(initialSets != null || (initialLoad == null && initialMeasurement == null)) {
+            "Indica las series iniciales cuando configures carga o medición inicial."
+        }
         return ExerciseMaintenanceInput(
             nameEs = nameEs,
             nameEn = nameEn,
@@ -100,9 +106,9 @@ fun ExerciseEditorScreen(
             loadMode = loadMode,
             measurementUnit = measurementUnit,
             rirRequired = rirRequired,
-            initialSetCount = initialSetsText.optionalInt("Series iniciales"),
-            initialLoad = initialLoadText.optionalDecimal("Carga inicial"),
-            initialMeasurement = initialMeasurementText.optionalInt("Medición inicial"),
+            initialSetCount = initialSets,
+            initialLoad = initialLoad,
+            initialMeasurement = initialMeasurement,
             description = description,
         )
     }
@@ -174,6 +180,13 @@ fun ExerciseEditorScreen(
                     label = { Text(if (rirRequired) "RIR obligatorio" else "RIR opcional") },
                 )
             }
+            item {
+                Text("Configuración inicial para sesiones nuevas", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Si no existe histórico completado, GymUp creará estas series y precargará carga/medición como objetivos.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             item { OutlinedTextField(initialSetsText, { initialSetsText = it }, label = { Text("Series iniciales (opcional)") }, modifier = Modifier.fillMaxWidth()) }
             item { OutlinedTextField(initialLoadText, { initialLoadText = it }, label = { Text("Carga inicial (opcional, admite coma)") }, modifier = Modifier.fillMaxWidth()) }
             item { OutlinedTextField(initialMeasurementText, { initialMeasurementText = it }, label = { Text("Medición inicial (opcional)") }, modifier = Modifier.fillMaxWidth()) }
@@ -231,7 +244,12 @@ fun ExerciseEditorScreen(
         AlertDialog(
             onDismissRequest = {},
             title = { Text("Ejercicio guardado") },
-            text = { Text("La ficha y su configuración inicial se han guardado correctamente.") },
+            text = {
+                Text(
+                    "La ficha y su configuración inicial se han guardado correctamente. " +
+                        "Se usarán para nuevas sesiones cuando no exista histórico completado previo.",
+                )
+            },
             confirmButton = {
                 Button(onClick = {
                     savedExerciseId = null
