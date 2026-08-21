@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mundoinformaticacanaria.gymup.core.model.ThemeMode
+import com.mundoinformaticacanaria.gymup.data.backup.BackupManager
 import com.mundoinformaticacanaria.gymup.data.cleanup.HistoricalCleanupConfirmation
 import com.mundoinformaticacanaria.gymup.data.cleanup.HistoricalCleanupImpact
 import com.mundoinformaticacanaria.gymup.data.cleanup.HistoricalCleanupManager
@@ -30,6 +31,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     currentMode: ThemeMode,
+    backupManager: BackupManager,
     historicalCleanupManager: HistoricalCleanupManager,
     onThemeModeSelected: (ThemeMode) -> Unit,
     onBack: () -> Unit,
@@ -53,10 +55,16 @@ fun SettingsScreen(
         ThemeButton("Claro", ThemeMode.LIGHT, currentMode, onThemeModeSelected)
         ThemeButton("Oscuro", ThemeMode.DARK, currentMode, onThemeModeSelected)
 
+        BackupSection(backupManager = backupManager)
+
         Text(text = "Limpieza histórica", style = MaterialTheme.typography.titleMedium)
         Text(
             "Elimina únicamente datos de sesiones anteriores a una fecha. " +
                 "Los ejercicios y demás datos maestros se conservan.",
+        )
+        Text(
+            "Antes de eliminar puedes crear un backup completo desde la sección anterior.",
+            style = MaterialTheme.typography.bodyMedium,
         )
         OutlinedTextField(
             value = cutoffText,
