@@ -79,6 +79,43 @@ class RoomCatalogMaintenanceRepositoryTest {
     }
 
     @Test
+    fun `exercise initial configuration persists and populates a planned session`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(
+            customInput(
+                groupId = group.id,
+                es = "Press prueba defaults",
+                en = "Defaults test press",
+                initialSetCount = 3,
+                initialLoad = 20.0,
+                initialMeasurement = 10,
+            ),
+        )
+
+        val saved = requireNotNull(maintenance.getExercise(exerciseId))
+        assertEquals(3, saved.initialSetCount)
+        assertEquals(20.0, saved.initialLoad ?: -1.0, 0.0)
+        assertEquals(10, saved.initialMeasurement)
+
+        val sessionType = database.masterDataDao().getSessionTypes().first { it.isActive }
+        val sessionId = training.createSession(
+            LocalDate.of(2026, 8, 21),
+            sessionType.id,
+            null,
+            null,
+            SessionSource.Empty,
+        ).sessionId
+        training.addExercise(sessionId, exerciseId)
+
+        val sets = requireNotNull(training.getSessionDetail(sessionId)).exercises.single().sets
+        assertEquals(3, sets.size)
+        sets.forEach { set ->
+            assertEquals(20.0, set.targetLoad ?: -1.0, 0.0)
+            assertEquals(10, set.targetMeasurement)
+        }
+    }
+
+    @Test
     fun `exercise in routines requires confirmation and is removed atomically`() = runBlocking {
         val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
         val exerciseId = maintenance.createExercise(customInput(group.id, "Ejercicio temporal", "Temporary exercise"))
@@ -116,7 +153,14 @@ class RoomCatalogMaintenanceRepositoryTest {
         assertEquals(exerciseId, requireNotNull(training.getSessionDetail(sessionId)).exercises.single().exerciseId)
     }
 
-    private fun customInput(groupId: String, es: String, en: String) = ExerciseMaintenanceInput(
+    private fun customInput(
+        groupId: String,
+        es: String,
+        en: String,
+        initialSetCount: Int? = null,
+        initialLoad: Double? = null,
+        initialMeasurement: Int? = null,
+    ) = ExerciseMaintenanceInput(
         nameEs = es,
         nameEn = en,
         muscleGroupId = groupId,
@@ -124,9 +168,9 @@ class RoomCatalogMaintenanceRepositoryTest {
         loadMode = LoadMode.KG_TOTAL,
         measurementUnit = MeasurementUnit.REPETITIONS,
         rirRequired = true,
-        initialSetCount = null,
-        initialLoad = null,
-        initialMeasurement = null,
+        initialSetCount = initialSetCount,
+        initialLoad = initialLoad,
+        initialMeasurement = initialMeasurement,
         description = null,
     )
 
