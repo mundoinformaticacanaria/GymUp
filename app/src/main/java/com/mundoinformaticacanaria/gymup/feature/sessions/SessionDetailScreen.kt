@@ -34,6 +34,7 @@ import com.mundoinformaticacanaria.gymup.core.model.ExerciseExecutionStatus
 import com.mundoinformaticacanaria.gymup.core.model.LoadMode
 import com.mundoinformaticacanaria.gymup.core.model.MeasurementUnit
 import com.mundoinformaticacanaria.gymup.core.model.SessionOperationalState
+import com.mundoinformaticacanaria.gymup.data.images.ExerciseImageManager
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MissingRirException
@@ -41,8 +42,9 @@ import com.mundoinformaticacanaria.gymup.domain.repository.SessionDetail
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingExercise
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingSet
-import kotlinx.coroutines.launch
+import com.mundoinformaticacanaria.gymup.feature.exercises.ExerciseImageGallery
 import java.time.LocalDate
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,6 +53,7 @@ fun SessionDetailScreen(
     trainingRepository: TrainingRepository,
     masterCatalogRepository: MasterCatalogRepository,
     exerciseCatalogRepository: ExerciseCatalogRepository,
+    exerciseImageManager: ExerciseImageManager,
     onBack: () -> Unit,
     onDeleted: () -> Unit,
 ) {
@@ -131,6 +134,7 @@ fun SessionDetailScreen(
             itemsIndexed(current.exercises, key = { _, exercise -> exercise.id }) { index, exercise ->
                 ExerciseEditor(
                     exercise = exercise,
+                    exerciseImageManager = exerciseImageManager,
                     canMoveUp = index > 0,
                     canMoveDown = index < current.exercises.lastIndex,
                     onMoveUp = {
@@ -214,10 +218,8 @@ private fun SessionMetadataEditor(
                 FilterChip(selected = typeId == id, onClick = { typeId = id }, label = { Text(label) })
             }
             Button(onClick = { onSaveMetadata(typeId, name, note) }, modifier = Modifier.fillMaxWidth()) { Text("Guardar datos") }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(dateText, { dateText = it }, label = { Text("Fecha") }, modifier = Modifier.weight(1f))
-                OutlinedTextField(orderText, { orderText = it }, label = { Text("Orden") }, modifier = Modifier.weight(1f))
-            }
+            OutlinedTextField(dateText, { dateText = it }, label = { Text("Fecha") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(orderText, { orderText = it }, label = { Text("Orden") }, modifier = Modifier.fillMaxWidth())
             Button(
                 onClick = {
                     val date = runCatching { LocalDate.parse(dateText.trim()) }.getOrNull()
@@ -243,6 +245,7 @@ private fun SessionMetadataEditor(
 @Composable
 private fun ExerciseEditor(
     exercise: TrainingExercise,
+    exerciseImageManager: ExerciseImageManager,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onMoveUp: () -> Unit,
@@ -266,12 +269,20 @@ private fun ExerciseEditor(
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${exercise.position}. ${exercise.nameEs} · ${exercise.nameEn}", style = MaterialTheme.typography.titleMedium)
             Text("${exercise.muscleGroupName}${exercise.equipmentName?.let { " · $it" }.orEmpty()} · ${exercise.status.label()}")
-            exercise.description?.let { Text(it) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(enabled = canMoveUp, onClick = onMoveUp) { Text("↑") }
-                TextButton(enabled = canMoveDown, onClick = onMoveDown) { Text("↓") }
-                TextButton(onClick = onDeleteExercise) { Text("Quitar") }
+            exercise.description?.let {
+                Text("Instrucciones", style = MaterialTheme.typography.labelLarge)
+                Text(it)
             }
+            ExerciseImageGallery(
+                exerciseId = exercise.exerciseId,
+                manager = exerciseImageManager,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(enabled = canMoveUp, onClick = onMoveUp) { Text("↑ Subir") }
+                TextButton(enabled = canMoveDown, onClick = onMoveDown) { Text("↓ Bajar") }
+            }
+            TextButton(onClick = onDeleteExercise, modifier = Modifier.fillMaxWidth()) { Text("Quitar ejercicio") }
             OutlinedTextField(rest, { rest = it }, label = { Text("Descanso ejercicio (s)") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(note, { note = it }, label = { Text("Nota del ejercicio") }, modifier = Modifier.fillMaxWidth())
             if (exercise.status != ExerciseExecutionStatus.COMPLETED) {
@@ -323,18 +334,14 @@ private fun SetEditor(
             LoadMode.entries.forEach { item -> FilterChip(selected = mode == item, onClick = { mode = item }, label = { Text(item.label()) }) }
             Text("Medición")
             MeasurementUnit.entries.forEach { item -> FilterChip(selected = unit == item, onClick = { unit = item }, label = { Text(item.label()) }) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(targetLoad, { targetLoad = it }, label = { Text("Carga objetivo") }, modifier = Modifier.weight(1f))
-                OutlinedTextField(targetMeasurement, { targetMeasurement = it }, label = { Text("Objetivo") }, modifier = Modifier.weight(1f))
-            }
+            OutlinedTextField(targetLoad, { targetLoad = it }, label = { Text("Carga objetivo") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(targetMeasurement, { targetMeasurement = it }, label = { Text("Objetivo") }, modifier = Modifier.fillMaxWidth())
             TextButton(
                 onClick = { onSaveTargets(set, targetLoad.parseDecimal(), targetMeasurement.toIntOrNull(), mode, unit) },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Guardar objetivo") }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(actualLoad, { actualLoad = it }, label = { Text("Carga real") }, modifier = Modifier.weight(1f))
-                OutlinedTextField(actualMeasurement, { actualMeasurement = it }, label = { Text("Real") }, modifier = Modifier.weight(1f))
-            }
+            OutlinedTextField(actualLoad, { actualLoad = it }, label = { Text("Carga real") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(actualMeasurement, { actualMeasurement = it }, label = { Text("Real") }, modifier = Modifier.fillMaxWidth())
             Text("RIR${if (rirRequired) " obligatorio" else " opcional"}")
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf<Int?>(null, 0, 1, 2).forEach { item ->
@@ -364,8 +371,8 @@ private fun LoadMode.label(): String = when (this) {
     LoadMode.KG_PER_HAND -> "kg/mano"
     LoadMode.KG_PER_SIDE -> "kg/lado"
     LoadMode.BODYWEIGHT -> "peso corporal"
-    LoadMode.BODYWEIGHT_PLUS_LOAD -> "peso corporal + lastre"
-    LoadMode.BODYWEIGHT_MINUS_ASSISTANCE -> "peso corporal - asistencia"
+    LoadMode.BODYWEIGHT_PLUS_LOAD -> "peso corporal + X kg"
+    LoadMode.BODYWEIGHT_MINUS_ASSISTANCE -> "peso corporal - X kg asistencia"
     LoadMode.NO_WEIGHT -> "sin peso"
 }
 
