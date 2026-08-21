@@ -8,6 +8,7 @@ import com.mundoinformaticacanaria.gymup.core.model.MeasurementUnit
 import com.mundoinformaticacanaria.gymup.core.model.SessionExecutionResult
 import com.mundoinformaticacanaria.gymup.core.model.SessionOperationalState
 import com.mundoinformaticacanaria.gymup.core.model.ThemeMode
+import com.mundoinformaticacanaria.gymup.data.images.ExerciseImageManager
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
 import com.mundoinformaticacanaria.gymup.data.local.SessionEntity
 import com.mundoinformaticacanaria.gymup.data.local.SessionExerciseEntity
@@ -18,8 +19,10 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataCodec
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataValidationResult
 import java.time.LocalDate
 import java.util.UUID
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -54,7 +57,7 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
-    fun `snapshot round trip restores masters sessions sets and preferences`() = runBlocking {
+    fun `snapshot round trip restores masters sessions sets preferences and custom images`() = runBlocking {
         val dao = database.backupDao()
         val sessionType = dao.getSessionTypes().first()
         val exercise = dao.getExercises().first()
@@ -119,6 +122,10 @@ class RoomBackupDataSourceTest {
             ),
         )
 
+        val imageManager = ExerciseImageManager(context, database.exerciseDao())
+        val imageBytes = byteArrayOf(1, 2, 3, 4, 5)
+        val customImage = imageManager.addUserImage(exercise.id, imageBytes)
+
         val source = RoomBackupDataSource(context, database, preferences)
         val snapshot = source.exportSnapshot()
         val decoded = BackupDataCodec.decode(snapshot.data.decodeToString()).getOrThrow()
@@ -126,11 +133,14 @@ class RoomBackupDataSourceTest {
         assertEquals(BackupDataValidationResult.Valid, BackupDataCodec.validate(decoded))
         assertEquals(61, decoded.exercises.size)
         assertEquals(1, decoded.sessions.size)
+        assertEquals(1, decoded.exerciseImages.size)
         assertEquals(ThemeMode.DARK.name, decoded.preferences.themeMode)
+        assertArrayEquals(imageBytes, snapshot.images.getValue(customImage.storageKey))
 
         dao.deleteSessionSets()
         dao.deleteSessionExercises()
         dao.deleteSessions()
+        imageManager.deleteUserImage(customImage.id)
         preferences.setThemeMode(ThemeMode.LIGHT)
 
         source.replaceAll(snapshot)
@@ -139,6 +149,8 @@ class RoomBackupDataSourceTest {
         assertNotNull(database.trainingDao().getSession(sessionId))
         assertEquals(1, database.trainingDao().getSets(sessionExerciseId).size)
         assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
-        assertTrue(snapshot.images.isEmpty())
+        val restoredImage = imageManager.observeImages(exercise.id).first().single()
+        assertArrayEquals(imageBytes, imageManager.readBytes(restoredImage))
+        assertTrue(restoredImage.localFile?.isFile == true)
     }
 }
