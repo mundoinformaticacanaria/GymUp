@@ -1,6 +1,8 @@
 package com.mundoinformaticacanaria.gymup.app
 
 import android.content.Context
+import com.mundoinformaticacanaria.gymup.data.cleanup.HistoricalCleanupManager
+import com.mundoinformaticacanaria.gymup.data.cleanup.RoomHistoricalCleanupStore
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
 import com.mundoinformaticacanaria.gymup.data.preferences.UserPreferencesRepository
 import com.mundoinformaticacanaria.gymup.data.repository.RoomExerciseCatalogRepository
@@ -23,6 +25,7 @@ interface AppContainer {
     val exerciseCatalogRepository: ExerciseCatalogRepository
     val trainingRepository: TrainingRepository
     val historyRepository: HistoryRepository
+    val historicalCleanupManager: HistoricalCleanupManager
 }
 
 class DefaultAppContainer(context: Context) : AppContainer {
@@ -34,6 +37,7 @@ class DefaultAppContainer(context: Context) : AppContainer {
     override val exerciseCatalogRepository: ExerciseCatalogRepository = RoomExerciseCatalogRepository(database.exerciseDao())
     override val trainingRepository: TrainingRepository = RoomTrainingRepository(database)
     override val historyRepository: HistoryRepository = RoomHistoryRepository(database)
+    override val historicalCleanupManager = HistoricalCleanupManager(RoomHistoricalCleanupStore(database))
 
     init {
         applicationScope.launch { DatabaseSeeder(appContext, database).seedIfNeeded() }
