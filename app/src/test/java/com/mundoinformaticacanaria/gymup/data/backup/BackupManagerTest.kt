@@ -1,6 +1,7 @@
 package com.mundoinformaticacanaria.gymup.data.backup
 
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupArchiveCodec
+import com.mundoinformaticacanaria.gymup.domain.backup.BackupManifestV1
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -12,7 +13,7 @@ class BackupManagerTest {
     fun `export delegates snapshot into validated archive`() {
         val source = FakeDataSource(
             mapOf(
-                "database/gymup.db" to "db".encodeToByteArray(),
+                BackupManifestV1.DATA_PATH to "db".encodeToByteArray(),
                 "images/user-1.jpg" to "image".encodeToByteArray(),
             ),
         )
@@ -25,14 +26,14 @@ class BackupManagerTest {
     @Test
     fun `valid import replaces all only after validation`() {
         val source = FakeDataSource(emptyMap())
-        val files = mapOf("database/gymup.db" to "restored".encodeToByteArray())
+        val files = mapOf(BackupManifestV1.DATA_PATH to "restored".encodeToByteArray())
         val archive = BackupArchiveCodec.create(files)
 
         val result = BackupManager(source).importReplaceAll(archive)
 
         assertEquals(BackupImportResult.Imported(1), result)
         assertEquals(files.keys, source.replaced?.keys)
-        assertTrue(files.getValue("database/gymup.db").contentEquals(source.replaced!!.getValue("database/gymup.db")))
+        assertTrue(files.getValue(BackupManifestV1.DATA_PATH).contentEquals(source.replaced!!.getValue(BackupManifestV1.DATA_PATH)))
     }
 
     @Test
