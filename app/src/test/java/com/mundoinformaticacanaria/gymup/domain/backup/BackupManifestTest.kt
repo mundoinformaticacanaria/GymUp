@@ -1,10 +1,9 @@
 package com.mundoinformaticacanaria.gymup.domain.backup
 
 import java.time.Instant
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlin.test.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
 class BackupManifestTest {
     private val exportedAt = Instant.parse("2026-08-21T00:00:00Z")
@@ -67,7 +66,7 @@ class BackupManifestTest {
         val manifest = BackupManifestCodec.create(original, exportedAt)
         val tampered = mapOf(BackupManifestV1.DATA_PATH to "tampered".encodeToByteArray())
 
-        assertIs<BackupValidationResult.SizeMismatch>(BackupManifestCodec.validate(manifest, tampered))
+        assertTrue(BackupManifestCodec.validate(manifest, tampered) is BackupValidationResult.SizeMismatch)
     }
 
     @Test
