@@ -1,64 +1,70 @@
 package com.mundoinformaticacanaria.gymup.data.backup
 
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupArchiveCodec
-import com.mundoinformaticacanaria.gymup.domain.backup.BackupManifestV1
+import com.mundoinformaticacanaria.gymup.domain.backup.BackupArchiveReadResult
+import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import java.time.Instant
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BackupManagerTest {
+    private val imageKey = "user:00000000-0000-0000-0000-000000000001"
+
     @Test
-    fun `export delegates snapshot into validated archive`() {
-        val source = FakeDataSource(
-            mapOf(
-                BackupManifestV1.DATA_PATH to "db".encodeToByteArray(),
-                "images/user-1.jpg" to "image".encodeToByteArray(),
-            ),
+    fun `export delegates snapshot into validated archive`() = runBlocking {
+        val snapshot = BackupSnapshot(
+            data = "db".encodeToByteArray(),
+            images = mapOf(imageKey to "image".encodeToByteArray()),
         )
-        val archive = BackupManager(source).export(Instant.parse("2026-08-21T03:00:00Z"))
+        val source = FakeDataSource(snapshot)
+        val archive = BackupManager(source, "0.1.0").export(Instant.parse("2026-08-21T03:00:00Z"))
 
         val read = BackupArchiveCodec.readAndValidate(archive)
-        assertTrue(read is com.mundoinformaticacanaria.gymup.domain.backup.BackupArchiveReadResult.Valid)
+        assertTrue(read is BackupArchiveReadResult.Valid)
+        read as BackupArchiveReadResult.Valid
+        assertArrayEquals(snapshot.data, read.snapshot.data)
+        assertArrayEquals(snapshot.images.getValue(imageKey), read.snapshot.images.getValue(imageKey))
     }
 
     @Test
-    fun `valid import replaces all only after validation`() {
-        val source = FakeDataSource(emptyMap())
-        val files = mapOf(BackupManifestV1.DATA_PATH to "restored".encodeToByteArray())
-        val archive = BackupArchiveCodec.create(files)
+    fun `valid import replaces all only after validation`() = runBlocking {
+        val source = FakeDataSource(BackupSnapshot("current".encodeToByteArray()))
+        val restored = BackupSnapshot("restored".encodeToByteArray())
+        val archive = BackupArchiveCodec.create(restored, "0.1.0")
 
-        val result = BackupManager(source).importReplaceAll(archive)
+        val result = BackupManager(source, "0.1.0").importReplaceAll(archive)
 
-        assertEquals(BackupImportResult.Imported(1), result)
-        assertEquals(files.keys, source.replaced?.keys)
-        assertTrue(files.getValue(BackupManifestV1.DATA_PATH).contentEquals(source.replaced!!.getValue(BackupManifestV1.DATA_PATH)))
+        assertEquals(BackupImportResult.Imported(0), result)
+        assertArrayEquals(restored.data, source.replaced?.data)
     }
 
     @Test
-    fun `invalid import never mutates current data`() {
-        val source = FakeDataSource(emptyMap())
+    fun `invalid import never mutates current data`() = runBlocking {
+        val source = FakeDataSource(BackupSnapshot("current".encodeToByteArray()))
 
-        val result = BackupManager(source).importReplaceAll("not-a-zip".encodeToByteArray())
+        val result = BackupManager(source, "0.1.0").importReplaceAll("not-a-zip".encodeToByteArray())
 
         assertTrue(result is BackupImportResult.Rejected)
         assertFalse(source.replaceCalled)
     }
 
     private class FakeDataSource(
-        private val exported: Map<String, ByteArray>,
+        private val exported: BackupSnapshot,
     ) : BackupDataSource {
         var replaceCalled = false
             private set
-        var replaced: Map<String, ByteArray>? = null
+        var replaced: BackupSnapshot? = null
             private set
 
-        override fun exportFiles(): Map<String, ByteArray> = exported
+        override suspend fun exportSnapshot(): BackupSnapshot = exported
 
-        override fun replaceAll(files: Map<String, ByteArray>) {
+        override suspend fun replaceAll(snapshot: BackupSnapshot) {
             replaceCalled = true
-            replaced = files
+            replaced = snapshot
         }
     }
 }
