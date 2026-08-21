@@ -64,6 +64,7 @@ fun ExerciseEditorScreen(
     var description by remember(exerciseId) { mutableStateOf("") }
     var error by remember(exerciseId) { mutableStateOf<String?>(null) }
     var deletionPreview by remember { mutableStateOf<ExerciseDeletionPreview?>(null) }
+    var savedExerciseId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(exerciseId) {
         if (exerciseId != null) {
@@ -110,7 +111,7 @@ fun ExerciseEditorScreen(
         topBar = {
             TopAppBar(
                 title = { Text(if (exerciseId == null) "Nuevo ejercicio" else "Editar ejercicio") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Atrás") } },
+                navigationIcon = { TextButton(onClick = onBack) { Text("Cancelar") } },
             )
         },
     ) { padding ->
@@ -137,11 +138,7 @@ fun ExerciseEditorScreen(
                 Text("Grupo muscular", style = MaterialTheme.typography.titleMedium)
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     groups.forEach { group ->
-                        FilterChip(
-                            selected = muscleGroupId == group.id,
-                            onClick = { muscleGroupId = group.id },
-                            label = { Text(group.name) },
-                        )
+                        FilterChip(selected = muscleGroupId == group.id, onClick = { muscleGroupId = group.id }, label = { Text(group.name) })
                     }
                 }
             }
@@ -150,11 +147,7 @@ fun ExerciseEditorScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     FilterChip(selected = equipmentId == null, onClick = { equipmentId = null }, label = { Text("Sin equipo") })
                     equipment.forEach { item ->
-                        FilterChip(
-                            selected = equipmentId == item.id,
-                            onClick = { equipmentId = item.id },
-                            label = { Text(item.name) },
-                        )
+                        FilterChip(selected = equipmentId == item.id, onClick = { equipmentId = item.id }, label = { Text(item.name) })
                     }
                 }
             }
@@ -170,11 +163,7 @@ fun ExerciseEditorScreen(
                 Text("Unidad de medición", style = MaterialTheme.typography.titleMedium)
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     MeasurementUnit.entries.forEach { unit ->
-                        FilterChip(
-                            selected = measurementUnit == unit,
-                            onClick = { measurementUnit = unit },
-                            label = { Text(unit.label()) },
-                        )
+                        FilterChip(selected = measurementUnit == unit, onClick = { measurementUnit = unit }, label = { Text(unit.label()) })
                     }
                 }
             }
@@ -208,13 +197,18 @@ fun ExerciseEditorScreen(
                                     maintenanceRepository.updateExercise(exerciseId, input)
                                     exerciseId
                                 }
-                            }.onSuccess(onSaved)
-                                .onFailure { error = it.message ?: "No se pudo guardar el ejercicio" }
+                            }.onSuccess {
+                                error = null
+                                savedExerciseId = it
+                            }.onFailure { error = it.message ?: "No se pudo guardar el ejercicio" }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = nameEs.isNotBlank() && nameEn.isNotBlank() && muscleGroupId != null,
                 ) { Text("Guardar ejercicio") }
+            }
+            item {
+                OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Cancelar y volver") }
             }
             if (exerciseId != null) {
                 item {
@@ -233,6 +227,20 @@ fun ExerciseEditorScreen(
         }
     }
 
+    savedExerciseId?.let { savedId ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Ejercicio guardado") },
+            text = { Text("La ficha y su configuración inicial se han guardado correctamente.") },
+            confirmButton = {
+                Button(onClick = {
+                    savedExerciseId = null
+                    onSaved(savedId)
+                }) { Text("Volver al maestro") }
+            },
+        )
+    }
+
     deletionPreview?.let { preview ->
         AlertDialog(
             onDismissRequest = { deletionPreview = null },
@@ -240,10 +248,8 @@ fun ExerciseEditorScreen(
             text = {
                 Text(
                     when {
-                        preview.willDeactivate ->
-                            "El ejercicio tiene ${preview.historicalReferences} referencia(s) histórica(s). No se borrará: se desactivará y el histórico se conservará."
-                        preview.requiresRoutineConfirmation ->
-                            "El ejercicio no tiene histórico, pero aparece en ${preview.routineReferences} rutina(s). Se eliminará también de esas rutinas."
+                        preview.willDeactivate -> "El ejercicio tiene ${preview.historicalReferences} referencia(s) histórica(s). No se borrará: se desactivará y el histórico se conservará."
+                        preview.requiresRoutineConfirmation -> "El ejercicio no tiene histórico, pero aparece en ${preview.routineReferences} rutina(s). Se eliminará también de esas rutinas."
                         else -> "El ejercicio no tiene histórico ni referencias en rutinas y se eliminará definitivamente."
                     },
                 )
