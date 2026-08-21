@@ -103,7 +103,7 @@ class RoomCatalogMaintenanceRepository(
         dao.getExercise(exerciseId)?.toMaintenanceData()
 
     override suspend fun createExercise(input: ExerciseMaintenanceInput): String {
-        val validated = validateExerciseInput(input, excludingId = null)
+        val validated = validateExerciseInput(input, excludingId = null, current = null)
         val id = UUID.randomUUID().toString()
         dao.insertExercise(validated.toEntity(id = id, favorite = false, active = true))
         return id
@@ -111,7 +111,7 @@ class RoomCatalogMaintenanceRepository(
 
     override suspend fun updateExercise(exerciseId: String, input: ExerciseMaintenanceInput) {
         val current = requireNotNull(dao.getExercise(exerciseId)) { "Ejercicio inexistente" }
-        val validated = validateExerciseInput(input, excludingId = exerciseId)
+        val validated = validateExerciseInput(input, excludingId = exerciseId, current = current)
         dao.updateExercise(
             validated.toEntity(
                 id = exerciseId,
@@ -165,6 +165,7 @@ class RoomCatalogMaintenanceRepository(
     private suspend fun validateExerciseInput(
         input: ExerciseMaintenanceInput,
         excludingId: String?,
+        current: ExerciseEntity?,
     ): ValidatedExerciseInput {
         val nameEs = input.nameEs.trim()
         val nameEn = input.nameEn.trim()
@@ -178,10 +179,16 @@ class RoomCatalogMaintenanceRepository(
         require(duplicateEn == null || duplicateEn.id == excludingId) { "Ya existe un ejercicio con ese nombre en inglés" }
 
         val group = requireNotNull(dao.getMuscleGroup(input.muscleGroupId)) { "Grupo muscular inexistente" }
-        require(group.isActive) { "El grupo muscular está desactivado" }
+        val keepsCurrentGroup = current?.muscleGroupId == input.muscleGroupId
+        require(group.isActive || keepsCurrentGroup) {
+            "No se puede asignar un grupo muscular desactivado a un ejercicio nuevo"
+        }
         input.equipmentId?.let { equipmentId ->
             val equipment = requireNotNull(dao.getEquipment(equipmentId)) { "Equipo inexistente" }
-            require(equipment.isActive) { "El equipo está desactivado" }
+            val keepsCurrentEquipment = current?.equipmentId == equipmentId
+            require(equipment.isActive || keepsCurrentEquipment) {
+                "No se puede asignar un equipo desactivado a un ejercicio nuevo"
+            }
         }
         require(input.initialSetCount == null || input.initialSetCount > 0) { "Las series iniciales deben ser mayores que 0" }
         require(input.initialLoad == null || input.initialLoad >= 0.0) { "La carga inicial no puede ser negativa" }
