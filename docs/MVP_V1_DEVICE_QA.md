@@ -8,15 +8,36 @@ Este checklist cubre las comprobaciones que no pueden certificarse únicamente m
 - Teléfono en orientación vertical.
 - Instalar el artefacto `gymup-v1-release` generado por el CI del SHA final.
 
-## Smoke test
+## Home y navegación
 
-1. La aplicación instala y abre sin crash.
-2. Home muestra el bloque **Hoy** y permite crear una sesión.
-3. Crear una sesión vacía, añadir un ejercicio y una serie.
-4. Registrar objetivo y real, seleccionar RIR y usar `Cumplido` en otra serie.
-5. Finalizar la sesión y comprobar estado/resultados.
-6. Abrir Histórico y volver a abrir la sesión realizada.
-7. Abrir histórico del ejercicio y cambiar entre Carga/Medición.
+1. Los accesos rápidos deben tener apariencia claramente habilitada; no deben parecer controles desactivados.
+2. Con una sesión En curso hoy, Home prioriza **Continuar**.
+3. Con una Planificada, muestra **Empezar**.
+4. Con una Realizada, muestra **Ver**.
+5. `Nueva sesión` permanece accesible.
+6. Sesiones, Rutinas, Ejercicios, Histórico y Ajustes son alcanzables y permiten volver sin perder el flujo.
+
+## Creación y planificación de sesión
+
+1. Abrir `Nueva sesión` y comprobar que el flujo no depende de descubrir contenido fuera de pantalla.
+2. Si no existen rutinas, `Desde rutina` debe explicarlo claramente y no dejar una selección vacía confusa.
+3. Si no existen sesiones duplicables, `Duplicar sesión` debe explicarlo claramente.
+4. Tipo, fecha y demás metadatos deben mostrarse de forma compacta, con edición explícita cuando se quiera cambiar.
+5. Crear una sesión vacía.
+6. Añadir ejercicios usando búsqueda incremental por nombre ES/EN.
+7. Crear un ejercicio con defaults de series/carga/medición y comprobar que esos defaults se precargan al incorporarlo a una sesión sin histórico válido previo.
+
+## Ejecución de sesión
+
+1. Desde una sesión Planificada, iniciar sesión mediante una acción clara `Iniciar sesión`.
+2. El estado operativo debe evolucionar automáticamente con el trabajo real; la manipulación manual del estado no debe ser el flujo ordinario.
+3. En modo ejecución, comprobar que se presenta primero la lista de ejercicios planificados.
+4. Abrir un ejercicio y comprobar que se muestran solo sus series, instrucciones e imágenes.
+5. Deben existir acciones claras `Finalizar ejercicio` y `Volver a la sesión` para escoger otro ejercicio.
+6. Registrar objetivo y real, seleccionar RIR, usar `Cumplido` y descansos.
+7. Finalizar la sesión y comprobar estado/resultados derivados.
+8. Abrir Histórico y volver a abrir la sesión realizada.
+9. Abrir histórico del ejercicio y cambiar entre Carga/Medición.
 
 ## Catálogos y ejercicios
 
@@ -24,17 +45,11 @@ Este checklist cubre las comprobaciones que no pueden certificarse únicamente m
 2. Comprobar que `Otro` de Tipo de sesión no puede renombrarse ni desactivarse.
 3. Crear un grupo muscular y un equipo personalizados.
 4. Crear un ejercicio personalizado con nombres ES/EN, defaults y RIR.
-5. Añadir una imagen desde galería y comprobar que aparece en la ficha.
-6. Añadir ese ejercicio a una sesión y comprobar que instrucciones/imágenes pueden consultarse sin abandonar el registro.
-7. Desactivar/borrar un ejercicio y comprobar la confirmación adecuada según tenga histórico o referencias en rutinas.
-
-## Home y navegación
-
-1. Con una sesión En curso hoy, Home prioriza **Continuar**.
-2. Con una Planificada, muestra **Empezar**.
-3. Con una Realizada, muestra **Ver**.
-4. `Nueva sesión` permanece accesible.
-5. Sesiones, Rutinas, Ejercicios, Histórico y Ajustes son alcanzables y permiten volver sin perder el flujo.
+5. Al guardar, debe mostrarse feedback visible y existir acción clara `Volver`/`Cancelar` sin depender del gesto/botón del teléfono.
+6. Reabrir el ejercicio y comprobar que los defaults guardados persisten.
+7. Añadir una imagen desde galería y comprobar que aparece en la ficha.
+8. Añadir ese ejercicio a una sesión y comprobar que instrucciones/imágenes pueden consultarse sin abandonar el registro.
+9. Desactivar/borrar un ejercicio y comprobar la confirmación adecuada según tenga histórico o referencias en rutinas.
 
 ## Apariencia y accesibilidad
 
@@ -83,4 +98,4 @@ La Issue #8 puede cerrarse cuando:
 - el APK `gymup-v1-release` se genera correctamente;
 - este checklist no descubre bloqueos P0/P1 en el dispositivo objetivo.
 
-Cualquier defecto descubierto se registra como Issue antes de cerrar #8. Si la validación física requiere intervención del propietario, #8 debe permanecer abierta y etiquetarse `PROPIETARIO` hasta recibir el resultado.
+Cualquier defecto descubierto se corrige antes de cerrar #8. Si la validación física requiere intervención del propietario, #8 permanece abierta y etiquetada `PROPIETARIO`; si el propietario aporta incidencias reproducibles, vuelve a `TECH LEAD` hasta generar un nuevo candidato.
