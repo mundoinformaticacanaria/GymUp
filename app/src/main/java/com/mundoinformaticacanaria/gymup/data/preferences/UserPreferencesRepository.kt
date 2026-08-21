@@ -11,6 +11,7 @@ import com.mundoinformaticacanaria.gymup.core.model.ThemeMode
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.gymUpPreferences: DataStore<Preferences> by preferencesDataStore(
@@ -32,6 +33,8 @@ class UserPreferencesRepository(context: Context) {
             val stored = preferences[THEME_MODE_KEY]
             ThemeMode.entries.firstOrNull { it.name == stored } ?: ThemeMode.SYSTEM
         }
+
+    suspend fun currentThemeMode(): ThemeMode = themeMode.first()
 
     suspend fun setThemeMode(themeMode: ThemeMode) {
         dataStore.edit { preferences ->
