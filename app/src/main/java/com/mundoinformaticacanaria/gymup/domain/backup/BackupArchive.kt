@@ -7,10 +7,15 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
+data class BackupSnapshot(
+    val data: ByteArray,
+    val images: Map<String, ByteArray> = emptyMap(),
+)
+
 sealed interface BackupArchiveReadResult {
     data class Valid(
         val manifest: BackupManifestV1,
-        val files: Map<String, ByteArray>,
+        val snapshot: BackupSnapshot,
     ) : BackupArchiveReadResult
 
     data class Invalid(val reason: String) : BackupArchiveReadResult
@@ -23,17 +28,24 @@ object BackupArchiveCodec {
     private const val MAX_ENTRIES = 1_000
 
     fun create(
-        files: Map<String, ByteArray>,
+        snapshot: BackupSnapshot,
+        appVersion: String,
         exportedAt: Instant = Instant.now(),
     ): ByteArray {
-        val manifest = BackupManifestCodec.create(files, exportedAt)
+        val manifest = BackupManifestCodec.create(
+            data = snapshot.data,
+            images = snapshot.images,
+            appVersion = appVersion,
+            exportedAt = exportedAt,
+        )
         val manifestBytes = BackupManifestCodec.encode(manifest).encodeToByteArray()
 
         return ByteArrayOutputStream().use { output ->
             ZipOutputStream(output).use { zip ->
                 writeEntry(zip, BackupManifestV1.MANIFEST_PATH, manifestBytes)
-                files.entries.sortedBy { it.key }.forEach { (path, bytes) ->
-                    writeEntry(zip, path, bytes)
+                writeEntry(zip, BackupManifestV1.DATA_PATH, snapshot.data)
+                manifest.images.forEach { image ->
+                    writeEntry(zip, image.path, snapshot.images.getValue(image.storageKey))
                 }
             }
             output.toByteArray()
@@ -79,7 +91,7 @@ object BackupArchiveCodec {
             return BackupArchiveReadResult.Invalid("Manifest no válido: ${it.message ?: "JSON inválido"}")
         }
 
-        val declaredPaths = manifest.files.map { it.path }.toSet()
+        val declaredPaths = BackupManifestCodec.declaredPaths(manifest)
         val unexpected = entries.keys.firstOrNull { it !in declaredPaths }
         if (unexpected != null) {
             return BackupArchiveReadResult.Invalid("Archivo no declarado en manifest: $unexpected")
@@ -89,7 +101,17 @@ object BackupArchiveCodec {
         if (validation != BackupValidationResult.Valid) {
             return BackupArchiveReadResult.ValidationFailed(validation)
         }
-        return BackupArchiveReadResult.Valid(manifest, entries.toMap())
+
+        val images = manifest.images.associate { image ->
+            image.storageKey to entries.getValue(image.path)
+        }
+        return BackupArchiveReadResult.Valid(
+            manifest = manifest,
+            snapshot = BackupSnapshot(
+                data = entries.getValue(manifest.data.path),
+                images = images,
+            ),
+        )
     }
 
     private fun writeEntry(zip: ZipOutputStream, path: String, bytes: ByteArray) {
