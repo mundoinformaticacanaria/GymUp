@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -116,11 +117,12 @@ private fun QuickLinks(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Accesos rápidos", style = MaterialTheme.typography.titleMedium)
-        OutlinedButton(onClick = onSessions, modifier = Modifier.fillMaxWidth()) { Text("Sesiones") }
-        OutlinedButton(onClick = onRoutines, modifier = Modifier.fillMaxWidth()) { Text("Rutinas") }
-        OutlinedButton(onClick = onExercises, modifier = Modifier.fillMaxWidth()) { Text("Ejercicios") }
-        OutlinedButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) { Text("Histórico") }
-        OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth()) { Text("Ajustes") }
+        Text("Abre directamente cada sección.", style = MaterialTheme.typography.bodySmall)
+        FilledTonalButton(onClick = onSessions, modifier = Modifier.fillMaxWidth()) { Text("Sesiones") }
+        FilledTonalButton(onClick = onRoutines, modifier = Modifier.fillMaxWidth()) { Text("Rutinas") }
+        FilledTonalButton(onClick = onExercises, modifier = Modifier.fillMaxWidth()) { Text("Ejercicios") }
+        FilledTonalButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) { Text("Histórico") }
+        FilledTonalButton(onClick = onSettings, modifier = Modifier.fillMaxWidth()) { Text("Ajustes") }
     }
 }
 
@@ -132,7 +134,7 @@ private fun SessionOperationalState.homePriority(): Int = when (this) {
 
 private fun SessionOperationalState.actionLabel(): String = when (this) {
     SessionOperationalState.IN_PROGRESS -> "Continuar"
-    SessionOperationalState.PLANNED -> "Empezar"
+    SessionOperationalState.PLANNED -> "Abrir planificación"
     SessionOperationalState.REALIZED -> "Ver"
 }
 
