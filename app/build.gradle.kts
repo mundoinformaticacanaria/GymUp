@@ -15,7 +15,7 @@ android {
         minSdk = 35
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0-dev"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -23,6 +23,11 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // MVP v1 is distributed manually, not through Google Play. Reuse the debug signing
+            // configuration so the generated release APK is directly installable without storing
+            // production signing secrets in GitHub. A future store release must introduce a
+            // dedicated owner-controlled production key and increment versionCode.
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
