@@ -42,7 +42,7 @@ import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogReposito
 import com.mundoinformaticacanaria.gymup.domain.repository.MissingRirException
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionDetail
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingExercise
-import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
+import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingSet
 import com.mundoinformaticacanaria.gymup.feature.exercises.ExerciseImageGallery
 import java.time.LocalDate
@@ -52,7 +52,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SessionDetailScreen(
     sessionId: String,
-    trainingRepository: TrainingRepository,
+    sessionRepository: SessionRepository,
     masterCatalogRepository: MasterCatalogRepository,
     exerciseCatalogRepository: ExerciseCatalogRepository,
     exerciseImageManager: ExerciseImageManager,
@@ -70,7 +70,7 @@ fun SessionDetailScreen(
     var selectedExerciseId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(sessionId, refresh) {
-        detail = trainingRepository.getSessionDetail(sessionId)
+        detail = sessionRepository.getSessionDetail(sessionId)
         if (selectedExerciseId != null && detail?.exercises?.none { it.id == selectedExerciseId } == true) {
             selectedExerciseId = null
         }
@@ -127,23 +127,23 @@ fun SessionDetailScreen(
                             val ids = current.exercises.map { it.id }.toMutableList()
                             val id = ids.removeAt(index)
                             ids.add(index - 1, id)
-                            action { trainingRepository.reorderExercises(sessionId, ids) }
+                            action { sessionRepository.reorderExercises(sessionId, ids) }
                         },
                         onMoveDown = {
                             val ids = current.exercises.map { it.id }.toMutableList()
                             val id = ids.removeAt(index)
                             ids.add(index + 1, id)
-                            action { trainingRepository.reorderExercises(sessionId, ids) }
+                            action { sessionRepository.reorderExercises(sessionId, ids) }
                         },
-                        onSaveMeta = { rest, note, reason -> action { trainingRepository.updateExerciseMeta(selectedExercise.id, rest, note, reason) } },
-                        onAddSet = { action { trainingRepository.addSet(selectedExercise.id) } },
-                        onDeleteExercise = { action { trainingRepository.deleteExercise(selectedExercise.id) } },
-                        onFinalizeExercise = { action { trainingRepository.finalizeExercise(selectedExercise.id) } },
-                        onSaveTargets = { set, load, measurement, mode, unit -> action { trainingRepository.updateSetTargets(set.id, load, measurement, mode, unit) } },
-                        onSaveActual = { set, load, measurement, rir -> action { trainingRepository.updateSetActual(set.id, load, measurement, rir) } },
-                        onSetRest = { set, rest -> action { trainingRepository.updateSetRest(set.id, rest) } },
-                        onFulfilled = { set -> action { trainingRepository.fulfillSet(set.id) } },
-                        onDeleteSet = { set -> action { trainingRepository.deleteSet(set.id) } },
+                        onSaveMeta = { rest, note, reason -> action { sessionRepository.updateExerciseMeta(selectedExercise.id, rest, note, reason) } },
+                        onAddSet = { action { sessionRepository.addSet(selectedExercise.id) } },
+                        onDeleteExercise = { action { sessionRepository.deleteExercise(selectedExercise.id) } },
+                        onFinalizeExercise = { action { sessionRepository.finalizeExercise(selectedExercise.id) } },
+                        onSaveTargets = { set, load, measurement, mode, unit -> action { sessionRepository.updateSetTargets(set.id, load, measurement, mode, unit) } },
+                        onSaveActual = { set, load, measurement, rir -> action { sessionRepository.updateSetActual(set.id, load, measurement, rir) } },
+                        onSetRest = { set, rest -> action { sessionRepository.updateSetRest(set.id, rest) } },
+                        onFulfilled = { set -> action { sessionRepository.fulfillSet(set.id) } },
+                        onDeleteSet = { set -> action { sessionRepository.deleteSet(set.id) } },
                     )
                 }
                 item {
@@ -164,14 +164,14 @@ fun SessionDetailScreen(
                     detail = current,
                     typeOptions = types.map { it.id to it.name },
                     message = message,
-                    onSaveMetadata = { typeId, name, note -> action { trainingRepository.updateSessionMetadata(sessionId, typeId, name, note) } },
-                    onChangePosition = { date, order -> action { trainingRepository.changeSessionPosition(sessionId, date, order) } },
-                    onRecalculate = { action { trainingRepository.recalculateObjectives(sessionId) } },
-                    onStart = { action { trainingRepository.setOperationalState(sessionId, SessionOperationalState.IN_PROGRESS) } },
-                    onFinalize = { action { trainingRepository.finalizeSession(sessionId) } },
+                    onSaveMetadata = { typeId, name, note -> action { sessionRepository.updateSessionMetadata(sessionId, typeId, name, note) } },
+                    onChangePosition = { date, order -> action { sessionRepository.changeSessionPosition(sessionId, date, order) } },
+                    onRecalculate = { action { sessionRepository.recalculateObjectives(sessionId) } },
+                    onStart = { action { sessionRepository.setOperationalState(sessionId, SessionOperationalState.IN_PROGRESS) } },
+                    onFinalize = { action { sessionRepository.finalizeSession(sessionId) } },
                     onDelete = {
                         scope.launch {
-                            runCatching { trainingRepository.deleteSession(sessionId) }
+                            runCatching { sessionRepository.deleteSession(sessionId) }
                                 .onSuccess { onDeleted() }
                                 .onFailure { message = it.message }
                         }
@@ -203,7 +203,7 @@ fun SessionDetailScreen(
                         }
                         candidates.forEach { exercise ->
                             TextButton(
-                                onClick = { action { trainingRepository.addExercise(sessionId, exercise.id) } },
+                                onClick = { action { sessionRepository.addExercise(sessionId, exercise.id) } },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("${exercise.nameEs} · ${exercise.nameEn}") }
                         }
@@ -236,7 +236,7 @@ fun SessionDetailScreen(
                                     val ids = current.exercises.map { it.id }.toMutableList()
                                     val id = ids.removeAt(index)
                                     ids.add(index - 1, id)
-                                    action { trainingRepository.reorderExercises(sessionId, ids) }
+                                    action { sessionRepository.reorderExercises(sessionId, ids) }
                                 },
                             ) { Text("↑ Subir") }
                             TextButton(
@@ -245,7 +245,7 @@ fun SessionDetailScreen(
                                     val ids = current.exercises.map { it.id }.toMutableList()
                                     val id = ids.removeAt(index)
                                     ids.add(index + 1, id)
-                                    action { trainingRepository.reorderExercises(sessionId, ids) }
+                                    action { sessionRepository.reorderExercises(sessionId, ids) }
                                 },
                             ) { Text("↓ Bajar") }
                         }

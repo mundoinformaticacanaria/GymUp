@@ -36,7 +36,7 @@ import com.mundoinformaticacanaria.gymup.data.export.AndroidSessionReportFiles
 import com.mundoinformaticacanaria.gymup.domain.export.SessionReportFactory
 import com.mundoinformaticacanaria.gymup.domain.repository.HistoryRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
-import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
+import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
 import com.mundoinformaticacanaria.gymup.domain.usecase.SessionHistoryFilter
 import com.mundoinformaticacanaria.gymup.domain.usecase.filterSessionHistory
 import java.time.LocalDate
@@ -45,7 +45,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
-    trainingRepository: TrainingRepository,
+    sessionRepository: SessionRepository,
     masterCatalogRepository: MasterCatalogRepository,
     historyRepository: HistoryRepository,
     onOpenSession: (String) -> Unit,
@@ -53,7 +53,7 @@ fun HistoryScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val sessions by trainingRepository.observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
+    val sessions by sessionRepository.observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
     val sessionTypes by masterCatalogRepository.observeSessionTypes().collectAsStateWithLifecycle(initialValue = emptyList())
     val sessionTypeIds by historyRepository.observeSessionTypeIds().collectAsStateWithLifecycle(initialValue = emptyMap())
     var state by remember { mutableStateOf<SessionOperationalState?>(null) }
@@ -93,7 +93,7 @@ fun HistoryScreen(
         scope.launch {
             exportError = null
             runCatching {
-                val detail = requireNotNull(trainingRepository.getSessionDetail(sessionId)) {
+                val detail = requireNotNull(sessionRepository.getSessionDetail(sessionId)) {
                     "La sesión ya no está disponible"
                 }
                 val report = SessionReportFactory.create(detail)

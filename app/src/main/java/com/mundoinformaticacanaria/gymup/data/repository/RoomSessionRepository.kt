@@ -11,8 +11,6 @@ import com.mundoinformaticacanaria.gymup.data.local.ExerciseEntity
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
 import com.mundoinformaticacanaria.gymup.data.local.MasterDataDao
 import com.mundoinformaticacanaria.gymup.data.local.RoutineDao
-import com.mundoinformaticacanaria.gymup.data.local.RoutineEntity
-import com.mundoinformaticacanaria.gymup.data.local.RoutineExerciseEntity
 import com.mundoinformaticacanaria.gymup.data.local.SessionEntity
 import com.mundoinformaticacanaria.gymup.data.local.SessionExerciseEntity
 import com.mundoinformaticacanaria.gymup.data.local.SessionSetEntity
@@ -20,15 +18,12 @@ import com.mundoinformaticacanaria.gymup.data.local.TrainingDao
 import com.mundoinformaticacanaria.gymup.domain.repository.DuplicateExerciseException
 import com.mundoinformaticacanaria.gymup.domain.repository.InactiveExerciseException
 import com.mundoinformaticacanaria.gymup.domain.repository.MissingRirException
-import com.mundoinformaticacanaria.gymup.domain.repository.RoutineDetail
-import com.mundoinformaticacanaria.gymup.domain.repository.RoutineExercise
-import com.mundoinformaticacanaria.gymup.domain.repository.RoutineSummary
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionCreationResult
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionDetail
+import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionSource
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionSummary
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingExercise
-import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingSet
 import com.mundoinformaticacanaria.gymup.domain.usecase.buildAutoSessionName
 import com.mundoinformaticacanaria.gymup.domain.usecase.deriveExerciseStatus
@@ -40,9 +35,9 @@ import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 import java.util.UUID
 
-class RoomTrainingRepository(
+class RoomSessionRepository(
     private val database: GymUpDatabase,
-) : TrainingRepository {
+) : SessionRepository {
     private val trainingDao: TrainingDao = database.trainingDao()
     private val routineDao: RoutineDao = database.routineDao()
     private val exerciseDao: ExerciseDao = database.exerciseDao()
@@ -53,9 +48,6 @@ class RoomTrainingRepository(
 
     override fun observeSessionsForDate(date: LocalDate): Flow<List<SessionSummary>> =
         trainingDao.observeSessionsForDate(date.toEpochDay()).map { sessions -> sessions.map { it.toSummary() } }
-
-    override fun observeRoutines(): Flow<List<RoutineSummary>> =
-        routineDao.observeRoutines().map { routines -> routines.map { it.toSummary() } }
 
     override suspend fun getSessionDetail(sessionId: String): SessionDetail? = database.withTransaction {
         val session = trainingDao.getSession(sessionId) ?: return@withTransaction null
@@ -70,15 +62,6 @@ class RoomTrainingRepository(
             sessionTypeId = session.sessionTypeId,
             exercises = exercises,
         )
-    }
-
-    override suspend fun getRoutineDetail(routineId: String): RoutineDetail? = database.withTransaction {
-        val routine = routineDao.getById(routineId) ?: return@withTransaction null
-        val exercises = routineDao.getExercises(routineId).mapNotNull { link ->
-            val exercise = exerciseDao.getById(link.exerciseId) ?: return@mapNotNull null
-            RoutineExercise(exercise.id, link.position, exercise.nameEs, exercise.nameEn, exercise.isActive)
-        }
-        RoutineDetail(routine.toSummary(), exercises)
     }
 
     override suspend fun createSession(
@@ -329,50 +312,6 @@ class RoomTrainingRepository(
         trainingDao.updateSession(session.copy(operationalState = SessionOperationalState.REALIZED, executionResult = result))
     }
 
-    override suspend fun createRoutine(name: String, suggestedSessionTypeId: String?, description: String?): String {
-        require(name.isNotBlank()) { "El nombre de rutina es obligatorio" }
-        if (suggestedSessionTypeId != null) requireNotNull(masterDao.getSessionTypeById(suggestedSessionTypeId))
-        val id = UUID.randomUUID().toString()
-        routineDao.insertRoutine(RoutineEntity(id, name.trim(), suggestedSessionTypeId, description?.trim()?.takeIf(String::isNotBlank)))
-        return id
-    }
-
-    override suspend fun updateRoutine(routineId: String, name: String, suggestedSessionTypeId: String?, description: String?) {
-        require(name.isNotBlank())
-        if (suggestedSessionTypeId != null) requireNotNull(masterDao.getSessionTypeById(suggestedSessionTypeId))
-        val routine = requireNotNull(routineDao.getById(routineId))
-        routineDao.updateRoutine(routine.copy(name = name.trim(), suggestedSessionTypeId = suggestedSessionTypeId, description = description?.trim()?.takeIf(String::isNotBlank)))
-    }
-
-    override suspend fun deleteRoutine(routineId: String) {
-        val routine = routineDao.getById(routineId) ?: return
-        routineDao.deleteRoutine(routine)
-    }
-
-    override suspend fun addRoutineExercise(routineId: String, exerciseId: String) = database.withTransaction {
-        requireNotNull(routineDao.getById(routineId))
-        val exercise = requireNotNull(exerciseDao.getById(exerciseId))
-        if (!exercise.isActive) throw InactiveExerciseException()
-        val current = routineDao.getExercises(routineId)
-        if (current.any { it.exerciseId == exerciseId }) throw DuplicateExerciseException()
-        routineDao.insertExercise(RoutineExerciseEntity(routineId, exerciseId, current.size + 1))
-    }
-
-    override suspend fun deleteRoutineExercise(routineId: String, exerciseId: String) = database.withTransaction {
-        val item = routineDao.getExercises(routineId).firstOrNull { it.exerciseId == exerciseId } ?: return@withTransaction
-        routineDao.deleteExercise(item)
-        compactRoutinePositions(routineId)
-    }
-
-    override suspend fun reorderRoutineExercises(routineId: String, orderedExerciseIds: List<String>) = database.withTransaction {
-        val current = routineDao.getExercises(routineId)
-        require(current.map { it.exerciseId }.toSet() == orderedExerciseIds.toSet())
-        current.forEachIndexed { index, item -> routineDao.updateExercise(item.copy(position = -(index + 1))) }
-        orderedExerciseIds.forEachIndexed { index, id ->
-            routineDao.updateExercise(current.first { it.exerciseId == id }.copy(position = index + 1))
-        }
-    }
-
     private suspend fun addExerciseInternal(sessionId: String, exercise: ExerciseEntity) {
         val session = requireNotNull(trainingDao.getSession(sessionId))
         if (trainingDao.getSessionExerciseByExercise(sessionId, exercise.id) != null) throw DuplicateExerciseException()
@@ -499,12 +438,6 @@ class RoomTrainingRepository(
         sets.forEachIndexed { index, item -> trainingDao.updateSet(item.copy(position = index + 1)) }
     }
 
-    private suspend fun compactRoutinePositions(routineId: String) {
-        val items = routineDao.getExercises(routineId)
-        items.forEachIndexed { index, item -> routineDao.updateExercise(item.copy(position = -(index + 1))) }
-        items.forEachIndexed { index, item -> routineDao.updateExercise(item.copy(position = index + 1)) }
-    }
-
     private fun SessionEntity.toSummary(): SessionSummary = SessionSummary(
         id = id,
         date = LocalDate.ofEpochDay(sessionDateEpochDay),
@@ -548,8 +481,6 @@ class RoomTrainingRepository(
         restOverrideSeconds = restOverrideSeconds,
         actualConfirmed = actualConfirmed,
     )
-
-    private fun RoutineEntity.toSummary(): RoutineSummary = RoutineSummary(id, name, suggestedSessionTypeId, description)
 
     private data class SourceExercise(val exerciseId: String, val displayName: String)
 }

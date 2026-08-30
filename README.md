@@ -24,6 +24,7 @@ La fuente de verdad funcional y técnica del proyecto es este repositorio.
 - [Contrato funcional v1](docs/PRODUCT_CONTRACT_V1.md)
 - [Cierre funcional MVP v1](docs/PRODUCT_CONTRACT_V1_CLOSURE.md)
 - [Arquitectura técnica v1](docs/TECHNICAL_ARCHITECTURE_V1.md)
+- [Flujo UX de rutinas v1](docs/ROUTINES_UX_FLOW_V1.md)
 - [Modelo de datos v1](docs/DATA_MODEL_V1.md)
 - [Estrategia de pruebas](docs/TEST_STRATEGY_V1.md)
 - [Entrega e instalación manual del MVP](docs/RELEASE_MVP_V1.md)

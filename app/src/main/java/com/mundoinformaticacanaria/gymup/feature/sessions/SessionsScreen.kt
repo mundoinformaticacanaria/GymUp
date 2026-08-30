@@ -24,18 +24,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mundoinformaticacanaria.gymup.core.model.SessionExecutionResult
 import com.mundoinformaticacanaria.gymup.core.model.SessionOperationalState
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionSummary
-import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
+import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionsScreen(
-    trainingRepository: TrainingRepository,
+    sessionRepository: SessionRepository,
     onNewSession: () -> Unit,
     onOpenSession: (String) -> Unit,
     onBack: () -> Unit,
 ) {
-    val sessions by trainingRepository.observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
+    val sessions by sessionRepository.observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
     Scaffold(
         topBar = {
             TopAppBar(

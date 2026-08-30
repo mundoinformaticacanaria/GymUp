@@ -14,6 +14,7 @@ import com.mundoinformaticacanaria.gymup.feature.exercises.ExerciseHistoryScreen
 import com.mundoinformaticacanaria.gymup.feature.exercises.ExercisesScreen
 import com.mundoinformaticacanaria.gymup.feature.history.HistoryScreen
 import com.mundoinformaticacanaria.gymup.feature.home.HomeScreen
+import com.mundoinformaticacanaria.gymup.feature.routines.RoutineEditorScreen
 import com.mundoinformaticacanaria.gymup.feature.routines.RoutinesScreen
 import com.mundoinformaticacanaria.gymup.feature.sessions.NewSessionScreen
 import com.mundoinformaticacanaria.gymup.feature.sessions.SessionDetailScreen
@@ -33,7 +34,7 @@ fun GymUpApp(container: AppContainer) {
         NavHost(navController = navController, startDestination = Routes.HOME) {
             composable(Routes.HOME) {
                 HomeScreen(
-                    trainingRepository = container.trainingRepository,
+                    sessionRepository = container.sessionRepository,
                     onNewSession = { navController.navigate(Routes.NEW_SESSION) },
                     onOpenSession = { navController.navigate(Routes.sessionDetail(it)) },
                     onSessions = { navController.navigate(Routes.SESSIONS) },
@@ -45,7 +46,8 @@ fun GymUpApp(container: AppContainer) {
             }
             composable(Routes.NEW_SESSION) {
                 NewSessionScreen(
-                    trainingRepository = container.trainingRepository,
+                    sessionRepository = container.sessionRepository,
+                    routineRepository = container.routineRepository,
                     masterCatalogRepository = container.masterCatalogRepository,
                     exerciseCatalogRepository = container.exerciseCatalogRepository,
                     onCreated = { sessionId ->
@@ -58,7 +60,7 @@ fun GymUpApp(container: AppContainer) {
             }
             composable(Routes.SESSIONS) {
                 SessionsScreen(
-                    trainingRepository = container.trainingRepository,
+                    sessionRepository = container.sessionRepository,
                     onNewSession = { navController.navigate(Routes.NEW_SESSION) },
                     onOpenSession = { navController.navigate(Routes.sessionDetail(it)) },
                     onBack = navController::popBackStack,
@@ -68,7 +70,7 @@ fun GymUpApp(container: AppContainer) {
                 val sessionId = requireNotNull(entry.arguments?.getString("sessionId"))
                 SessionDetailScreen(
                     sessionId = sessionId,
-                    trainingRepository = container.trainingRepository,
+                    sessionRepository = container.sessionRepository,
                     masterCatalogRepository = container.masterCatalogRepository,
                     exerciseCatalogRepository = container.exerciseCatalogRepository,
                     exerciseImageManager = container.exerciseImageManager,
@@ -78,9 +80,34 @@ fun GymUpApp(container: AppContainer) {
             }
             composable(Routes.ROUTINES) {
                 RoutinesScreen(
-                    trainingRepository = container.trainingRepository,
+                    routineRepository = container.routineRepository,
+                    onNewRoutine = { navController.navigate(Routes.NEW_ROUTINE) },
+                    onOpenRoutine = { navController.navigate(Routes.routineEditor(it)) },
+                    onBack = navController::popBackStack,
+                )
+            }
+            composable(Routes.NEW_ROUTINE) {
+                RoutineEditorScreen(
+                    routineId = null,
+                    routineRepository = container.routineRepository,
                     masterCatalogRepository = container.masterCatalogRepository,
                     exerciseCatalogRepository = container.exerciseCatalogRepository,
+                    saveRoutineUseCase = container.saveRoutineUseCase,
+                    filterRoutineExercisesUseCase = container.filterRoutineExercisesUseCase,
+                    onFinished = navController::popBackStack,
+                    onBack = navController::popBackStack,
+                )
+            }
+            composable("${Routes.ROUTINE_DETAIL}/{routineId}") { entry ->
+                val routineId = requireNotNull(entry.arguments?.getString("routineId"))
+                RoutineEditorScreen(
+                    routineId = routineId,
+                    routineRepository = container.routineRepository,
+                    masterCatalogRepository = container.masterCatalogRepository,
+                    exerciseCatalogRepository = container.exerciseCatalogRepository,
+                    saveRoutineUseCase = container.saveRoutineUseCase,
+                    filterRoutineExercisesUseCase = container.filterRoutineExercisesUseCase,
+                    onFinished = navController::popBackStack,
                     onBack = navController::popBackStack,
                 )
             }
@@ -117,7 +144,7 @@ fun GymUpApp(container: AppContainer) {
             }
             composable(Routes.HISTORY) {
                 HistoryScreen(
-                    trainingRepository = container.trainingRepository,
+                    sessionRepository = container.sessionRepository,
                     masterCatalogRepository = container.masterCatalogRepository,
                     historyRepository = container.historyRepository,
                     onOpenSession = { navController.navigate(Routes.sessionDetail(it)) },
@@ -150,6 +177,8 @@ private object Routes {
     const val SESSION_DETAIL = "session/detail"
     const val SESSIONS = "sessions"
     const val ROUTINES = "routines"
+    const val NEW_ROUTINE = "routine/new"
+    const val ROUTINE_DETAIL = "routine"
     const val EXERCISES = "exercises"
     const val EXERCISE_EDITOR = "exercise/edit"
     const val EXERCISE_HISTORY = "exercise/history"
@@ -159,6 +188,7 @@ private object Routes {
     const val NEW_EXERCISE_ID = "new"
 
     fun sessionDetail(id: String): String = "$SESSION_DETAIL/$id"
+    fun routineEditor(id: String): String = "$ROUTINE_DETAIL/$id"
     fun exerciseEditor(id: String?): String = "$EXERCISE_EDITOR/${id ?: NEW_EXERCISE_ID}"
     fun exerciseHistory(id: String): String = "$EXERCISE_HISTORY/$id"
 }

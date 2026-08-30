@@ -71,37 +71,14 @@ data class SessionDetail(
     val exercises: List<TrainingExercise>,
 )
 
-data class RoutineSummary(
-    val id: String,
-    val name: String,
-    val suggestedSessionTypeId: String?,
-    val description: String?,
-)
-
-data class RoutineExercise(
-    val exerciseId: String,
-    val position: Int,
-    val nameEs: String,
-    val nameEn: String,
-    val isActive: Boolean,
-)
-
-data class RoutineDetail(
-    val routine: RoutineSummary,
-    val exercises: List<RoutineExercise>,
-)
-
 class MissingRirException(val missingSetIds: List<String>) : IllegalStateException("Falta RIR obligatorio")
 class DuplicateExerciseException : IllegalStateException("El ejercicio ya existe")
-class InactiveExerciseException : IllegalStateException("El ejercicio está desactivado")
 
-interface TrainingRepository {
+interface SessionRepository {
     fun observeSessions(): Flow<List<SessionSummary>>
     fun observeSessionsForDate(date: LocalDate): Flow<List<SessionSummary>>
-    fun observeRoutines(): Flow<List<RoutineSummary>>
 
     suspend fun getSessionDetail(sessionId: String): SessionDetail?
-    suspend fun getRoutineDetail(routineId: String): RoutineDetail?
 
     suspend fun createSession(
         date: LocalDate,
@@ -130,11 +107,4 @@ interface TrainingRepository {
     suspend fun updateSetRest(setId: String, restOverrideSeconds: Int?)
     suspend fun fulfillSet(setId: String)
     suspend fun finalizeSession(sessionId: String)
-
-    suspend fun createRoutine(name: String, suggestedSessionTypeId: String?, description: String?): String
-    suspend fun updateRoutine(routineId: String, name: String, suggestedSessionTypeId: String?, description: String?)
-    suspend fun deleteRoutine(routineId: String)
-    suspend fun addRoutineExercise(routineId: String, exerciseId: String)
-    suspend fun deleteRoutineExercise(routineId: String, exerciseId: String)
-    suspend fun reorderRoutineExercises(routineId: String, orderedExerciseIds: List<String>)
 }
