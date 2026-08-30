@@ -10,7 +10,12 @@
 
 ## APK de entrega
 
-El CI genera y publica como artefacto:
+El workflow habitual `Android CI` verifica el código, pero no conserva APK. El APK descargable solo se genera cuando se declara de forma explícita un candidato mediante `Android Candidate`:
+
+- ejecución manual con `workflow_dispatch`, cuando el workflow ya esté en la rama predeterminada; o
+- etiqueta `candidate-*` aplicada al commit exacto que se quiere probar.
+
+El candidato publica un único artefacto durante 7 días:
 
 - `gymup-v1-release` → `app-release.apk`
 
@@ -24,7 +29,7 @@ Antes de distribuir actualizaciones conservando la instalación y los datos debe
 
 En el teléfono Android 15 o superior:
 
-1. Descargar `app-release.apk` desde el artefacto `gymup-v1-release` del run de CI validado.
+1. Descargar `app-release.apk` desde el artefacto `gymup-v1-release` del run `Android Candidate` validado antes de que caduque a los 7 días.
 2. Autorizar temporalmente la instalación de aplicaciones desconocidas para la aplicación desde la que se abre el APK, si Android lo solicita.
 3. Abrir el APK y confirmar la instalación.
 
@@ -52,12 +57,14 @@ La importación de backup es `replace-all`: valida el archivo completo antes de 
 
 ## Validación de entrega
 
-Un APK solo se considera candidato de entrega cuando el mismo SHA ha superado en GitHub Actions:
+Un APK solo se considera candidato de entrega cuando el mismo commit ha superado en `Android Candidate`:
 
-- `testDebugUnitTest`
-- `lintDebug`
-- `assembleDebug`
-- `assembleRelease`
-- publicación de los artefactos debug y release.
+- `testDebugUnitTest`;
+- `lintDebug`;
+- `assembleRelease`;
+- publicación de `gymup-v1-release`.
+
+Después de descargarlo se registra su SHA-256 en la issue o PR de validación. La aprobación física corresponde al APK exacto identificado por ese hash, no a cualquier archivo con el mismo nombre o versión visible.
 
 El PR de cierre del MVP debe estar sincronizado con `main`, sin hilos de revisión pendientes y con el CI del SHA final completamente verde antes del merge.
+
