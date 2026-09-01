@@ -22,12 +22,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mundoinformaticacanaria.gymup.core.model.SessionOperationalState
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionSummary
-import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
+import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
 import java.time.LocalDate
 
 @Composable
 fun HomeScreen(
-    trainingRepository: TrainingRepository,
+    sessionRepository: SessionRepository,
     onNewSession: () -> Unit,
     onOpenSession: (String) -> Unit,
     onSessions: () -> Unit,
@@ -37,7 +37,7 @@ fun HomeScreen(
     onSettings: () -> Unit,
 ) {
     val today = remember { LocalDate.now() }
-    val todaySessions by trainingRepository.observeSessionsForDate(today)
+    val todaySessions by sessionRepository.observeSessionsForDate(today)
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val prioritized = remember(todaySessions) {
         todaySessions.sortedWith(

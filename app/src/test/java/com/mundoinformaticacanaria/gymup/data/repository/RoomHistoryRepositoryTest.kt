@@ -24,7 +24,8 @@ import org.robolectric.annotation.Config
 class RoomHistoryRepositoryTest {
     private lateinit var database: GymUpDatabase
     private lateinit var context: Context
-    private lateinit var training: RoomTrainingRepository
+    private lateinit var training: RoomSessionRepository
+    private lateinit var routines: RoomRoutineRepository
     private lateinit var history: RoomHistoryRepository
 
     @Before
@@ -32,7 +33,8 @@ class RoomHistoryRepositoryTest {
         context = ApplicationProvider.getApplicationContext()
         database = Room.inMemoryDatabaseBuilder(context, GymUpDatabase::class.java).allowMainThreadQueries().build()
         DatabaseSeeder(context, database).seedIfNeeded()
-        training = RoomTrainingRepository(database)
+        training = RoomSessionRepository(database)
+        routines = RoomRoutineRepository(database)
         history = RoomHistoryRepository(database)
     }
 
@@ -69,8 +71,7 @@ class RoomHistoryRepositoryTest {
             training.updateSetActual(set.id, 12.5, 12, if (exercise.rirRequired) 2 else null)
         }
 
-        val routineId = training.createRoutine("Rutina", type.id, null)
-        training.addRoutineExercise(routineId, exercise.id)
+        routines.saveRoutine(null, "Rutina", type.id, null, listOf(exercise.id))
 
         val result = requireNotNull(history.getExerciseHistory(exercise.id, 10))
         assertEquals(2, result.executions.size)

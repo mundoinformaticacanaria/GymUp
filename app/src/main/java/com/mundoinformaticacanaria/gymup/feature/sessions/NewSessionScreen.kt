@@ -31,8 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
+import com.mundoinformaticacanaria.gymup.domain.repository.RoutineRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionSource
-import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
+import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -41,7 +42,8 @@ private enum class SourceKind { EMPTY, ROUTINE, DUPLICATE }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewSessionScreen(
-    trainingRepository: TrainingRepository,
+    sessionRepository: SessionRepository,
+    routineRepository: RoutineRepository,
     masterCatalogRepository: MasterCatalogRepository,
     exerciseCatalogRepository: ExerciseCatalogRepository,
     onCreated: (String) -> Unit,
@@ -49,8 +51,8 @@ fun NewSessionScreen(
 ) {
     val scope = rememberCoroutineScope()
     val types by masterCatalogRepository.observeSessionTypes().collectAsStateWithLifecycle(initialValue = emptyList())
-    val routines by trainingRepository.observeRoutines().collectAsStateWithLifecycle(initialValue = emptyList())
-    val sessions by trainingRepository.observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
+    val routines by routineRepository.observeRoutines().collectAsStateWithLifecycle(initialValue = emptyList())
+    val sessions by sessionRepository.observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
     val activeExercises by exerciseCatalogRepository.observeActiveExercises().collectAsStateWithLifecycle(initialValue = emptyList())
 
     var sourceKind by remember { mutableStateOf(SourceKind.EMPTY) }
@@ -68,8 +70,8 @@ fun NewSessionScreen(
     }
     LaunchedEffect(sourceKind, sourceId) {
         when (sourceKind) {
-            SourceKind.ROUTINE -> sourceId?.let { trainingRepository.getRoutineDetail(it)?.routine?.suggestedSessionTypeId }?.let { selectedTypeId = it }
-            SourceKind.DUPLICATE -> sourceId?.let { trainingRepository.getSessionDetail(it)?.sessionTypeId }?.let { selectedTypeId = it }
+            SourceKind.ROUTINE -> sourceId?.let { routineRepository.getRoutineDetail(it)?.routine?.suggestedSessionTypeId }?.let { selectedTypeId = it }
+            SourceKind.DUPLICATE -> sourceId?.let { sessionRepository.getSessionDetail(it)?.sessionTypeId }?.let { selectedTypeId = it }
             SourceKind.EMPTY -> Unit
         }
         confirmedOmission = false
@@ -86,10 +88,10 @@ fun NewSessionScreen(
         return when (sourceKind) {
             SourceKind.EMPTY -> emptyList()
             SourceKind.ROUTINE -> sourceId?.let { id ->
-                trainingRepository.getRoutineDetail(id)?.exercises?.filterNot { it.isActive }?.map { "${it.nameEs} · ${it.nameEn}" }
+                routineRepository.getRoutineDetail(id)?.exercises?.filterNot { it.isActive }?.map { "${it.nameEs} · ${it.nameEn}" }
             }.orEmpty()
             SourceKind.DUPLICATE -> sourceId?.let { id ->
-                trainingRepository.getSessionDetail(id)?.exercises?.filter { it.exerciseId !in activeIds }?.map { "${it.nameEs} · ${it.nameEn}" }
+                sessionRepository.getSessionDetail(id)?.exercises?.filter { it.exerciseId !in activeIds }?.map { "${it.nameEs} · ${it.nameEn}" }
             }.orEmpty()
         }
     }
@@ -117,7 +119,7 @@ fun NewSessionScreen(
                     omittedWarning = omitted
                     return@runCatching null
                 }
-                trainingRepository.createSession(date, typeId, name, note, source).sessionId
+                sessionRepository.createSession(date, typeId, name, note, source).sessionId
             }.onSuccess { sessionId ->
                 if (sessionId != null) onCreated(sessionId)
             }.onFailure { throwable -> error = throwable.message ?: "No se pudo crear la sesión." }

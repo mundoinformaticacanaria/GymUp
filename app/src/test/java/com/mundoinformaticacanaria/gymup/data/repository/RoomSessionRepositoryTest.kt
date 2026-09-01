@@ -12,6 +12,7 @@ import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseMaintenanceInput
 import com.mundoinformaticacanaria.gymup.domain.repository.MissingRirException
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionSource
+import java.time.LocalDate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -22,14 +23,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.time.LocalDate
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
-class RoomTrainingRepositoryTest {
+class RoomSessionRepositoryTest {
     private lateinit var database: GymUpDatabase
     private lateinit var context: Context
-    private lateinit var repository: RoomTrainingRepository
+    private lateinit var repository: RoomSessionRepository
 
     @Before
     fun setUp() = runBlocking {
@@ -38,7 +38,7 @@ class RoomTrainingRepositoryTest {
             .allowMainThreadQueries()
             .build()
         DatabaseSeeder(context, database).seedIfNeeded()
-        repository = RoomTrainingRepository(database)
+        repository = RoomSessionRepository(database)
     }
 
     @After

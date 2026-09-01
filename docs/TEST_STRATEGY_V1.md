@@ -25,6 +25,7 @@ Cobertura obligatoria para:
 - series adicionales copiando última serie de referencia;
 - creación desde rutina y duplicación omitiendo desactivados;
 - ranking de búsqueda;
+- búsqueda y filtrado del selector de ejercicios de rutina;
 - agrupación de datos de gráfica por modalidad/unidad;
 - construcción de DTO de informe;
 - validadores de backup.
@@ -41,6 +42,7 @@ Cobertura obligatoria para:
 - queries temporales de precarga;
 - filtros históricos combinados;
 - actualización transaccional de resultado;
+- guardado atómico de metadatos y orden completo de una rutina;
 - migraciones Room.
 
 ### Tests UI Compose
@@ -56,6 +58,8 @@ Solo flujos críticos:
 7. exportar una sesión realizada (con fake launcher/abstracción de destino);
 8. cambio tema sistema/claro/oscuro;
 9. texto grande sin perder controles esenciales.
+10. crear y editar una rutina recorriendo Datos → Ejercicios → Resumen;
+11. buscar, filtrar, añadir, reordenar y quitar ejercicios con la acción primaria visible.
 
 ## 2. Casos de regresión funcional obligatorios
 
@@ -101,6 +105,17 @@ Solo flujos críticos:
 - ejercicio con histórico se desactiva, no se borra;
 - ejercicio sin histórico en rutina requiere operación atómica sobre referencias.
 
+### Rutinas y ergonomía
+
+- listado, creación y edición son destinos independientes;
+- el borrador no se persiste parcialmente antes de `Guardar`;
+- el guardado conserva exactamente el orden visible;
+- no se puede guardar el mismo ejercicio dos veces;
+- un ejercicio desactivado ya presente puede conservarse o quitarse, pero no añadirse;
+- `Siguiente`, `Anterior` y `Guardar` permanecen localizables sin recorrer la lista;
+- las listas largas desplazan su contenido dentro de una zona acotada;
+- con fuente ampliada ningún control esencial queda oculto.
+
 ### Export/import
 
 - informe no permitido si sesión no `REALIZED`;
@@ -114,13 +129,29 @@ Solo flujos críticos:
 
 ## 3. CI
 
-En cada push/PR:
+### Verificación habitual
 
-1. `./gradlew testDebugUnitTest`
-2. `./gradlew lintDebug`
-3. `./gradlew assembleDebug`
+Cada pull request con cambios de código ejecuta una única verificación. También se verifica cada actualización de `main` con cambios de código. Los cambios exclusivamente documentales quedan excluidos y una ejecución nueva cancela la anterior de la misma PR.
 
-Cuando existan tests instrumentados, CI ejecutará además pruebas de Room/Compose en emulador o Gradle Managed Device si el tiempo/coste gratuito de GitHub Actions lo permite. Si no es viable en cada push, se ejecutarán en PR/release y quedará documentado.
+El job ejecuta en una sola invocación:
+
+```bash
+gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
+```
+
+La verificación habitual no ejecuta `assembleRelease` ni publica APK.
+
+### Candidatos de prueba
+
+El APK release solo se genera mediante el workflow explícito `Android Candidate`, activado manualmente o con una etiqueta `candidate-*` sobre el commit exacto. Ese workflow ejecuta:
+
+```bash
+gradle --no-daemon testDebugUnitTest lintDebug assembleRelease
+```
+
+Solo publica el artefacto `gymup-v1-release`, con 7 días de retención. La política completa está en `docs/CI_USAGE_POLICY.md`.
+
+Cuando existan tests instrumentados, se evaluará su ejecución en candidatos o mediante Gradle Managed Device. No se incorporarán a cada PR sin medir antes su tiempo y consumo.
 
 ## 4. Release gate MVP
 
@@ -142,3 +173,4 @@ Usar fixtures pequeños y deterministas. No incluir backups/datos personales rea
 - IDs/fechas fijos en tests.
 - Cada bug funcional corregido añade test de regresión cuando sea reproducible.
 - Tests no deben depender de Internet.
+

@@ -24,9 +24,12 @@ La fuente de verdad funcional y técnica del proyecto es este repositorio.
 - [Contrato funcional v1](docs/PRODUCT_CONTRACT_V1.md)
 - [Cierre funcional MVP v1](docs/PRODUCT_CONTRACT_V1_CLOSURE.md)
 - [Arquitectura técnica v1](docs/TECHNICAL_ARCHITECTURE_V1.md)
+- [Flujo UX de rutinas v1](docs/ROUTINES_UX_FLOW_V1.md)
+- [Auditoría de crecimiento vertical v1](docs/UX_VERTICAL_AUDIT_V1.md)
 - [Modelo de datos v1](docs/DATA_MODEL_V1.md)
 - [Estrategia de pruebas](docs/TEST_STRATEGY_V1.md)
 - [Entrega e instalación manual del MVP](docs/RELEASE_MVP_V1.md)
+- [Política de uso de GitHub Actions](docs/CI_USAGE_POLICY.md)
 - [Gobierno, roles y reglas de trabajo](docs/PROJECT_GOVERNANCE.md)
 - [Política de ejecución continua](docs/EXECUTION_POLICY.md)
 
@@ -63,7 +66,7 @@ app/build/outputs/apk/debug/app-debug.apk
 app/build/outputs/apk/release/app-release.apk
 ```
 
-El CI publica el APK instalable de entrega como artefacto `gymup-v1-release`.
+El CI habitual verifica el código sin conservar APK. Solo el workflow explícito `Android Candidate` publica `gymup-v1-release` durante 7 días.
 
 ## Estado
 
@@ -72,3 +75,4 @@ El CI publica el APK instalable de entrega como artefacto `gymup-v1-release`.
 La versión de aplicación preparada para el cierre del MVP es `1.0.0` (`versionCode 1`). La distribución inicial es manual mediante APK; Google Play, autenticación y sincronización multidispositivo quedan fuera de v1.
 
 No deben implementarse funcionalidades que contradigan el contrato funcional vigente. Cualquier cambio futuro de producto debe quedar trazado explícitamente en GitHub antes de incorporarse al desarrollo.
+
