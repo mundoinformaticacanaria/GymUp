@@ -1,7 +1,9 @@
 package com.mundoinformaticacanaria.gymup.app
 
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -31,7 +33,11 @@ fun GymUpApp(container: AppContainer) {
     val navController = rememberNavController()
 
     GymUpTheme(themeMode = themeMode) {
-        NavHost(navController = navController, startDestination = Routes.HOME) {
+        NavHost(
+            navController = navController,
+            startDestination = Routes.HOME,
+            modifier = Modifier.navigationBarsPadding(),
+        ) {
             composable(Routes.HOME) {
                 HomeScreen(
                     sessionRepository = container.sessionRepository,
