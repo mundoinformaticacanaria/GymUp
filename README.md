@@ -18,6 +18,7 @@ La fuente de verdad funcional y técnica del proyecto es este repositorio.
 
 ## Documentación
 
+- [Instrucciones operativas para agentes](AGENTS.md)
 - [Contrato funcional v1](docs/PRODUCT_CONTRACT_V1.md)
 - [Cierre funcional MVP v1](docs/PRODUCT_CONTRACT_V1_CLOSURE.md)
 - [Arquitectura técnica v1](docs/TECHNICAL_ARCHITECTURE_V1.md)
