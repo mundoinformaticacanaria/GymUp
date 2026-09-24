@@ -172,6 +172,7 @@ fun RoutineEditorScreen(
                         RoutineEditorStep.SUMMARY -> RoutineSummaryStep(
                             state = state,
                             onMoveExercise = editorViewModel::moveExercise,
+                            onChangeExercisePosition = editorViewModel::moveExerciseToPosition,
                             onRemoveExercise = editorViewModel::removeExercise,
                         )
                     }
