@@ -29,7 +29,7 @@ Cobertura obligatoria para:
 - construcción de DTO de informe;
 - validadores de backup.
 
-### Tests instrumentados de Room
+### Tests de Room en JVM/Robolectric
 
 Cobertura obligatoria para:
 
@@ -43,9 +43,11 @@ Cobertura obligatoria para:
 - actualización transaccional de resultado;
 - migraciones Room.
 
-### Tests UI Compose
+### Cobertura de UI y validación física
 
-Solo flujos críticos:
+La base actual no contiene una suite `androidTest` ni pruebas Compose instrumentadas. Las reglas, repositorios Room y funciones auxiliares de estado/interacción se prueban en `src/test` —incluido Robolectric cuando se necesita Android— y CI las ejecuta con `testDebugUnitTest`.
+
+Los flujos críticos se mantienen como objetivo de automatización progresiva y, hasta disponer de esa suite, forman parte obligatoria del protocolo físico de cada candidato autorizado:
 
 1. crear sesión vacía;
 2. añadir ejercicio y series;
@@ -53,9 +55,11 @@ Solo flujos críticos:
 4. finalizar sesión parcial/completa;
 5. continuar sesión En curso desde Home;
 6. crear desde rutina con omitidos desactivados;
-7. exportar una sesión realizada (con fake launcher/abstracción de destino);
+7. exportar una sesión realizada;
 8. cambio tema sistema/claro/oscuro;
 9. texto grande sin perder controles esenciales.
+
+Una PR no debe afirmar que existen pruebas Compose/instrumentadas si solo aporta pruebas JVM o Robolectric.
 
 ## 2. Casos de regresión funcional obligatorios
 
@@ -114,17 +118,21 @@ Solo flujos críticos:
 
 ## 3. CI
 
-En cada push/PR:
+En cada PR con cambios de código se ejecuta una única verificación:
 
 1. `./gradlew testDebugUnitTest`
 2. `./gradlew lintDebug`
 3. `./gradlew assembleDebug`
 
-Cuando existan tests instrumentados, CI ejecutará además pruebas de Room/Compose en emulador o Gradle Managed Device si el tiempo/coste gratuito de GitHub Actions lo permite. Si no es viable en cada push, se ejecutarán en PR/release y quedará documentado.
+Los cambios exclusivamente documentales no disparan Android CI. Las ejecuciones obsoletas de una misma PR se cancelan y la verificación ordinaria no publica APK.
+
+Cuando existan tests instrumentados, CI ejecutará además pruebas de Room/Compose en emulador o Gradle Managed Device si el tiempo/coste gratuito de GitHub Actions lo permite. Si no es viable en cada PR, se ejecutarán en candidato/release y quedará documentado.
+
+El workflow de candidato solo se activa después de autorización expresa del Product Owner, conforme a la Issue #35; es el único que puede publicar el APK temporal de prueba.
 
 ## 4. Release gate MVP
 
-No se genera APK final si falla cualquiera de:
+No se etiqueta, genera ni publica un APK candidato o final sin autorización expresa del Product Owner y sin presentar antes su contenido exacto. Tras esa autorización, no se completa la entrega si falla cualquiera de:
 
 - unit tests;
 - lint con errores;
