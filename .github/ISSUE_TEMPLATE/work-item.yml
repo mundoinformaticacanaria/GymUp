@@ -1,0 +1,50 @@
+name: Trabajo de GymUp
+description: Registrar una corrección, mejora o tarea técnica trazable
+title: "[TIPO] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Comprueba antes que no exista una Issue, rama o PR equivalente.
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexto y problema
+      description: Describe el comportamiento actual y por qué requiere trabajo.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Resultado esperado
+      description: Define el comportamiento o entregable observable, sin dejar decisiones funcionales implícitas.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Criterios de aceptación
+      description: Usa una lista verificable.
+      placeholder: |
+        - [ ] Criterio 1
+        - [ ] Criterio 2
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencias y restricciones
+      description: Issues, PR, contrato, ADR, datos, riesgos o decisiones del propietario.
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validación prevista
+      description: Pruebas automáticas, CI y comprobaciones físicas necesarias.
+  - type: checkboxes
+    id: product
+    attributes:
+      label: Impacto funcional
+      options:
+        - label: Si cambia comportamiento visible o reglas de negocio, existe aprobación del Product Owner enlazada.
+          required: false
