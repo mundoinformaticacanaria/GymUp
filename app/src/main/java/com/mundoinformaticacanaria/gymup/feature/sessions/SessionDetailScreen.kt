@@ -222,6 +222,7 @@ fun SessionDetailScreen(
                     onRecalculate = { action { sessionRepository.recalculateObjectives(sessionId) } },
                     onStart = { action { sessionRepository.setOperationalState(sessionId, SessionOperationalState.IN_PROGRESS) } },
                     onFinalize = { action { sessionRepository.finalizeSession(sessionId) } },
+                    onReopen = { action("Sesión reabierta. Puedes corregirla o continuarla.") { sessionRepository.reopenSession(sessionId) } },
                     onDelete = {
                         scope.launch {
                             runCatching { sessionRepository.deleteSession(sessionId) }
@@ -348,6 +349,7 @@ private fun SessionMetadataEditor(
     onRecalculate: () -> Unit,
     onStart: () -> Unit,
     onFinalize: () -> Unit,
+    onReopen: () -> Unit,
     onDelete: () -> Unit,
 ) {
     var name by remember(detail.summary.name) { mutableStateOf(if (detail.isAutoName) "" else detail.summary.name) }
@@ -358,6 +360,7 @@ private fun SessionMetadataEditor(
     var editData by remember { mutableStateOf(false) }
     var editPosition by remember { mutableStateOf(false) }
     var confirmRecalculate by remember { mutableStateOf(false) }
+    var confirmReopen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     val hasActualData = detail.exercises.any { exercise -> exercise.sets.any { it.actualConfirmed } }
 
@@ -377,6 +380,15 @@ private fun SessionMetadataEditor(
             text = { Text("La sesión y todos sus ejercicios y series se eliminarán definitivamente.") },
             confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("Eliminar") } },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
+        )
+    }
+    if (confirmReopen) {
+        AlertDialog(
+            onDismissRequest = { confirmReopen = false },
+            title = { Text("Reabrir sesión") },
+            text = { Text("La sesión volverá a En curso y conservará todos sus datos. Podrás corregirla o continuarla y finalizarla de nuevo.") },
+            confirmButton = { TextButton(onClick = { confirmReopen = false; onReopen() }) { Text("Reabrir") } },
+            dismissButton = { TextButton(onClick = { confirmReopen = false }) { Text("Cancelar") } },
         )
     }
 
@@ -426,7 +438,10 @@ private fun SessionMetadataEditor(
             when (detail.summary.operationalState) {
                 SessionOperationalState.PLANNED -> Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("Iniciar sesión") }
                 SessionOperationalState.IN_PROGRESS -> Button(onClick = onFinalize, modifier = Modifier.fillMaxWidth()) { Text("Finalizar sesión") }
-                SessionOperationalState.REALIZED -> Text("Sesión finalizada", style = MaterialTheme.typography.labelLarge)
+                SessionOperationalState.REALIZED -> {
+                    Text("Sesión finalizada", style = MaterialTheme.typography.labelLarge)
+                    Button(onClick = { confirmReopen = true }, modifier = Modifier.fillMaxWidth()) { Text("Reabrir sesión") }
+                }
             }
             TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) { Text("Eliminar sesión") }
             message?.let { StatusMessage(it) }

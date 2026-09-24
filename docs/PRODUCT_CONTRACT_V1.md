@@ -88,7 +88,8 @@ Reglas:
 - puede finalizarse aunque existan ejercicios o series sin completar;
 - puede finalizarse sin ningún dato real, quedando `Realizada + No iniciada`;
 - editar una sesión `Realizada` no la devuelve automáticamente a `En curso`;
-- cualquier cambio desde `Realizada` a otro estado es manual;
+- una sesión `Realizada` ofrece la acción manual `Reabrir sesión`, con confirmación, para volver a `En curso` sin borrar ni recalcular datos;
+- tras reabrirla se pueden corregir o completar datos y solo vuelve a `Realizada` al pulsar de nuevo `Finalizar sesión`;
 - no existe estado `Cancelada` en v1.
 
 ### 3.3 Resultado de ejecución
