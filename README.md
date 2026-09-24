@@ -61,8 +61,8 @@ app/build/outputs/apk/debug/app-debug.apk
 
 **Contrato funcional del MVP v1 cerrado el 20/08/2026.**
 
-La arquitectura técnica v1 está definida y el desarrollo Android ha comenzado. El repositorio dispone de Gradle Wrapper y CI que ejecuta tests, lint y ensamblado de APK.
+La aplicación Android está en evolución mediante Issues, ramas y PR revisables. La fuente de verdad operativa es el conjunto de Issues abiertas y sus labels; la coordinación del bloque funcional y del siguiente candidato se mantiene en la [Issue #35](../../issues/35).
 
-El backlog de implementación del MVP está organizado en las Issues #3–#8. El Tech Lead continúa automáticamente con la siguiente Issue desbloqueada y solo se detiene ante un bloqueo real que requiera al propietario.
+Android CI verifica tests JVM/Robolectric, lint y ensamblado debug en PR con código. La verificación ordinaria no publica APK. Los candidatos de prueba se agrupan por bloque funcional, requieren autorización expresa del Product Owner y se generan únicamente mediante el workflow específico.
 
-No deben implementarse funcionalidades que contradigan el contrato funcional vigente. Cualquier cambio futuro de producto debe quedar trazado explícitamente en GitHub antes de incorporarse al desarrollo.
+El Tech Lead continúa con la siguiente Issue independiente y desbloqueada conforme a `docs/EXECUTION_POLICY.md`. No se fusionan PR sin aprobación expresa del Product Owner ni se implementan funcionalidades que contradigan el contrato vigente.
