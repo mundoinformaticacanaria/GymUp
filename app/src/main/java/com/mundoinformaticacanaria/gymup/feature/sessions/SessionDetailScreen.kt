@@ -93,20 +93,24 @@ fun SessionDetailScreen(
     fun action(
         successMessage: String? = null,
         setId: String? = null,
+        onSuccess: (() -> Unit)? = null,
         block: suspend () -> Unit,
     ) {
         scope.launch {
-            runCatching { block() }
-                .onSuccess {
+            executeSessionAction(
+                action = block,
+                onSuccess = {
                     refresh += 1
                     message = successMessage?.let { SessionUiMessage(it, isError = false, setId = setId) }
-                }
-                .onFailure { error ->
+                    onSuccess?.invoke()
+                },
+                onFailure = { error ->
                     val text = if (error is MissingRirException) {
                         "Falta RIR obligatorio en ${error.missingSetIds.size} serie(s)."
                     } else error.message ?: "No se pudo aplicar el cambio."
                     message = SessionUiMessage(text, isError = true, setId = setId)
-                }
+                },
+            )
         }
     }
 
@@ -170,7 +174,11 @@ fun SessionDetailScreen(
                         },
                         onAddSet = { action { sessionRepository.addSet(selectedExercise.id) } },
                         onDeleteExercise = { action("Ejercicio eliminado de la sesión.") { sessionRepository.deleteExercise(selectedExercise.id) } },
-                        onFinalizeExercise = { action { sessionRepository.finalizeExercise(selectedExercise.id) } },
+                        onFinalizeExercise = {
+                            action(onSuccess = { selectedExerciseId = null }) {
+                                sessionRepository.finalizeExercise(selectedExercise.id)
+                            }
+                        },
                         onSaveTargets = { set, load, measurement, mode, unit ->
                             action("Objetivo guardado.", set.id) { sessionRepository.updateSetTargets(set.id, load, measurement, mode, unit) }
                         },
