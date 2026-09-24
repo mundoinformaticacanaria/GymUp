@@ -209,3 +209,27 @@ Cuando el contrato v1 esté suficientemente cerrado:
 GymUp v1 debe optimizar el flujo principal: planificar, ejecutar, registrar, consultar histórico y exportar.
 
 No se incorporarán funcionalidades por anticipación si no aportan valor claro a la v1. Las extensiones futuras deben dejarse posibles cuando sea razonable, pero sin complicar innecesariamente el producto actual.
+
+## 12. Flujo de ramas, revisión, integración y candidatos
+
+Toda modificación relevante parte de una Issue y usa una rama propia. Antes de abrir una nueva rama se comprueban ramas y PR existentes para evitar trabajo duplicado. La PR debe explicar alcance, Issue relacionada, base cuando esté apilada, validaciones realizadas y restricciones pendientes.
+
+Reglas de integración:
+
+- CI correcto no equivale a autorización de merge;
+- ninguna PR se fusiona sin aprobación expresa del Product Owner;
+- las PR apiladas declaran su base y se mantienen separadas mientras siga pendiente la integración;
+- una Issue no se cierra solo por existir una PR: deben cumplirse sus criterios y quedar resueltas sus dependencias;
+- cambios exclusivamente documentales pueden omitir Android CI cuando así lo definan los workflows.
+
+Reglas de candidatos APK:
+
+- no se genera un APK por cada corrección aislada;
+- las mejoras se acumulan en bloques funcionales coordinados;
+- antes de crear una etiqueta `candidate-*` se presenta la lista exacta de funcionalidades y correcciones respecto al último candidato;
+- se requiere autorización expresa del Product Owner después de presentar esa lista;
+- solo entonces se ejecuta el workflow de candidato;
+- la huella SHA-256 del APK extraído y el commit origen quedan documentados;
+- la validación física no se sustituye por el resultado de CI.
+
+La Issue #35 mantiene el bloque funcional activo y la puerta del siguiente candidato.
