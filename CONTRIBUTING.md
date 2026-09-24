@@ -2,7 +2,7 @@
 
 ## Fuente de verdad
 
-Antes de trabajar, lee `README.md`, `docs/PROJECT_GOVERNANCE.md`, `docs/EXECUTION_POLICY.md`, el contrato funcional y la Issue asignada. Las decisiones de producto deben quedar en GitHub antes de implementarse.
+Antes de trabajar, sigue primero `AGENTS.md` y registra la sesión conforme a `docs/EXECUTION_POLICY.md`. Después lee `README.md`, `docs/PROJECT_GOVERNANCE.md`, el contrato funcional y la Issue asignada. Las decisiones de producto deben quedar en GitHub antes de implementarse.
 
 ## Flujo de trabajo
 
@@ -14,7 +14,7 @@ Antes de trabajar, lee `README.md`, `docs/PROJECT_GOVERNANCE.md`, `docs/EXECUTIO
 6. Mantén separadas las PR apiladas e indica expresamente su dependencia.
 7. Espera la revisión y la aprobación expresa del Product Owner antes de fusionar.
 
-No se escriben cambios de producto, código o documentación directamente en `main`. El registro operativo de automatización puede actualizar su fichero de heartbeat en `main` cuando su política vigente lo exija.
+No se escriben cambios de producto, código o documentación directamente en `main`. La única excepción es añadir las entradas `INICIO` y `FIN` a `ops/logs/tech-lead.log`, de acuerdo con la política vigente; esas entradas deben quedar en commits separados.
 
 ## Validación
 
