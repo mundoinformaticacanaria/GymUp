@@ -163,6 +163,14 @@ class RoomSessionRepository(
         trainingDao.updateSession(session.copy(operationalState = state))
     }
 
+    override suspend fun reopenSession(sessionId: String) = database.withTransaction {
+        val session = requireNotNull(trainingDao.getSession(sessionId))
+        require(session.operationalState == SessionOperationalState.REALIZED) {
+            "Solo se puede reabrir una sesión realizada"
+        }
+        trainingDao.updateSession(session.copy(operationalState = SessionOperationalState.IN_PROGRESS))
+    }
+
     override suspend fun recalculateObjectives(sessionId: String) = database.withTransaction {
         val session = requireNotNull(trainingDao.getSession(sessionId))
         val sessionExercises = trainingDao.getSessionExercises(sessionId)
