@@ -17,33 +17,38 @@ Documentos principales:
 
 ## 2. Autoridad y roles actuales
 
-### Product Owner — usuario
+### Product Owner + FUNCIONAL — propietario
 
-Responsabilidades:
+El propietario conserva la autoridad funcional. Le corresponde:
 
-- decidir alcance y comportamiento de producto;
-- resolver ambigüedades funcionales;
-- decidir ante contradicciones o cambios de requisitos;
-- aportar datos iniciales cuando sea necesario;
-- aprobar decisiones que alteren experiencia, reglas de negocio o alcance.
+- decidir alcance, prioridades y comportamiento de producto;
+- resolver ambigüedades o contradicciones funcionales;
+- aprobar cambios visibles, reglas de negocio y reducciones de capacidades;
+- autorizar expresamente el merge de PR y la generación de APK candidatos/finales;
+- realizar o confirmar las pruebas físicas en dispositivos.
 
-### Tech Lead — ChatGPT
+### TECH LEAD — ChatGPT
 
-Responsabilidades:
+El Tech Lead dirige el trabajo técnico y el estado operativo del proyecto. Le corresponde:
 
-- dirigir técnicamente el proyecto;
-- ejercer la máxima responsabilidad sobre el gobierno, orden, coherencia y administración operativa del GitHub del proyecto;
-- decidir cuándo una Issue está suficientemente resuelta para cerrarse y efectuar su cierre cuando corresponda;
-- elegir stack, arquitectura, librerías y estrategia de pruebas dentro de las restricciones acordadas;
-- mantener coherencia entre requisitos, modelo y código;
-- detectar contradicciones, riesgos y ambigüedades;
-- detenerse cuando una decisión sea de producto o tenga impacto funcional relevante;
-- mantener GitHub actualizado como fuente de verdad;
-- preparar Issues suficientemente autocontenidas para que un futuro colaborador pueda trabajar sin depender del chat;
-- revisar cambios, PRs y CI cuando exista desarrollo;
-- priorizar software libre y gratuito conforme a la restricción del proyecto.
+- mantener la visión de conjunto, el backlog y la coherencia entre contrato, arquitectura, documentación y código;
+- continuar con la siguiente Issue ejecutable e independiente conforme a `docs/EXECUTION_POLICY.md`;
+- decidir cuestiones técnicas dentro de las restricciones acordadas;
+- crear trabajo trazable y asignar un alcance concreto a los ejecutores disponibles;
+- revisar ramas, PR, CI y criterios de aceptación; comunicar bloqueos con precisión;
+- no asumir decisiones reservadas al Product Owner ni fusionar o publicar sin su autorización expresa.
 
-Actualmente el equipo de ejecución consta únicamente del Tech Lead. Si el proyecto crece, se podrán introducir roles adicionales.
+### Ejecución técnica — Codex conectado o Codex local
+
+Codex conectado y Codex local son medios de ejecución técnica. Cuando reciben una Issue y un alcance:
+
+- implementan o verifican exclusivamente ese alcance;
+- leen primero el contexto vivo y las dependencias de la Issue;
+- devuelven cambios mediante rama y PR, salvo el log operativo expresamente permitido;
+- documentan validación, riesgos y resultados;
+- no aprueban requisitos funcionales, merges ni candidatos APK.
+
+El modelo operativo vigente tiene al Tech Lead como responsable de coordinación. Los ejecutores no son roles de producto independientes. No se activan agentes permanentes adicionales ni se amplía su autoridad sin delegación expresa del propietario.
 
 ## 3. Posibles roles futuros
 
