@@ -20,6 +20,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.mundoinformaticacanaria.gymup.core.ui.PositionSelector
 
 @Composable
 internal fun RoutineStepHeader(
@@ -182,6 +183,7 @@ internal fun RoutineExerciseSelectionStep(
 internal fun RoutineSummaryStep(
     state: RoutineEditorUiState,
     onMoveExercise: (String, Int) -> Unit,
+    onChangeExercisePosition: (String, Int) -> Unit,
     onRemoveExercise: (String) -> Unit,
 ) {
     val typeName = state.sessionTypes.firstOrNull { it.id == state.suggestedSessionTypeId }?.name ?: "Sin tipo sugerido"
@@ -216,6 +218,13 @@ internal fun RoutineSummaryStep(
                             if (!exercise.isActive) {
                                 Text("Desactivado", color = MaterialTheme.colorScheme.error)
                             }
+                            PositionSelector(
+                                currentPosition = index + 1,
+                                totalPositions = state.selectedExercises.size,
+                                onPositionSelected = { position ->
+                                    onChangeExercisePosition(exercise.id, position)
+                                },
+                            )
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 TextButton(
                                     enabled = index > 0,

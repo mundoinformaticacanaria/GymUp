@@ -3,6 +3,7 @@ package com.mundoinformaticacanaria.gymup.feature.routines
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.mundoinformaticacanaria.gymup.core.util.swapPositions
 import com.mundoinformaticacanaria.gymup.domain.repository.CatalogItem
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseCatalogItem
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseCatalogRepository
@@ -169,11 +170,19 @@ class RoutineEditorViewModel(
         val currentIndex = state.selectedExercises.indexOfFirst { it.id == exerciseId }
         if (currentIndex == -1) return@updateState state
         val targetIndex = (currentIndex + offset).coerceIn(state.selectedExercises.indices)
-        if (targetIndex == currentIndex) return@updateState state
-        val reordered = state.selectedExercises.toMutableList()
-        val item = reordered.removeAt(currentIndex)
-        reordered.add(targetIndex, item)
-        state.copy(selectedExercises = reordered, error = null)
+        state.copy(
+            selectedExercises = state.selectedExercises.swapPositions(currentIndex, targetIndex),
+            error = null,
+        )
+    }
+
+    fun moveExerciseToPosition(exerciseId: String, position: Int) = updateState { state ->
+        val currentIndex = state.selectedExercises.indexOfFirst { it.id == exerciseId }
+        if (currentIndex == -1 || position !in 1..state.selectedExercises.size) return@updateState state
+        state.copy(
+            selectedExercises = state.selectedExercises.swapPositions(currentIndex, position - 1),
+            error = null,
+        )
     }
 
     fun save() {
