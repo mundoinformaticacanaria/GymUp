@@ -55,17 +55,21 @@ Contiene:
 
 ```text
 Compose Screen
-   ↓ events
-ViewModel
+   ↓ events / estado transitorio de UI
+State holder de aplicación o Repository interface
    ↓
-UseCase / Repository interface
-   ↓
-Repository implementation
+Repository implementation / reglas de dominio
    ↓
 Room / DataStore / Files
 ```
 
 Las capas inferiores no importan tipos de Compose.
+
+### Decisión vigente sobre estado de UI
+
+La implementación actual usa un `AppViewModel` para estado global de aplicación —por ejemplo, apariencia— y entrega interfaces de repositorio a las pantallas de cada feature desde el contenedor de dependencias. Las pantallas conservan únicamente estado efímero de presentación y delegan persistencia, validaciones y transacciones en repositorios o funciones de dominio testeables.
+
+Esta simplificación es deliberada para el tamaño actual del MVP y sustituye la prescripción inicial de un ViewModel obligatorio por pantalla. Se introducirá un ViewModel de feature cuando haya estado asíncrono reutilizable, coordinación que deba sobrevivir a la recreación, lógica de presentación difícil de probar desde funciones puras o crecimiento que haga insegura la gestión directa desde Compose. No se trasladarán reglas de negocio ni acceso a Room a la UI.
 
 ## 4. AppContainer
 
@@ -80,7 +84,7 @@ Las capas inferiores no importan tipos de Compose.
 - `Json`
 - reloj técnico inyectable cuando sea necesario
 
-Los ViewModels reciben dependencias por constructor mediante factories explícitas.
+Las pantallas reciben contratos de repositorio desde el grafo de aplicación. Los ViewModels actuales o futuros reciben dependencias por constructor mediante factories explícitas; no localizan servicios ni construyen repositorios por su cuenta.
 
 ## 5. Navegación v1
 
