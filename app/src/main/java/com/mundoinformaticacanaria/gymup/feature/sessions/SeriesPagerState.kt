@@ -21,7 +21,9 @@ internal fun seriesPositionText(page: Int, pageCount: Int): String {
     require(pageCount > 0) { "pageCount must be positive" }
     require(page in 0 until pageCount) { "page must identify an existing series" }
 
-    val previousIndicator = if (page > 0) "<  " else ""
-    val nextIndicator = if (page < pageCount - 1) "  >" else ""
-    return "$previousIndicator Serie ${page + 1} de $pageCount$nextIndicator".trim()
+    return buildString {
+        if (page > 0) append("<  ")
+        append("Serie ${page + 1} de $pageCount")
+        if (page < pageCount - 1) append("  >")
+    }
 }
