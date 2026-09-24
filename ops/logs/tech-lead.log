@@ -28,3 +28,4 @@
 2026-09-24T20:53:02Z | INICIO
 2026-09-24T20:53:26Z | FIN NINGUNA: sin autorizaciones ni revisiones nuevas; PR #43 y CI #341 sin cambios; sin merge ni APK
 2026-09-24T21:30:41Z | INICIO #16: documentar instrucciones para futuros agentes y formato de log
+2026-09-24T21:40:41Z | FIN #16: AGENTS.md y gobierno/log actualizados; PR #43 actualizada; Android CI verify correcto (run 36062626827); sin merge ni APK
