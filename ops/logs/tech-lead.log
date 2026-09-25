@@ -32,3 +32,4 @@
 2026-09-25T05:37:44Z | INICIO #16: corregir aprobación de merge y revisar roles del proyecto
 2026-09-25T05:44:40Z | FIN #16: política de aprobación por coste documentada y descripción de PR #43 corregida; CI 36099681379 seguía en curso; PR #43 abierta, merge pendiente por cuota potencial de almacenamiento de artefacto APK debug; sin candidato ni release
 2026-09-25T16:50:32Z | INICIO: revisar GitHub; máximo tres tareas en esta pasada
+2026-09-25T16:56:01Z | FIN #16: PR #43 revisada y fusionada en squash (c2bd69d); CI del head #355 correcta, 0 artefactos; comentario de seguimiento publicado; #16 sigue abierta por licencia, rulesets, limpieza de ramas e identificación de releases; sin candidato, etiqueta ni release
