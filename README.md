@@ -66,4 +66,4 @@ La aplicación Android está en evolución mediante Issues, ramas y PR revisable
 
 Android CI verifica tests JVM/Robolectric, lint y ensamblado debug en PR con código. La verificación ordinaria no publica APK. Los candidatos de prueba se agrupan por bloque funcional, requieren autorización expresa del Product Owner y se generan únicamente mediante el workflow específico.
 
-El Tech Lead continúa con la siguiente Issue independiente y desbloqueada conforme a `docs/EXECUTION_POLICY.md`. No se fusionan PR sin aprobación expresa del Product Owner ni se implementan funcionalidades que contradigan el contrato vigente.
+El Tech Lead continúa con la siguiente Issue independiente y desbloqueada conforme a `docs/EXECUTION_POLICY.md`. Puede fusionar cambios tras superar sus puertas técnicas y funcionales; solo pide autorización si el merge activa consumo facturable/cuota limitada de GitHub o tokens facturados. No se implementan funcionalidades que contradigan el contrato vigente.
