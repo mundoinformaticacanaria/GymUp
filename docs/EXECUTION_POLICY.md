@@ -79,3 +79,15 @@ YYYY-MM-DDTHH:mm:ssZ | FIN #<issue>: <issues trabajadas y estado/resultados>
 Las marcas de tiempo usan UTC (`Z`) y se toman inmediatamente antes de enviar la escritura al repositorio. Si no hay Issue se usa `SIN_ISSUE`; si no hubo actividad material, se usa `FIN NINGUNA`. El `FIN` enumera lo trabajado aunque quede pendiente e incluye, cuando corresponda, PR, resultado de CI, aprobación pendiente o bloqueo. No se permiten líneas de progreso intermedias, editar entradas antiguas ni cierres retroactivos. Una interrupción inesperada deja el `INICIO` abierto y visible.
 
 El log es append-only y su escritura directa en `main` es una excepción explícita para trazabilidad operativa; no puede incluir cambios de código, producto o documentación. Los workflows ordinarios deben excluir cambios exclusivos del log para evitar compilar o publicar artefactos por el heartbeat.
+
+## Aprobación de merges por consumo
+
+El Tech Lead puede fusionar una PR cuando la revisión, la CI, los criterios de aceptación y las dependencias estén resueltos. No debe pedir aprobación solo por el hecho de fusionar.
+
+Antes del merge, comprueba los workflows e integraciones que se activarán. Pide autorización expresa al Product Owner únicamente si la operación:
+
+- puede generar cargos facturables o consumir una cuota limitada de GitHub;
+- ejecuta una API o servicio de IA con tokens facturados; o
+- tiene un coste que no se puede determinar con la información disponible.
+
+Las ejecuciones cubiertas por recursos gratuitos e ilimitados no activan esta puerta. La aprobación funcional de cambios de producto y la autorización expresa para generar candidatos APK siguen siendo independientes y se rigen por el contrato y la Issue #35.
