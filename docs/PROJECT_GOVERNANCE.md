@@ -24,7 +24,7 @@ El propietario conserva la autoridad funcional. Le corresponde:
 - decidir alcance, prioridades y comportamiento de producto;
 - resolver ambigüedades o contradicciones funcionales;
 - aprobar cambios visibles, reglas de negocio y reducciones de capacidades;
-- autorizar expresamente el merge de PR y la generación de APK candidatos/finales;
+- autorizar la generación de APK candidatos/finales y cualquier merge que active consumo facturable o cuota limitada de GitHub, o uso de tokens facturados;
 - realizar o confirmar las pruebas físicas en dispositivos.
 
 ### TECH LEAD — ChatGPT
@@ -36,7 +36,7 @@ El Tech Lead dirige el trabajo técnico y el estado operativo del proyecto. Le c
 - decidir cuestiones técnicas dentro de las restricciones acordadas;
 - crear trabajo trazable y asignar un alcance concreto a los ejecutores disponibles;
 - revisar ramas, PR, CI y criterios de aceptación; comunicar bloqueos con precisión;
-- no asumir decisiones reservadas al Product Owner ni fusionar o publicar sin su autorización expresa.
+- no asumir decisiones reservadas al Product Owner; puede fusionar PR cuando cumplan las puertas técnicas y funcionales y no activen consumo facturable/cuota limitada ni tokens facturados. Si hay coste o no se puede verificar, pide autorización antes de fusionar.
 
 ### Ejecución técnica — Codex conectado o Codex local
 
@@ -221,8 +221,10 @@ Toda modificación relevante parte de una Issue y usa una rama propia. Antes de 
 
 Reglas de integración:
 
-- CI correcto no equivale a autorización de merge;
-- ninguna PR se fusiona sin aprobación expresa del Product Owner;
+- CI correcto no basta por sí solo: la Issue, la revisión técnica, las dependencias y los criterios de aceptación también deben estar resueltos;
+- el Tech Lead puede fusionar cuando se cumplan esas puertas y el merge no active consumo facturable/cuota limitada de GitHub ni tokens facturados;
+- si el merge activa ese consumo, o su coste no puede verificarse, se solicita autorización expresa al Product Owner antes de fusionar;
+- la autorización funcional para cambiar comportamiento y la autorización para generar APK candidatos siguen sus reglas propias;
 - las PR apiladas declaran su base y se mantienen separadas mientras siga pendiente la integración;
 - una Issue no se cierra solo por existir una PR: deben cumplirse sus criterios y quedar resueltas sus dependencias;
 - cambios exclusivamente documentales pueden omitir Android CI cuando así lo definan los workflows.
