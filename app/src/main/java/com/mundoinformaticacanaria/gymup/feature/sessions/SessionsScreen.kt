@@ -59,7 +59,7 @@ fun SessionsScreen(
                                 Text(session.name, style = MaterialTheme.typography.titleMedium)
                                 Text("${session.date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))} · ${session.sessionTypeName}")
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Text(session.operationalState.label())
+                                    Text(session.operationalState.sessionStateLabel())
                                     Text(session.executionResult.label())
                                 }
                             }
@@ -71,7 +71,7 @@ fun SessionsScreen(
     }
 }
 
-internal fun SessionOperationalState.label(): String = when (this) {
+private fun SessionOperationalState.sessionStateLabel(): String = when (this) {
     SessionOperationalState.PLANNED -> "Planificada"
     SessionOperationalState.IN_PROGRESS -> "En curso"
     SessionOperationalState.REALIZED -> "Realizada"

@@ -1,4 +1,4 @@
-# ADR-005 — Informes, backup e imágenes
+# ADR-008 — Informes, backup e imágenes
 
 Estado: **Aceptado**  
 Fecha: 2026-08-20  

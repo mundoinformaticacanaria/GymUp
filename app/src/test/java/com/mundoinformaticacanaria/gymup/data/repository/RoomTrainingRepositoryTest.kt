@@ -3,10 +3,13 @@ package com.mundoinformaticacanaria.gymup.data.repository
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.mundoinformaticacanaria.gymup.core.model.LoadMode
+import com.mundoinformaticacanaria.gymup.core.model.MeasurementUnit
 import com.mundoinformaticacanaria.gymup.core.model.SessionExecutionResult
 import com.mundoinformaticacanaria.gymup.core.model.SessionOperationalState
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
 import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
+import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseMaintenanceInput
 import com.mundoinformaticacanaria.gymup.domain.repository.MissingRirException
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionSource
 import kotlinx.coroutines.flow.first
@@ -86,6 +89,51 @@ class RoomTrainingRepositoryTest {
         assertEquals(afterFulfilled.actualLoad, secondSet.targetLoad)
         assertEquals(afterFulfilled.actualMeasurement, secondSet.targetMeasurement)
         assertEquals(false, secondSet.actualConfirmed)
+    }
+
+    @Test
+    fun masterDefaultsPersistAndPreloadWhenExerciseIsAddedWithoutPriorHistory() = runBlocking {
+        val maintenance = RoomCatalogMaintenanceRepository(context, database)
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val type = database.masterDataDao().getSessionTypes().first { it.isActive }
+        val exerciseId = maintenance.createExercise(
+            ExerciseMaintenanceInput(
+                nameEs = "Prueba defaults",
+                nameEn = "Defaults test",
+                muscleGroupId = group.id,
+                equipmentId = null,
+                loadMode = LoadMode.KG_TOTAL,
+                measurementUnit = MeasurementUnit.REPETITIONS,
+                rirRequired = true,
+                initialSetCount = 3,
+                initialLoad = 42.5,
+                initialMeasurement = 8,
+                description = "Ejercicio para validar precarga",
+            ),
+        )
+
+        val stored = requireNotNull(maintenance.getExercise(exerciseId))
+        assertEquals(3, stored.initialSetCount)
+        assertEquals(42.5, stored.initialLoad ?: 0.0, 0.0)
+        assertEquals(8, stored.initialMeasurement)
+
+        val sessionId = repository.createSession(
+            LocalDate.of(2026, 8, 21),
+            type.id,
+            null,
+            null,
+            SessionSource.Empty,
+        ).sessionId
+        repository.addExercise(sessionId, exerciseId)
+
+        val planned = requireNotNull(repository.getSessionDetail(sessionId)).exercises.single()
+        assertEquals(3, planned.sets.size)
+        planned.sets.forEachIndexed { index, set ->
+            assertEquals(index + 1, set.position)
+            assertEquals(42.5, set.targetLoad ?: 0.0, 0.0)
+            assertEquals(8, set.targetMeasurement)
+            assertEquals(false, set.actualConfirmed)
+        }
     }
 
     @Test

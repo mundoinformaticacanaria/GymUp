@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -53,10 +53,22 @@ jobs:
         if: steps.android-project.outputs.exists == 'true'
         run: gradle --no-daemon assembleDebug
 
+      - name: Assemble release APK
+        if: steps.android-project.outputs.exists == 'true'
+        run: gradle --no-daemon assembleRelease
+
       - name: Upload debug APK
         if: steps.android-project.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: gymup-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload release APK
+        if: steps.android-project.outputs.exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gymup-v1-release
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
