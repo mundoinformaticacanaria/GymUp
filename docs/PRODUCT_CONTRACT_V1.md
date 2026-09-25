@@ -1,6 +1,7 @@
 # GymUp — Contrato funcional v1
 
-Estado: **vivo / en cierre funcional**
+Estado: **cerrado funcionalmente para el MVP v1**  
+Cierre de referencia: `docs/PRODUCT_CONTRACT_V1_CLOSURE.md` e Issue #1. Los cambios posteriores solo son vigentes cuando quedan aprobados y trazados en GitHub.
 
 Este documento recoge las decisiones de producto vigentes para GymUp v1. Si una conversación, Issue, ADR o implementación contradice este documento, el trabajo afectado debe detenerse hasta resolver explícitamente la discrepancia.
 
@@ -783,8 +784,8 @@ Cuando el usuario indique `Revisa GitHub` o equivalente, el Tech Lead localiza t
 
 El Tech Lead es responsable de mantener GitHub y este contrato actualizados durante todo el circuito.
 
-### Pendiente actual
+### Estado consolidado
 
-F-07 a F-13 quedan aprobadas y consolidadas.
+Las decisiones F-01 a F-14.1 quedaron aprobadas y consolidadas al cerrar la Issue #1, incluido el catálogo funcional inicial de 61 ejercicios descrito en `docs/PRODUCT_CONTRACT_V1_CLOSURE.md`.
 
-F-14 (seed inicial de ejercicios) está estructuralmente validado, pero permanece pendiente de una corrección de cobertura funcional registrada en la Issue #1 antes de considerarse seed definitivo v1.
+Las decisiones posteriores que modifiquen comportamiento visible o reglas de negocio deben documentarse en su Issue, reflejarse en este contrato o en un documento enlazado y conservar la aprobación del Product Owner.

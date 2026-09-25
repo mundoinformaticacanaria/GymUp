@@ -1,0 +1,4 @@
+# Solicitar revisión funcional cuando se cambie el contrato de producto
+# o el workflow que genera candidatos APK.
+docs/PRODUCT_CONTRACT_V1.md @mundoinformaticacanaria
+.github/workflows/android-candidate.yml @mundoinformaticacanaria

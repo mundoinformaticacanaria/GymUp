@@ -17,33 +17,38 @@ Documentos principales:
 
 ## 2. Autoridad y roles actuales
 
-### Product Owner — usuario
+### Product Owner + FUNCIONAL — propietario
 
-Responsabilidades:
+El propietario conserva la autoridad funcional. Le corresponde:
 
-- decidir alcance y comportamiento de producto;
-- resolver ambigüedades funcionales;
-- decidir ante contradicciones o cambios de requisitos;
-- aportar datos iniciales cuando sea necesario;
-- aprobar decisiones que alteren experiencia, reglas de negocio o alcance.
+- decidir alcance, prioridades y comportamiento de producto;
+- resolver ambigüedades o contradicciones funcionales;
+- aprobar cambios visibles, reglas de negocio y reducciones de capacidades;
+- autorizar la generación de APK candidatos/finales y cualquier merge que active consumo facturable o cuota limitada de GitHub, o uso de tokens facturados;
+- realizar o confirmar las pruebas físicas en dispositivos.
 
-### Tech Lead — ChatGPT
+### TECH LEAD — ChatGPT
 
-Responsabilidades:
+El Tech Lead dirige el trabajo técnico y el estado operativo del proyecto. Le corresponde:
 
-- dirigir técnicamente el proyecto;
-- ejercer la máxima responsabilidad sobre el gobierno, orden, coherencia y administración operativa del GitHub del proyecto;
-- decidir cuándo una Issue está suficientemente resuelta para cerrarse y efectuar su cierre cuando corresponda;
-- elegir stack, arquitectura, librerías y estrategia de pruebas dentro de las restricciones acordadas;
-- mantener coherencia entre requisitos, modelo y código;
-- detectar contradicciones, riesgos y ambigüedades;
-- detenerse cuando una decisión sea de producto o tenga impacto funcional relevante;
-- mantener GitHub actualizado como fuente de verdad;
-- preparar Issues suficientemente autocontenidas para que un futuro colaborador pueda trabajar sin depender del chat;
-- revisar cambios, PRs y CI cuando exista desarrollo;
-- priorizar software libre y gratuito conforme a la restricción del proyecto.
+- mantener la visión de conjunto, el backlog y la coherencia entre contrato, arquitectura, documentación y código;
+- continuar con la siguiente Issue ejecutable e independiente conforme a `docs/EXECUTION_POLICY.md`;
+- decidir cuestiones técnicas dentro de las restricciones acordadas;
+- crear trabajo trazable y asignar un alcance concreto a los ejecutores disponibles;
+- revisar ramas, PR, CI y criterios de aceptación; comunicar bloqueos con precisión;
+- no asumir decisiones reservadas al Product Owner; puede fusionar PR cuando cumplan las puertas técnicas y funcionales y no activen consumo facturable/cuota limitada ni tokens facturados. Si hay coste o no se puede verificar, pide autorización antes de fusionar.
 
-Actualmente el equipo de ejecución consta únicamente del Tech Lead. Si el proyecto crece, se podrán introducir roles adicionales.
+### Ejecución técnica — Codex conectado o Codex local
+
+Codex conectado y Codex local son medios de ejecución técnica. Cuando reciben una Issue y un alcance:
+
+- implementan o verifican exclusivamente ese alcance;
+- leen primero el contexto vivo y las dependencias de la Issue;
+- devuelven cambios mediante rama y PR, salvo el log operativo expresamente permitido;
+- documentan validación, riesgos y resultados;
+- no aprueban requisitos funcionales, merges ni candidatos APK.
+
+El modelo operativo vigente tiene al Tech Lead como responsable de coordinación. Los ejecutores no son roles de producto independientes. No se activan agentes permanentes adicionales ni se amplía su autoridad sin delegación expresa del propietario.
 
 ## 3. Posibles roles futuros
 
@@ -209,3 +214,29 @@ Cuando el contrato v1 esté suficientemente cerrado:
 GymUp v1 debe optimizar el flujo principal: planificar, ejecutar, registrar, consultar histórico y exportar.
 
 No se incorporarán funcionalidades por anticipación si no aportan valor claro a la v1. Las extensiones futuras deben dejarse posibles cuando sea razonable, pero sin complicar innecesariamente el producto actual.
+
+## 12. Flujo de ramas, revisión, integración y candidatos
+
+Toda modificación relevante parte de una Issue y usa una rama propia. Antes de abrir una nueva rama se comprueban ramas y PR existentes para evitar trabajo duplicado. La PR debe explicar alcance, Issue relacionada, base cuando esté apilada, validaciones realizadas y restricciones pendientes.
+
+Reglas de integración:
+
+- CI correcto no basta por sí solo: la Issue, la revisión técnica, las dependencias y los criterios de aceptación también deben estar resueltos;
+- el Tech Lead puede fusionar cuando se cumplan esas puertas y el merge no active consumo facturable/cuota limitada de GitHub ni tokens facturados;
+- si el merge activa ese consumo, o su coste no puede verificarse, se solicita autorización expresa al Product Owner antes de fusionar;
+- la autorización funcional para cambiar comportamiento y la autorización para generar APK candidatos siguen sus reglas propias;
+- las PR apiladas declaran su base y se mantienen separadas mientras siga pendiente la integración;
+- una Issue no se cierra solo por existir una PR: deben cumplirse sus criterios y quedar resueltas sus dependencias;
+- cambios exclusivamente documentales pueden omitir Android CI cuando así lo definan los workflows.
+
+Reglas de candidatos APK:
+
+- no se genera un APK por cada corrección aislada;
+- las mejoras se acumulan en bloques funcionales coordinados;
+- antes de crear una etiqueta `candidate-*` se presenta la lista exacta de funcionalidades y correcciones respecto al último candidato;
+- se requiere autorización expresa del Product Owner después de presentar esa lista;
+- solo entonces se ejecuta el workflow de candidato;
+- la huella SHA-256 del APK extraído y el commit origen quedan documentados;
+- la validación física no se sustituye por el resultado de CI.
+
+La Issue #35 mantiene el bloque funcional activo y la puerta del siguiente candidato.
