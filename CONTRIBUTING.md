@@ -12,7 +12,7 @@ Antes de trabajar, sigue primero `AGENTS.md` y registra la sesión conforme a `d
 4. Añade o actualiza pruebas cuando cambien reglas, persistencia o un defecto reproducible.
 5. Abre una PR que enlace la Issue y explique alcance, base, validaciones y riesgos.
 6. Mantén separadas las PR apiladas e indica expresamente su dependencia.
-7. Espera la revisión y la aprobación expresa del Product Owner antes de fusionar.
+7. Tras la revisión técnica y la CI, el Tech Lead puede fusionar si se cumplen los criterios y no se activa consumo facturable/cuota limitada de GitHub ni uso de tokens facturados; si se activa o no puede verificarse el coste, solicita autorización al Product Owner.
 
 No se escriben cambios de producto, código o documentación directamente en `main`. La única excepción es añadir las entradas `INICIO` y `FIN` a `ops/logs/tech-lead.log`, de acuerdo con la política vigente; esas entradas deben quedar en commits separados.
 
@@ -30,8 +30,8 @@ Android CI es la verificación compartida. Una PR solo documental puede quedar e
 
 ## Integración y candidatos
 
-- CI correcto no autoriza el merge.
-- No se fusiona ninguna PR sin aprobación expresa del Product Owner.
+- CI correcto no basta: deben cumplirse también aceptación, revisión y dependencias.
+- No se pide aprobación solo para fusionar; se pide si el merge activa consumo facturable/cuota limitada de GitHub, tokens facturados o un coste incierto.
 - No se genera un APK por cada corrección.
 - Los candidatos se acumulan por bloque funcional en la Issue #35.
 - Antes de un candidato se enumera su contenido exacto respecto al anterior y se solicita autorización expresa.
