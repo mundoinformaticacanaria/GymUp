@@ -35,5 +35,6 @@
 
 - [ ] No se ha generado ni publicado APK
 - [ ] No se ha creado una etiqueta `candidate-*`
-- [ ] La PR no debe fusionarse sin aprobación expresa del Product Owner
+- [ ] El merge activa consumo facturable/cuota limitada de GitHub o tokens facturados; autorización del Product Owner obtenida
+- [ ] Se verificó que el merge no activa ese consumo y cumple los criterios
 - [ ] Si forma parte de un candidato, está relacionada con el bloque activo en #35
