@@ -4,7 +4,7 @@ Estas instrucciones son el punto de entrada operativo para cualquier sesión de 
 
 ## Autoridad y responsabilidades
 
-- **Product Owner y FUNCIONAL:** el propietario del proyecto. Decide comportamiento, alcance, prioridades funcionales y autoriza las pruebas físicas, merges y candidatos APK.
+- **Product Owner y FUNCIONAL:** el propietario del proyecto. Decide comportamiento, alcance, prioridades funcionales y autoriza las pruebas físicas y la generación de candidatos APK. La aprobación de un merge solo se solicita si este activa consumo facturable o cuota limitada de GitHub, o uso de tokens facturados.
 - **TECH LEAD:** ChatGPT. Mantiene la visión de conjunto, prioriza y coordina Issues, toma decisiones técnicas compatibles con el contrato, prepara trabajo trazable, revisa PR/CI y comunica bloqueos. Puede implementar tareas según la delegación vigente.
 - **Ejecución técnica:** Codex conectado o Codex local, cuando el Tech Lead o el propietario les asigne una Issue y un alcance. Trabajan solo ese alcance, informan resultados y no asumen autoridad funcional, de merge o de publicación.
 - **Otros roles** (Android Developer, UX/UI, QA, Data/Analytics) solo se consideran activos cuando el propietario los delega expresamente. No se debe crear una organización de agentes o ampliar sus permisos por inferencia.
@@ -47,7 +47,7 @@ Después de registrar `INICIO`:
 - No cambies comportamiento visible ni reglas de negocio sin aprobación del Product Owner y actualización de la fuente funcional.
 - Si hay una decisión funcional ambigua, pregunta una cosa concreta; mientras tanto continúa con tareas independientes que sí estén desbloqueadas.
 - Protege datos e histórico, conserva el funcionamiento offline y usa dependencias libres/gratuitas.
-- Trabaja en rama y PR. La CI correcta no autoriza el merge: no fusiones PR sin aprobación expresa del propietario.
+- Trabaja en rama y PR. El Tech Lead puede fusionar cuando la Issue, la revisión técnica, la CI y las dependencias estén resueltas. Antes comprueba si el merge dispara consumo facturable/cuota limitada de GitHub o uso de tokens facturados; pide autorización solo en ese caso o si no puede determinarlo. El CI estándar gratuito no exige autorización.
 - No generes, etiquetes ni publiques APK candidato/final sin presentar antes los cambios exactos respecto al último candidato y recibir autorización expresa. La prueba física del propietario es una puerta distinta de la CI.
 - Ejecuta o consulta las validaciones definidas para la tarea. No afirmes que se ejecutó una prueba que no se realizó y distingue tests JVM/Robolectric de pruebas instrumentadas o físicas.
 - Al cerrar la sesión, completa el log antes de responder. Informa Issue, PR/commit, validaciones, resultado y bloqueo restante con claridad.
