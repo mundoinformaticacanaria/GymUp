@@ -36,6 +36,8 @@ import com.mundoinformaticacanaria.gymup.core.model.ExerciseExecutionStatus
 import com.mundoinformaticacanaria.gymup.core.model.LoadMode
 import com.mundoinformaticacanaria.gymup.core.model.MeasurementUnit
 import com.mundoinformaticacanaria.gymup.core.model.SessionOperationalState
+import com.mundoinformaticacanaria.gymup.core.ui.PositionSelector
+import com.mundoinformaticacanaria.gymup.core.util.swapPositions
 import com.mundoinformaticacanaria.gymup.data.images.ExerciseImageManager
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
@@ -136,8 +138,10 @@ fun SessionDetailScreen(
                         exercise = selectedExercise,
                         exerciseImageManager = exerciseImageManager,
                         message = message,
+                        totalExercises = current.exercises.size,
                         canMoveUp = current.summary.operationalState == SessionOperationalState.PLANNED && index > 0,
                         canMoveDown = current.summary.operationalState == SessionOperationalState.PLANNED && index in 0 until current.exercises.lastIndex,
+                        canChangePosition = current.summary.operationalState == SessionOperationalState.PLANNED,
                         onMoveUp = {
                             val ids = current.exercises.map { it.id }.toMutableList()
                             val id = ids.removeAt(index)
@@ -148,6 +152,11 @@ fun SessionDetailScreen(
                             val ids = current.exercises.map { it.id }.toMutableList()
                             val id = ids.removeAt(index)
                             ids.add(index + 1, id)
+                            action { sessionRepository.reorderExercises(sessionId, ids) }
+                        },
+                        onChangePosition = { position ->
+                            val ids = current.exercises.map { it.id }
+                                .swapPositions(index, position - 1)
                             action { sessionRepository.reorderExercises(sessionId, ids) }
                         },
                         onSaveMeta = { rest, note, reason ->
@@ -264,6 +273,15 @@ fun SessionDetailScreen(
                         supportingText = if (current.summary.operationalState == SessionOperationalState.PLANNED) "Revisar planificación" else "Ver ejercicio",
                     )
                     if (current.summary.operationalState == SessionOperationalState.PLANNED) {
+                        PositionSelector(
+                            currentPosition = index + 1,
+                            totalPositions = current.exercises.size,
+                            onPositionSelected = { position ->
+                                val ids = current.exercises.map { it.id }
+                                    .swapPositions(index, position - 1)
+                                action { sessionRepository.reorderExercises(sessionId, ids) }
+                            },
+                        )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(
                                 enabled = index > 0,
@@ -407,10 +425,13 @@ private fun ExerciseEditor(
     exercise: TrainingExercise,
     exerciseImageManager: ExerciseImageManager,
     message: SessionUiMessage?,
+    totalExercises: Int,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
+    canChangePosition: Boolean,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
+    onChangePosition: (Int) -> Unit,
     onSaveMeta: (Int?, String, String?) -> Unit,
     onAddSet: () -> Unit,
     onDeleteExercise: () -> Unit,
@@ -436,6 +457,13 @@ private fun ExerciseEditor(
                 Text(it)
             }
             ExerciseImageGallery(exerciseId = exercise.exerciseId, manager = exerciseImageManager, modifier = Modifier.fillMaxWidth())
+            if (canChangePosition) {
+                PositionSelector(
+                    currentPosition = exercise.position,
+                    totalPositions = totalExercises,
+                    onPositionSelected = onChangePosition,
+                )
+            }
             if (canMoveUp || canMoveDown) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(enabled = canMoveUp, onClick = onMoveUp) { Text("↑ Subir") }
