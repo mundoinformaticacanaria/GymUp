@@ -13,13 +13,17 @@ import com.mundoinformaticacanaria.gymup.data.repository.RoomCatalogMaintenanceR
 import com.mundoinformaticacanaria.gymup.data.repository.RoomExerciseCatalogRepository
 import com.mundoinformaticacanaria.gymup.data.repository.RoomHistoryRepository
 import com.mundoinformaticacanaria.gymup.data.repository.RoomMasterCatalogRepository
-import com.mundoinformaticacanaria.gymup.data.repository.RoomTrainingRepository
+import com.mundoinformaticacanaria.gymup.data.repository.RoomRoutineRepository
+import com.mundoinformaticacanaria.gymup.data.repository.RoomSessionRepository
 import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
 import com.mundoinformaticacanaria.gymup.domain.repository.CatalogMaintenanceRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.HistoryRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
-import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
+import com.mundoinformaticacanaria.gymup.domain.repository.RoutineRepository
+import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
+import com.mundoinformaticacanaria.gymup.domain.usecase.FilterRoutineExercisesUseCase
+import com.mundoinformaticacanaria.gymup.domain.usecase.SaveRoutineUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,7 +35,10 @@ interface AppContainer {
     val exerciseCatalogRepository: ExerciseCatalogRepository
     val catalogMaintenanceRepository: CatalogMaintenanceRepository
     val exerciseImageManager: ExerciseImageManager
-    val trainingRepository: TrainingRepository
+    val sessionRepository: SessionRepository
+    val routineRepository: RoutineRepository
+    val saveRoutineUseCase: SaveRoutineUseCase
+    val filterRoutineExercisesUseCase: FilterRoutineExercisesUseCase
     val historyRepository: HistoryRepository
     val historicalCleanupManager: HistoricalCleanupManager
     val backupManager: BackupManager
@@ -46,7 +53,10 @@ class DefaultAppContainer(context: Context) : AppContainer {
     override val exerciseCatalogRepository: ExerciseCatalogRepository = RoomExerciseCatalogRepository(database.exerciseDao())
     override val catalogMaintenanceRepository: CatalogMaintenanceRepository = RoomCatalogMaintenanceRepository(appContext, database)
     override val exerciseImageManager = ExerciseImageManager(appContext, database.exerciseDao())
-    override val trainingRepository: TrainingRepository = RoomTrainingRepository(database)
+    override val sessionRepository: SessionRepository = RoomSessionRepository(database)
+    override val routineRepository: RoutineRepository = RoomRoutineRepository(database)
+    override val saveRoutineUseCase = SaveRoutineUseCase(routineRepository)
+    override val filterRoutineExercisesUseCase = FilterRoutineExercisesUseCase()
     override val historyRepository: HistoryRepository = RoomHistoryRepository(database)
     override val historicalCleanupManager = HistoricalCleanupManager(RoomHistoricalCleanupStore(database))
     override val backupManager = BackupManager(

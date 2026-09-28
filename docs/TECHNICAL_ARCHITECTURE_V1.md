@@ -82,6 +82,18 @@ Las capas inferiores no importan tipos de Compose.
 
 Los ViewModels reciben dependencias por constructor mediante factories explícitas.
 
+### Estado implementado
+
+El MVP sigue siendo un monolito modular en un único módulo Gradle `:app`, conforme a ADR-006. La separación interna vigente es:
+
+- contratos `SessionRepository` y `RoutineRepository` segregados por responsabilidad;
+- implementaciones Room `RoomSessionRepository` y `RoomRoutineRepository` independientes;
+- `AppViewModel` para preferencia global de tema;
+- `RoutineListViewModel` y `RoutineEditorViewModel` para el flujo de rutinas;
+- `SaveRoutineUseCase` y `FilterRoutineExercisesUseCase` entre UI y persistencia.
+
+La migración a varios módulos Gradle continúa pospuesta hasta que exista una razón medible de tiempos de build, ownership o reutilización. La separación de paquetes y contratos no debe confundirse con microservicios ni con una arquitectura distribuida.
+
 ## 5. Navegación v1
 
 Destinos principales:
@@ -91,6 +103,7 @@ Destinos principales:
 - `session/new`
 - `session/{sessionId}`
 - `routines`
+- `routine/new`
 - `routine/{routineId}`
 - `exercises`
 - `exercise/{exerciseId}`
