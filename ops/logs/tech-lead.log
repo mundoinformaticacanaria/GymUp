@@ -34,3 +34,4 @@
 2026-09-25T16:50:32Z | INICIO: revisar GitHub; máximo tres tareas en esta pasada
 2026-09-25T16:56:01Z | FIN #16: PR #43 revisada y fusionada en squash (c2bd69d); CI del head #355 correcta, 0 artefactos; comentario de seguimiento publicado; #16 sigue abierta por licencia, rulesets, limpieza de ramas e identificación de releases; sin candidato, etiqueta ni release
 2026-09-28T05:19:30Z | INICIO: revisar GitHub; máximo tres tareas en esta pasada
+2026-09-28T05:26:26Z | FIN #35, #32, #33, #31: política aclarada; PR #34 fusionada en squash (a1b2cd4), PR #39 fusionada en squash (d1c61c0); CI #313, #314 y CI de PR #20 run #359 correctos, 0 artefactos; #40–#42 siguen abiertas; candidato BF-02 pendiente de autorización; sin APK ni etiqueta
