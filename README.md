@@ -21,6 +21,7 @@ La fuente de verdad funcional y técnica del proyecto es este repositorio.
 
 ## Documentación
 
+- [Guía rápida de usuario](docs/GUIA_RAPIDA_USUARIO.md)
 - [Contrato funcional v1](docs/PRODUCT_CONTRACT_V1.md)
 - [Cierre funcional MVP v1](docs/PRODUCT_CONTRACT_V1_CLOSURE.md)
 - [Arquitectura técnica v1](docs/TECHNICAL_ARCHITECTURE_V1.md)
@@ -75,4 +76,3 @@ El CI habitual verifica el código sin conservar APK. Solo el workflow explícit
 La versión de aplicación preparada para el cierre del MVP es `1.0.0` (`versionCode 1`). La distribución inicial es manual mediante APK; Google Play, autenticación y sincronización multidispositivo quedan fuera de v1.
 
 No deben implementarse funcionalidades que contradigan el contrato funcional vigente. Cualquier cambio futuro de producto debe quedar trazado explícitamente en GitHub antes de incorporarse al desarrollo.
-
