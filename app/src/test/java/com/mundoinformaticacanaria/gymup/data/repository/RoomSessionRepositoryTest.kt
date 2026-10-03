@@ -92,6 +92,84 @@ class RoomSessionRepositoryTest {
     }
 
     @Test
+    fun reopenSessionPreservesDataAndAllowsValidatedFinalizationAgain() = runBlocking {
+        val type = database.masterDataDao().getSessionTypes().first()
+        val exercise = database.exerciseDao().getAll().first { it.rirRequired }
+        val sessionId = repository.createSession(
+            LocalDate.of(2026, 9, 24),
+            type.id,
+            "Sesión para reabrir",
+            "Nota general",
+            SessionSource.Empty,
+        ).sessionId
+        repository.addExercise(sessionId, exercise.id)
+        var detail = requireNotNull(repository.getSessionDetail(sessionId))
+        if (detail.exercises.single().sets.isEmpty()) repository.addSet(detail.exercises.single().id)
+        detail = requireNotNull(repository.getSessionDetail(sessionId))
+        val sessionExercise = detail.exercises.single()
+        val set = sessionExercise.sets.first()
+        val actualLoad = if (exercise.defaultLoadMode.name == "NO_WEIGHT" || exercise.defaultLoadMode.name == "BODYWEIGHT") null else 12.5
+
+        repository.updateExerciseMeta(sessionExercise.id, 90, "Nota del ejercicio", null)
+        repository.updateSetTargets(
+            set.id,
+            targetLoad = actualLoad,
+            targetMeasurement = 8,
+            loadMode = exercise.defaultLoadMode,
+            measurementUnit = exercise.defaultMeasurementUnit,
+        )
+        repository.updateSetRest(set.id, 75)
+        repository.updateSetActual(set.id, actualLoad, 8, 2)
+        repository.finalizeSession(sessionId)
+        val realized = requireNotNull(repository.getSessionDetail(sessionId))
+
+        repository.reopenSession(sessionId)
+
+        val reopened = requireNotNull(repository.getSessionDetail(sessionId))
+        assertEquals(SessionOperationalState.IN_PROGRESS, reopened.summary.operationalState)
+        assertEquals(
+            realized.copy(summary = realized.summary.copy(operationalState = SessionOperationalState.IN_PROGRESS)),
+            reopened,
+        )
+
+        repository.updateSetActual(set.id, actualLoad, 9, null)
+        assertThrows(MissingRirException::class.java) {
+            runBlocking { repository.finalizeSession(sessionId) }
+        }
+        assertEquals(
+            SessionOperationalState.IN_PROGRESS,
+            requireNotNull(repository.getSessionDetail(sessionId)).summary.operationalState,
+        )
+
+        repository.updateSetActual(set.id, actualLoad, 9, 1)
+        repository.finalizeSession(sessionId)
+        val finalizedAgain = requireNotNull(repository.getSessionDetail(sessionId))
+        assertEquals(SessionOperationalState.REALIZED, finalizedAgain.summary.operationalState)
+        assertEquals(9, finalizedAgain.exercises.single().sets.first().actualMeasurement)
+        assertEquals(1, finalizedAgain.exercises.single().sets.first().rir)
+    }
+
+    @Test
+    fun reopenSessionRejectsAStateThatIsNotRealized() = runBlocking {
+        val type = database.masterDataDao().getSessionTypes().first()
+        val sessionId = repository.createSession(
+            LocalDate.of(2026, 9, 24),
+            type.id,
+            null,
+            null,
+            SessionSource.Empty,
+        ).sessionId
+
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { repository.reopenSession(sessionId) }
+        }
+        assertEquals(
+            SessionOperationalState.PLANNED,
+            requireNotNull(repository.getSessionDetail(sessionId)).summary.operationalState,
+        )
+    }
+
+    @Test
     fun masterDefaultsPersistAndPreloadWhenExerciseIsAddedWithoutPriorHistory() = runBlocking {
         val maintenance = RoomCatalogMaintenanceRepository(context, database)
         val group = database.masterDataDao().getMuscleGroups().first { it.isActive }

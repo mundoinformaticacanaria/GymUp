@@ -92,6 +92,7 @@ interface SessionRepository {
     suspend fun updateSessionMetadata(sessionId: String, sessionTypeId: String, name: String?, note: String?)
     suspend fun changeSessionPosition(sessionId: String, date: LocalDate, orderInDay: Int)
     suspend fun setOperationalState(sessionId: String, state: SessionOperationalState)
+    suspend fun reopenSession(sessionId: String)
     suspend fun recalculateObjectives(sessionId: String)
 
     suspend fun addExercise(sessionId: String, exerciseId: String)

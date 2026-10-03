@@ -62,6 +62,8 @@ RIR significa «repeticiones en reserva»: cuántas repeticiones más crees que 
 - **Volver a la sesión** regresa a la lista de ejercicios.
 - **Finalizar sesión** cierra la sesión completa.
 
+Si cerraste una sesión por error o necesitas corregirla, ábrela y pulsa **Reabrir sesión**. Tras confirmar, volverá a **En curso** conservando todos los datos. Podrás editarla o continuarla y después pulsar otra vez **Finalizar sesión**.
+
 Los estados del ejercicio se calculan automáticamente:
 
 - **No realizado**: ninguna serie realizada.
@@ -108,4 +110,3 @@ Primero debe existir al menos una rutina o una sesión anterior, respectivamente
 ### No encuentro una acción o más ejercicios
 
 Las listas largas pueden desplazarse verticalmente. Los botones principales de los asistentes permanecen en la zona inferior de la pantalla.
-
