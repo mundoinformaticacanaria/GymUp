@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -24,12 +26,16 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mundoinformaticacanaria.gymup.core.model.ExerciseExecutionStatus
@@ -479,21 +485,88 @@ private fun ExerciseEditor(
             }
             TextButton(onClick = { onSaveMeta(rest.toIntOrNull(), note, reason) }, modifier = Modifier.fillMaxWidth()) { Text("Guardar ejercicio") }
 
-            exercise.sets.forEach { set ->
-                SetEditor(
-                    set = set,
+            key(exercise.id) {
+                SeriesPager(
+                    sets = exercise.sets,
                     rirRequired = exercise.rirRequired,
-                    message = message?.takeIf { it.setId == set.id },
+                    message = message,
                     onSaveTargets = onSaveTargets,
                     onSaveActual = onSaveActual,
                     onSetRest = onSetRest,
                     onFulfilled = onFulfilled,
-                    onDelete = onDeleteSet,
+                    onDeleteSet = onDeleteSet,
                 )
             }
             Button(onClick = onAddSet, modifier = Modifier.fillMaxWidth()) { Text("Añadir serie") }
             Button(onClick = onFinalizeExercise, modifier = Modifier.fillMaxWidth()) { Text("Finalizar ejercicio") }
         }
+    }
+}
+
+@Composable
+private fun SeriesPager(
+    sets: List<TrainingSet>,
+    rirRequired: Boolean,
+    message: SessionUiMessage?,
+    onSaveTargets: (TrainingSet, Double?, Int?, LoadMode, MeasurementUnit) -> Unit,
+    onSaveActual: (TrainingSet, Double?, Int?, Int?) -> Unit,
+    onSetRest: (TrainingSet, Int?) -> Unit,
+    onFulfilled: (TrainingSet) -> Unit,
+    onDeleteSet: (TrainingSet) -> Unit,
+) {
+    if (sets.isEmpty()) {
+        Text("Este ejercicio todavía no tiene series.")
+        return
+    }
+
+    val setIds = sets.map { it.id }
+    val pagerState = rememberPagerState(pageCount = { sets.size })
+    var previousSetIds by remember { mutableStateOf(setIds) }
+
+    LaunchedEffect(setIds) {
+        val targetPage = resolveSeriesPageIndex(
+            previousSetIds = previousSetIds,
+            currentSetIds = setIds,
+            previousPage = pagerState.currentPage,
+        )
+        if (pagerState.currentPage != targetPage) {
+            pagerState.scrollToPage(targetPage)
+        }
+        previousSetIds = setIds
+    }
+
+    val visiblePage = pagerState.currentPage.coerceIn(sets.indices)
+    val positionText = seriesPositionText(visiblePage, sets.size)
+    Text(
+        text = positionText,
+        style = MaterialTheme.typography.titleSmall,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                contentDescription = buildString {
+                    append("Serie ${visiblePage + 1} de ${sets.size}.")
+                    if (sets.size > 1) append(" Desliza horizontalmente para cambiar de serie.")
+                }
+            },
+    )
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxWidth(),
+        userScrollEnabled = sets.size > 1,
+        key = { page -> sets[page].id },
+    ) { page ->
+        val set = sets[page]
+        SetEditor(
+            set = set,
+            rirRequired = rirRequired,
+            message = message?.takeIf { it.setId == set.id },
+            onSaveTargets = onSaveTargets,
+            onSaveActual = onSaveActual,
+            onSetRest = onSetRest,
+            onFulfilled = onFulfilled,
+            onDelete = onDeleteSet,
+        )
     }
 }
 
@@ -520,7 +593,7 @@ private fun SetEditor(
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Serie ${set.position}${if (set.actualConfirmed) " · Realizada" else " · Pendiente"}", style = MaterialTheme.typography.titleSmall)
+            Text(if (set.actualConfirmed) "Realizada" else "Pendiente", style = MaterialTheme.typography.titleSmall)
             Text("Modalidad de carga")
             LoadMode.entries.forEach { item -> FilterChip(selected = mode == item, onClick = { mode = item }, label = { Text(item.label()) }) }
             Text("Medición")
