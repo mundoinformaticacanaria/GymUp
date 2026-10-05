@@ -31,7 +31,8 @@ class RoomCatalogMaintenanceRepositoryTest {
     private lateinit var context: Context
     private lateinit var database: GymUpDatabase
     private lateinit var maintenance: RoomCatalogMaintenanceRepository
-    private lateinit var training: RoomTrainingRepository
+    private lateinit var training: RoomSessionRepository
+    private lateinit var routines: RoomRoutineRepository
 
     @Before
     fun setUp() = runBlocking {
@@ -41,7 +42,8 @@ class RoomCatalogMaintenanceRepositoryTest {
             .build()
         DatabaseSeeder(context, database).seedIfNeeded()
         maintenance = RoomCatalogMaintenanceRepository(context, database)
-        training = RoomTrainingRepository(database)
+        training = RoomSessionRepository(database)
+        routines = RoomRoutineRepository(database)
     }
 
     @After
@@ -119,8 +121,7 @@ class RoomCatalogMaintenanceRepositoryTest {
     fun `exercise in routines requires confirmation and is removed atomically`() = runBlocking {
         val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
         val exerciseId = maintenance.createExercise(customInput(group.id, "Ejercicio temporal", "Temporary exercise"))
-        val routineId = training.createRoutine("Rutina", null, null)
-        training.addRoutineExercise(routineId, exerciseId)
+        val routineId = routines.saveRoutine(null, "Rutina", null, null, listOf(exerciseId))
 
         assertThrows(RoutineRemovalConfirmationRequired::class.java) {
             runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = false) }
@@ -129,7 +130,7 @@ class RoomCatalogMaintenanceRepositoryTest {
         val result = maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true)
         assertEquals(ExerciseDeletionResult.Deleted(1), result)
         assertNull(maintenance.getExercise(exerciseId))
-        assertEquals(emptyList<String>(), requireNotNull(training.getRoutineDetail(routineId)).exercises.map { it.exerciseId })
+        assertEquals(emptyList<String>(), requireNotNull(routines.getRoutineDetail(routineId)).exercises.map { it.exerciseId })
     }
 
     @Test

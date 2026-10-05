@@ -58,12 +58,16 @@ Repetir al menos el smoke test básico con:
 - Tema Sistema.
 - Tema Claro.
 - Tema Oscuro.
+- Navegación Android mediante tres botones.
+- Navegación Android mediante gestos, cuando esté disponible.
 - Tamaño de fuente Android normal.
 - Tamaño de fuente Android aumentado de forma significativa.
 
 Comprobar especialmente:
 
 - textos no superpuestos;
+- acciones inferiores completamente visibles y pulsables por encima de la navegación del sistema;
+- ausencia de pulsaciones accidentales sobre Volver, Inicio o Aplicaciones recientes al usar los CTA de GymUp;
 - botones principales alcanzables mediante scroll;
 - formularios de sesión y Ajustes utilizables;
 - no existen controles esenciales fuera de pantalla sin posibilidad de scroll;

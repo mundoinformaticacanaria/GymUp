@@ -42,17 +42,23 @@ import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogReposito
 import com.mundoinformaticacanaria.gymup.domain.repository.MissingRirException
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionDetail
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingExercise
-import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
+import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingSet
 import com.mundoinformaticacanaria.gymup.feature.exercises.ExerciseImageGallery
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 
+private data class SessionUiMessage(
+    val text: String,
+    val isError: Boolean,
+    val setId: String? = null,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionDetailScreen(
     sessionId: String,
-    trainingRepository: TrainingRepository,
+    sessionRepository: SessionRepository,
     masterCatalogRepository: MasterCatalogRepository,
     exerciseCatalogRepository: ExerciseCatalogRepository,
     exerciseImageManager: ExerciseImageManager,
@@ -64,26 +70,34 @@ fun SessionDetailScreen(
     val activeExercises by exerciseCatalogRepository.observeActiveExercises().collectAsStateWithLifecycle(initialValue = emptyList())
     var refresh by remember { mutableIntStateOf(0) }
     var detail by remember { mutableStateOf<SessionDetail?>(null) }
-    var message by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<SessionUiMessage?>(null) }
     var showExercisePicker by remember { mutableStateOf(false) }
     var exerciseQuery by remember { mutableStateOf("") }
     var selectedExerciseId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(sessionId, refresh) {
-        detail = trainingRepository.getSessionDetail(sessionId)
+        detail = sessionRepository.getSessionDetail(sessionId)
         if (selectedExerciseId != null && detail?.exercises?.none { it.id == selectedExerciseId } == true) {
             selectedExerciseId = null
         }
     }
 
-    fun action(block: suspend () -> Unit) {
+    fun action(
+        successMessage: String? = null,
+        setId: String? = null,
+        block: suspend () -> Unit,
+    ) {
         scope.launch {
             runCatching { block() }
-                .onSuccess { refresh += 1; message = null }
+                .onSuccess {
+                    refresh += 1
+                    message = successMessage?.let { SessionUiMessage(it, isError = false, setId = setId) }
+                }
                 .onFailure { error ->
-                    message = if (error is MissingRirException) {
+                    val text = if (error is MissingRirException) {
                         "Falta RIR obligatorio en ${error.missingSetIds.size} serie(s)."
                     } else error.message ?: "No se pudo aplicar el cambio."
+                    message = SessionUiMessage(text, isError = true, setId = setId)
                 }
         }
     }
@@ -121,29 +135,45 @@ fun SessionDetailScreen(
                     ExerciseEditor(
                         exercise = selectedExercise,
                         exerciseImageManager = exerciseImageManager,
+                        message = message,
                         canMoveUp = current.summary.operationalState == SessionOperationalState.PLANNED && index > 0,
                         canMoveDown = current.summary.operationalState == SessionOperationalState.PLANNED && index in 0 until current.exercises.lastIndex,
                         onMoveUp = {
                             val ids = current.exercises.map { it.id }.toMutableList()
                             val id = ids.removeAt(index)
                             ids.add(index - 1, id)
-                            action { trainingRepository.reorderExercises(sessionId, ids) }
+                            action { sessionRepository.reorderExercises(sessionId, ids) }
                         },
                         onMoveDown = {
                             val ids = current.exercises.map { it.id }.toMutableList()
                             val id = ids.removeAt(index)
                             ids.add(index + 1, id)
-                            action { trainingRepository.reorderExercises(sessionId, ids) }
+                            action { sessionRepository.reorderExercises(sessionId, ids) }
                         },
-                        onSaveMeta = { rest, note, reason -> action { trainingRepository.updateExerciseMeta(selectedExercise.id, rest, note, reason) } },
-                        onAddSet = { action { trainingRepository.addSet(selectedExercise.id) } },
-                        onDeleteExercise = { action { trainingRepository.deleteExercise(selectedExercise.id) } },
-                        onFinalizeExercise = { action { trainingRepository.finalizeExercise(selectedExercise.id) } },
-                        onSaveTargets = { set, load, measurement, mode, unit -> action { trainingRepository.updateSetTargets(set.id, load, measurement, mode, unit) } },
-                        onSaveActual = { set, load, measurement, rir -> action { trainingRepository.updateSetActual(set.id, load, measurement, rir) } },
-                        onSetRest = { set, rest -> action { trainingRepository.updateSetRest(set.id, rest) } },
-                        onFulfilled = { set -> action { trainingRepository.fulfillSet(set.id) } },
-                        onDeleteSet = { set -> action { trainingRepository.deleteSet(set.id) } },
+                        onSaveMeta = { rest, note, reason ->
+                            action("Ejercicio guardado.") { sessionRepository.updateExerciseMeta(selectedExercise.id, rest, note, reason) }
+                        },
+                        onAddSet = { action { sessionRepository.addSet(selectedExercise.id) } },
+                        onDeleteExercise = { action("Ejercicio eliminado de la sesión.") { sessionRepository.deleteExercise(selectedExercise.id) } },
+                        onFinalizeExercise = { action { sessionRepository.finalizeExercise(selectedExercise.id) } },
+                        onSaveTargets = { set, load, measurement, mode, unit ->
+                            action("Objetivo guardado.", set.id) { sessionRepository.updateSetTargets(set.id, load, measurement, mode, unit) }
+                        },
+                        onSaveActual = { set, load, measurement, rir ->
+                            val successMessage = if (load != null || measurement != null || rir != null) {
+                                "Datos reales guardados. La serie está realizada."
+                            } else {
+                                "Datos reales vaciados. La serie queda pendiente."
+                            }
+                            action(successMessage, set.id) { sessionRepository.updateSetActual(set.id, load, measurement, rir) }
+                        },
+                        onSetRest = { set, rest ->
+                            action("Descanso guardado.", set.id) { sessionRepository.updateSetRest(set.id, rest) }
+                        },
+                        onFulfilled = { set ->
+                            action("Objetivo copiado a Real. El RIR no cambia.", set.id) { sessionRepository.fulfillSet(set.id) }
+                        },
+                        onDeleteSet = { set -> action("Serie eliminada.") { sessionRepository.deleteSet(set.id) } },
                     )
                 }
                 item {
@@ -163,17 +193,22 @@ fun SessionDetailScreen(
                 SessionMetadataEditor(
                     detail = current,
                     typeOptions = types.map { it.id to it.name },
-                    message = message,
-                    onSaveMetadata = { typeId, name, note -> action { trainingRepository.updateSessionMetadata(sessionId, typeId, name, note) } },
-                    onChangePosition = { date, order -> action { trainingRepository.changeSessionPosition(sessionId, date, order) } },
-                    onRecalculate = { action { trainingRepository.recalculateObjectives(sessionId) } },
-                    onStart = { action { trainingRepository.setOperationalState(sessionId, SessionOperationalState.IN_PROGRESS) } },
-                    onFinalize = { action { trainingRepository.finalizeSession(sessionId) } },
+                    message = message?.takeIf { it.setId == null },
+                    onSaveMetadata = { typeId, name, note -> action { sessionRepository.updateSessionMetadata(sessionId, typeId, name, note) } },
+                    onChangePosition = { date, order -> action { sessionRepository.changeSessionPosition(sessionId, date, order) } },
+                    onRecalculate = { action { sessionRepository.recalculateObjectives(sessionId) } },
+                    onStart = { action { sessionRepository.setOperationalState(sessionId, SessionOperationalState.IN_PROGRESS) } },
+                    onFinalize = { action { sessionRepository.finalizeSession(sessionId) } },
                     onDelete = {
                         scope.launch {
-                            runCatching { trainingRepository.deleteSession(sessionId) }
+                            runCatching { sessionRepository.deleteSession(sessionId) }
                                 .onSuccess { onDeleted() }
-                                .onFailure { message = it.message }
+                                .onFailure {
+                                    message = SessionUiMessage(
+                                        text = it.message ?: "No se pudo eliminar la sesión.",
+                                        isError = true,
+                                    )
+                                }
                         }
                     },
                 )
@@ -203,7 +238,7 @@ fun SessionDetailScreen(
                         }
                         candidates.forEach { exercise ->
                             TextButton(
-                                onClick = { action { trainingRepository.addExercise(sessionId, exercise.id) } },
+                                onClick = { action { sessionRepository.addExercise(sessionId, exercise.id) } },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("${exercise.nameEs} · ${exercise.nameEn}") }
                         }
@@ -236,7 +271,7 @@ fun SessionDetailScreen(
                                     val ids = current.exercises.map { it.id }.toMutableList()
                                     val id = ids.removeAt(index)
                                     ids.add(index - 1, id)
-                                    action { trainingRepository.reorderExercises(sessionId, ids) }
+                                    action { sessionRepository.reorderExercises(sessionId, ids) }
                                 },
                             ) { Text("↑ Subir") }
                             TextButton(
@@ -245,7 +280,7 @@ fun SessionDetailScreen(
                                     val ids = current.exercises.map { it.id }.toMutableList()
                                     val id = ids.removeAt(index)
                                     ids.add(index + 1, id)
-                                    action { trainingRepository.reorderExercises(sessionId, ids) }
+                                    action { sessionRepository.reorderExercises(sessionId, ids) }
                                 },
                             ) { Text("↓ Bajar") }
                         }
@@ -275,7 +310,7 @@ private fun ExerciseLaunchCard(
 private fun SessionMetadataEditor(
     detail: SessionDetail,
     typeOptions: List<Pair<String, String>>,
-    message: String?,
+    message: SessionUiMessage?,
     onSaveMetadata: (String, String, String) -> Unit,
     onChangePosition: (LocalDate, Int) -> Unit,
     onRecalculate: () -> Unit,
@@ -362,7 +397,7 @@ private fun SessionMetadataEditor(
                 SessionOperationalState.REALIZED -> Text("Sesión finalizada", style = MaterialTheme.typography.labelLarge)
             }
             TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) { Text("Eliminar sesión") }
-            message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            message?.let { StatusMessage(it) }
         }
     }
 }
@@ -371,6 +406,7 @@ private fun SessionMetadataEditor(
 private fun ExerciseEditor(
     exercise: TrainingExercise,
     exerciseImageManager: ExerciseImageManager,
+    message: SessionUiMessage?,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onMoveUp: () -> Unit,
@@ -394,6 +430,7 @@ private fun ExerciseEditor(
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${exercise.position}. ${exercise.nameEs} · ${exercise.nameEn}", style = MaterialTheme.typography.titleMedium)
             Text("${exercise.muscleGroupName}${exercise.equipmentName?.let { " · $it" }.orEmpty()} · ${exercise.status.label()}")
+            message?.takeIf { it.setId == null }?.let { StatusMessage(it) }
             exercise.description?.let {
                 Text("Instrucciones", style = MaterialTheme.typography.labelLarge)
                 Text(it)
@@ -418,6 +455,7 @@ private fun ExerciseEditor(
                 SetEditor(
                     set = set,
                     rirRequired = exercise.rirRequired,
+                    message = message?.takeIf { it.setId == set.id },
                     onSaveTargets = onSaveTargets,
                     onSaveActual = onSaveActual,
                     onSetRest = onSetRest,
@@ -435,6 +473,7 @@ private fun ExerciseEditor(
 private fun SetEditor(
     set: TrainingSet,
     rirRequired: Boolean,
+    message: SessionUiMessage?,
     onSaveTargets: (TrainingSet, Double?, Int?, LoadMode, MeasurementUnit) -> Unit,
     onSaveActual: (TrainingSet, Double?, Int?, Int?) -> Unit,
     onSetRest: (TrainingSet, Int?) -> Unit,
@@ -449,6 +488,7 @@ private fun SetEditor(
     var mode by remember(set.id, set.loadMode) { mutableStateOf(set.loadMode) }
     var unit by remember(set.id, set.measurementUnit) { mutableStateOf(set.measurementUnit) }
     var rir by remember(set.id, set.rir) { mutableStateOf(set.rir) }
+    val canFulfill = set.targetLoad != null || set.targetMeasurement != null
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -469,12 +509,30 @@ private fun SetEditor(
                 }
             }
             Button(onClick = { onSaveActual(set, actualLoad.parseDecimal(), actualMeasurement.toIntOrNull(), rir) }, modifier = Modifier.fillMaxWidth()) { Text("Guardar real") }
-            Button(onClick = { onFulfilled(set) }, modifier = Modifier.fillMaxWidth()) { Text("Cumplido") }
+            Text("Cumplido copia los valores objetivo guardados a Real. El RIR se guarda aparte con Guardar real.")
+            Button(
+                onClick = { onFulfilled(set) },
+                enabled = canFulfill,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Cumplido") }
+            if (!canFulfill) {
+                Text("Guarda al menos un valor objetivo para usar Cumplido.", style = MaterialTheme.typography.bodySmall)
+            }
+            message?.let { StatusMessage(it) }
             OutlinedTextField(rest, { rest = it }, label = { Text("Descanso serie (s)") }, modifier = Modifier.fillMaxWidth())
             TextButton(onClick = { onSetRest(set, rest.toIntOrNull()) }, modifier = Modifier.fillMaxWidth()) { Text("Guardar descanso") }
             TextButton(onClick = { onDelete(set) }, modifier = Modifier.fillMaxWidth()) { Text("Eliminar serie") }
         }
     }
+}
+
+@Composable
+private fun StatusMessage(message: SessionUiMessage) {
+    Text(
+        text = message.text,
+        color = if (message.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+        style = MaterialTheme.typography.bodyMedium,
+    )
 }
 
 private fun SessionOperationalState.label(): String = when (this) {

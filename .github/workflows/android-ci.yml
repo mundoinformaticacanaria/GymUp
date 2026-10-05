@@ -1,19 +1,30 @@
 name: Android CI
 
 on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+      - 'Log/**'
   push:
     branches:
       - main
-      - 'tech/**'
-  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+      - 'Log/**'
+
+concurrency:
+  group: android-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -41,34 +52,7 @@ jobs:
             echo "Android project has not been bootstrapped on this ref yet."
           fi
 
-      - name: Unit tests
+      - name: Test, lint and compile debug
         if: steps.android-project.outputs.exists == 'true'
-        run: gradle --no-daemon testDebugUnitTest
+        run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
 
-      - name: Lint
-        if: steps.android-project.outputs.exists == 'true'
-        run: gradle --no-daemon lintDebug
-
-      - name: Assemble debug APK
-        if: steps.android-project.outputs.exists == 'true'
-        run: gradle --no-daemon assembleDebug
-
-      - name: Assemble release APK
-        if: steps.android-project.outputs.exists == 'true'
-        run: gradle --no-daemon assembleRelease
-
-      - name: Upload debug APK
-        if: steps.android-project.outputs.exists == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: gymup-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
-      - name: Upload release APK
-        if: steps.android-project.outputs.exists == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: gymup-v1-release
-          path: app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
