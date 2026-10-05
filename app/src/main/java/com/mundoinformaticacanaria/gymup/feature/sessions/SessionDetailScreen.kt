@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -24,18 +26,24 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mundoinformaticacanaria.gymup.core.model.ExerciseExecutionStatus
 import com.mundoinformaticacanaria.gymup.core.model.LoadMode
 import com.mundoinformaticacanaria.gymup.core.model.MeasurementUnit
 import com.mundoinformaticacanaria.gymup.core.model.SessionOperationalState
+import com.mundoinformaticacanaria.gymup.core.ui.PositionSelector
+import com.mundoinformaticacanaria.gymup.core.util.swapPositions
 import com.mundoinformaticacanaria.gymup.data.images.ExerciseImageManager
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
@@ -85,20 +93,24 @@ fun SessionDetailScreen(
     fun action(
         successMessage: String? = null,
         setId: String? = null,
+        onSuccess: (() -> Unit)? = null,
         block: suspend () -> Unit,
     ) {
         scope.launch {
-            runCatching { block() }
-                .onSuccess {
+            executeSessionAction(
+                action = block,
+                onSuccess = {
                     refresh += 1
                     message = successMessage?.let { SessionUiMessage(it, isError = false, setId = setId) }
-                }
-                .onFailure { error ->
+                    onSuccess?.invoke()
+                },
+                onFailure = { error ->
                     val text = if (error is MissingRirException) {
                         "Falta RIR obligatorio en ${error.missingSetIds.size} serie(s)."
                     } else error.message ?: "No se pudo aplicar el cambio."
                     message = SessionUiMessage(text, isError = true, setId = setId)
-                }
+                },
+            )
         }
     }
 
@@ -136,8 +148,10 @@ fun SessionDetailScreen(
                         exercise = selectedExercise,
                         exerciseImageManager = exerciseImageManager,
                         message = message,
+                        totalExercises = current.exercises.size,
                         canMoveUp = current.summary.operationalState == SessionOperationalState.PLANNED && index > 0,
                         canMoveDown = current.summary.operationalState == SessionOperationalState.PLANNED && index in 0 until current.exercises.lastIndex,
+                        canChangePosition = current.summary.operationalState == SessionOperationalState.PLANNED,
                         onMoveUp = {
                             val ids = current.exercises.map { it.id }.toMutableList()
                             val id = ids.removeAt(index)
@@ -150,12 +164,21 @@ fun SessionDetailScreen(
                             ids.add(index + 1, id)
                             action { sessionRepository.reorderExercises(sessionId, ids) }
                         },
+                        onChangePosition = { position ->
+                            val ids = current.exercises.map { it.id }
+                                .swapPositions(index, position - 1)
+                            action { sessionRepository.reorderExercises(sessionId, ids) }
+                        },
                         onSaveMeta = { rest, note, reason ->
                             action("Ejercicio guardado.") { sessionRepository.updateExerciseMeta(selectedExercise.id, rest, note, reason) }
                         },
                         onAddSet = { action { sessionRepository.addSet(selectedExercise.id) } },
                         onDeleteExercise = { action("Ejercicio eliminado de la sesión.") { sessionRepository.deleteExercise(selectedExercise.id) } },
-                        onFinalizeExercise = { action { sessionRepository.finalizeExercise(selectedExercise.id) } },
+                        onFinalizeExercise = {
+                            action(onSuccess = { selectedExerciseId = null }) {
+                                sessionRepository.finalizeExercise(selectedExercise.id)
+                            }
+                        },
                         onSaveTargets = { set, load, measurement, mode, unit ->
                             action("Objetivo guardado.", set.id) { sessionRepository.updateSetTargets(set.id, load, measurement, mode, unit) }
                         },
@@ -199,6 +222,7 @@ fun SessionDetailScreen(
                     onRecalculate = { action { sessionRepository.recalculateObjectives(sessionId) } },
                     onStart = { action { sessionRepository.setOperationalState(sessionId, SessionOperationalState.IN_PROGRESS) } },
                     onFinalize = { action { sessionRepository.finalizeSession(sessionId) } },
+                    onReopen = { action("Sesión reabierta. Puedes corregirla o continuarla.") { sessionRepository.reopenSession(sessionId) } },
                     onDelete = {
                         scope.launch {
                             runCatching { sessionRepository.deleteSession(sessionId) }
@@ -264,6 +288,15 @@ fun SessionDetailScreen(
                         supportingText = if (current.summary.operationalState == SessionOperationalState.PLANNED) "Revisar planificación" else "Ver ejercicio",
                     )
                     if (current.summary.operationalState == SessionOperationalState.PLANNED) {
+                        PositionSelector(
+                            currentPosition = index + 1,
+                            totalPositions = current.exercises.size,
+                            onPositionSelected = { position ->
+                                val ids = current.exercises.map { it.id }
+                                    .swapPositions(index, position - 1)
+                                action { sessionRepository.reorderExercises(sessionId, ids) }
+                            },
+                        )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(
                                 enabled = index > 0,
@@ -316,6 +349,7 @@ private fun SessionMetadataEditor(
     onRecalculate: () -> Unit,
     onStart: () -> Unit,
     onFinalize: () -> Unit,
+    onReopen: () -> Unit,
     onDelete: () -> Unit,
 ) {
     var name by remember(detail.summary.name) { mutableStateOf(if (detail.isAutoName) "" else detail.summary.name) }
@@ -326,6 +360,7 @@ private fun SessionMetadataEditor(
     var editData by remember { mutableStateOf(false) }
     var editPosition by remember { mutableStateOf(false) }
     var confirmRecalculate by remember { mutableStateOf(false) }
+    var confirmReopen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     val hasActualData = detail.exercises.any { exercise -> exercise.sets.any { it.actualConfirmed } }
 
@@ -345,6 +380,15 @@ private fun SessionMetadataEditor(
             text = { Text("La sesión y todos sus ejercicios y series se eliminarán definitivamente.") },
             confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("Eliminar") } },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
+        )
+    }
+    if (confirmReopen) {
+        AlertDialog(
+            onDismissRequest = { confirmReopen = false },
+            title = { Text("Reabrir sesión") },
+            text = { Text("La sesión volverá a En curso y conservará todos sus datos. Podrás corregirla o continuarla y finalizarla de nuevo.") },
+            confirmButton = { TextButton(onClick = { confirmReopen = false; onReopen() }) { Text("Reabrir") } },
+            dismissButton = { TextButton(onClick = { confirmReopen = false }) { Text("Cancelar") } },
         )
     }
 
@@ -394,7 +438,10 @@ private fun SessionMetadataEditor(
             when (detail.summary.operationalState) {
                 SessionOperationalState.PLANNED -> Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("Iniciar sesión") }
                 SessionOperationalState.IN_PROGRESS -> Button(onClick = onFinalize, modifier = Modifier.fillMaxWidth()) { Text("Finalizar sesión") }
-                SessionOperationalState.REALIZED -> Text("Sesión finalizada", style = MaterialTheme.typography.labelLarge)
+                SessionOperationalState.REALIZED -> {
+                    Text("Sesión finalizada", style = MaterialTheme.typography.labelLarge)
+                    Button(onClick = { confirmReopen = true }, modifier = Modifier.fillMaxWidth()) { Text("Reabrir sesión") }
+                }
             }
             TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) { Text("Eliminar sesión") }
             message?.let { StatusMessage(it) }
@@ -407,10 +454,13 @@ private fun ExerciseEditor(
     exercise: TrainingExercise,
     exerciseImageManager: ExerciseImageManager,
     message: SessionUiMessage?,
+    totalExercises: Int,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
+    canChangePosition: Boolean,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
+    onChangePosition: (Int) -> Unit,
     onSaveMeta: (Int?, String, String?) -> Unit,
     onAddSet: () -> Unit,
     onDeleteExercise: () -> Unit,
@@ -436,6 +486,13 @@ private fun ExerciseEditor(
                 Text(it)
             }
             ExerciseImageGallery(exerciseId = exercise.exerciseId, manager = exerciseImageManager, modifier = Modifier.fillMaxWidth())
+            if (canChangePosition) {
+                PositionSelector(
+                    currentPosition = exercise.position,
+                    totalPositions = totalExercises,
+                    onPositionSelected = onChangePosition,
+                )
+            }
             if (canMoveUp || canMoveDown) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(enabled = canMoveUp, onClick = onMoveUp) { Text("↑ Subir") }
@@ -451,21 +508,88 @@ private fun ExerciseEditor(
             }
             TextButton(onClick = { onSaveMeta(rest.toIntOrNull(), note, reason) }, modifier = Modifier.fillMaxWidth()) { Text("Guardar ejercicio") }
 
-            exercise.sets.forEach { set ->
-                SetEditor(
-                    set = set,
+            key(exercise.id) {
+                SeriesPager(
+                    sets = exercise.sets,
                     rirRequired = exercise.rirRequired,
-                    message = message?.takeIf { it.setId == set.id },
+                    message = message,
                     onSaveTargets = onSaveTargets,
                     onSaveActual = onSaveActual,
                     onSetRest = onSetRest,
                     onFulfilled = onFulfilled,
-                    onDelete = onDeleteSet,
+                    onDeleteSet = onDeleteSet,
                 )
             }
             Button(onClick = onAddSet, modifier = Modifier.fillMaxWidth()) { Text("Añadir serie") }
             Button(onClick = onFinalizeExercise, modifier = Modifier.fillMaxWidth()) { Text("Finalizar ejercicio") }
         }
+    }
+}
+
+@Composable
+private fun SeriesPager(
+    sets: List<TrainingSet>,
+    rirRequired: Boolean,
+    message: SessionUiMessage?,
+    onSaveTargets: (TrainingSet, Double?, Int?, LoadMode, MeasurementUnit) -> Unit,
+    onSaveActual: (TrainingSet, Double?, Int?, Int?) -> Unit,
+    onSetRest: (TrainingSet, Int?) -> Unit,
+    onFulfilled: (TrainingSet) -> Unit,
+    onDeleteSet: (TrainingSet) -> Unit,
+) {
+    if (sets.isEmpty()) {
+        Text("Este ejercicio todavía no tiene series.")
+        return
+    }
+
+    val setIds = sets.map { it.id }
+    val pagerState = rememberPagerState(pageCount = { sets.size })
+    var previousSetIds by remember { mutableStateOf(setIds) }
+
+    LaunchedEffect(setIds) {
+        val targetPage = resolveSeriesPageIndex(
+            previousSetIds = previousSetIds,
+            currentSetIds = setIds,
+            previousPage = pagerState.currentPage,
+        )
+        if (pagerState.currentPage != targetPage) {
+            pagerState.scrollToPage(targetPage)
+        }
+        previousSetIds = setIds
+    }
+
+    val visiblePage = pagerState.currentPage.coerceIn(sets.indices)
+    val positionText = seriesPositionText(visiblePage, sets.size)
+    Text(
+        text = positionText,
+        style = MaterialTheme.typography.titleSmall,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                contentDescription = buildString {
+                    append("Serie ${visiblePage + 1} de ${sets.size}.")
+                    if (sets.size > 1) append(" Desliza horizontalmente para cambiar de serie.")
+                }
+            },
+    )
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxWidth(),
+        userScrollEnabled = sets.size > 1,
+        key = { page -> sets[page].id },
+    ) { page ->
+        val set = sets[page]
+        SetEditor(
+            set = set,
+            rirRequired = rirRequired,
+            message = message?.takeIf { it.setId == set.id },
+            onSaveTargets = onSaveTargets,
+            onSaveActual = onSaveActual,
+            onSetRest = onSetRest,
+            onFulfilled = onFulfilled,
+            onDelete = onDeleteSet,
+        )
     }
 }
 
@@ -492,7 +616,7 @@ private fun SetEditor(
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Serie ${set.position}${if (set.actualConfirmed) " · Realizada" else " · Pendiente"}", style = MaterialTheme.typography.titleSmall)
+            Text(if (set.actualConfirmed) "Realizada" else "Pendiente", style = MaterialTheme.typography.titleSmall)
             Text("Modalidad de carga")
             LoadMode.entries.forEach { item -> FilterChip(selected = mode == item, onClick = { mode = item }, label = { Text(item.label()) }) }
             Text("Medición")
