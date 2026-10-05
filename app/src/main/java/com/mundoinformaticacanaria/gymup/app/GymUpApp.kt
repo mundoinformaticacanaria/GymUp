@@ -2,8 +2,8 @@ package com.mundoinformaticacanaria.gymup.app
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -20,14 +20,14 @@ import com.mundoinformaticacanaria.gymup.feature.sessions.SessionDetailScreen
 import com.mundoinformaticacanaria.gymup.feature.sessions.SessionsScreen
 import com.mundoinformaticacanaria.gymup.feature.settings.CatalogMaintenanceScreen
 import com.mundoinformaticacanaria.gymup.feature.settings.SettingsScreen
-import kotlinx.coroutines.launch
 
 @Composable
 fun GymUpApp(container: AppContainer) {
-    val userPreferencesRepository = container.userPreferencesRepository
-    val themeMode by userPreferencesRepository.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+    val appViewModel: AppViewModel = viewModel(
+        factory = AppViewModel.Factory(container.userPreferencesRepository),
+    )
+    val themeMode by appViewModel.themeMode.collectAsStateWithLifecycle()
     val navController = rememberNavController()
-    val scope = rememberCoroutineScope()
 
     GymUpTheme(themeMode = themeMode) {
         NavHost(navController = navController, startDestination = Routes.HOME) {
@@ -129,7 +129,7 @@ fun GymUpApp(container: AppContainer) {
                     currentMode = themeMode,
                     backupManager = container.backupManager,
                     historicalCleanupManager = container.historicalCleanupManager,
-                    onThemeModeSelected = { mode -> scope.launch { userPreferencesRepository.setThemeMode(mode) } },
+                    onThemeModeSelected = appViewModel::selectThemeMode,
                     onCatalogMaintenance = { navController.navigate(Routes.CATALOGS) },
                     onBack = navController::popBackStack,
                 )
