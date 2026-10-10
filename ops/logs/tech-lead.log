@@ -49,3 +49,4 @@
 2026-10-05T06:14:00Z | FIN #17, #35: PR #19 fusionada en tech/issue-8-mvp-release (02ba29c) con CI #303 y validación física previa correctas; PR #20 fusionada en tech/issue-17-theme-fix (39a1cd9) con CI #359 correcta. Cadena inferior integrada sin generar candidato; BF-02 aún diverge de #20 (17 delante/1 detrás) y requiere reconciliación antes de integración. Sin APK, etiqueta ni release.
 2026-10-10T08:57:23Z | INICIO SIN_ISSUE: revisión GitHub Tech Lead
 2026-10-10T09:02:02Z | FIN #35 #8 #16: verificada conservación de tema/rutinas en BF-02; #35 etiquetada PROPIETARIO por autorización de candidato pendiente; PR #15 draft/no fusionable y descripción histórica corregida (CI #280 no valida head actual); ningún APK, etiqueta, release ni CI ejecutados; Log/automation.log actualizado
+2026-10-10T09:06:36Z | INICIO SIN_ISSUE: revisión de cola y trabajo técnico independiente
