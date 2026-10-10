@@ -52,3 +52,4 @@
 2026-10-10T09:06:36Z | INICIO SIN_ISSUE: revisión de cola y trabajo técnico independiente
 2026-10-10T09:09:13Z | FIN #25: rama feat/issue-25-collapsible-history-filters con UI y 3 pruebas JVM; PR y CI pendientes por rechazo de herramienta; no APK ni release
 2026-10-10T10:06:20Z | INICIO SIN_ISSUE: revisión de cola y PR #25
+2026-10-10T10:07:07Z | FIN #25: revisada rama bbfea7d contra BF-02 (3 commits, 3 archivos); 3 pruebas JVM presentes sin ejecución, sin CI; creación PR y comentario Issue rechazados por herramienta; registro Log/automation.log añadido (c530d53); sin merge, APK ni release
