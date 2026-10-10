@@ -51,3 +51,4 @@
 2026-10-10T09:02:02Z | FIN #35 #8 #16: verificada conservación de tema/rutinas en BF-02; #35 etiquetada PROPIETARIO por autorización de candidato pendiente; PR #15 draft/no fusionable y descripción histórica corregida (CI #280 no valida head actual); ningún APK, etiqueta, release ni CI ejecutados; Log/automation.log actualizado
 2026-10-10T09:06:36Z | INICIO SIN_ISSUE: revisión de cola y trabajo técnico independiente
 2026-10-10T09:09:13Z | FIN #25: rama feat/issue-25-collapsible-history-filters con UI y 3 pruebas JVM; PR y CI pendientes por rechazo de herramienta; no APK ni release
+2026-10-10T10:06:20Z | INICIO SIN_ISSUE: revisión de cola y PR #25
