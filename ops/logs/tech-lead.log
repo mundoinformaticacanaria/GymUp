@@ -54,3 +54,4 @@
 2026-10-10T10:06:20Z | INICIO SIN_ISSUE: revisión de cola y PR #25
 2026-10-10T10:07:07Z | FIN #25: revisada rama bbfea7d contra BF-02 (3 commits, 3 archivos); 3 pruebas JVM presentes sin ejecución, sin CI; creación PR y comentario Issue rechazados por herramienta; registro Log/automation.log añadido (c530d53); sin merge, APK ni release
 2026-10-10T11:13:08Z | INICIO SIN_ISSUE: revisión TECH LEAD de cola, PR #25 y CI
+2026-10-10T11:16:06Z | FIN #25 #16 #24: #25 revisión estática y comparación 3 archivos/3 tests; PR bloqueada por controles de herramienta, sin CI; #16 rulesets vacíos y protección main 403, etiqueta PROPIETARIO añadida; #24 rama creada sin cambios (edición rechazada); Log/automation.log registrado; sin merge, APK, etiqueta ni release
