@@ -61,3 +61,4 @@
 2026-10-11T10:00:44Z | FIN #35: autorización expresa de generar/publicar candidato BF-02 registrada en comentario 6107828772; checklist de autorización marcado y label devuelta a TECH LEAD. Issue abierta por preparación del APK y validación física pendiente; no se declara prueba realizada ni se genera APK en esta operación.
 2026-10-11T10:17:21Z | INICIO #16: comprobar permisos de escritura y actualizar política no bloqueante de logs
 2026-10-11T10:21:07Z | FIN #16: escritura de logs y archivos en rama confirmada; PR #46 abierto y mergeable con AGENTS.md y EXECUTION_POLICY.md (logging no bloqueante); Android CI #368 en curso, sin merge ni APK; Issue #16 comentada; Log/automation.log actualizado
+2026-10-11T11:13:31Z | INICIO SIN_ISSUE: revisión autónoma de PR, CI, candidato y cola TECH LEAD
