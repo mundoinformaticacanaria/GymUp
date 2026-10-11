@@ -61,6 +61,7 @@ fun HistoryScreen(
     var typeId by remember { mutableStateOf<String?>(null) }
     var fromText by remember { mutableStateOf("") }
     var toText by remember { mutableStateOf("") }
+    var filtersExpanded by remember { mutableStateOf(false) }
     var pendingSaveJson by remember { mutableStateOf<String?>(null) }
     var exportError by remember { mutableStateOf<String?>(null) }
     val saveLauncher = rememberLauncherForActivityResult(
@@ -89,6 +90,16 @@ fun HistoryScreen(
         )
     }
 
+    val activeFilters = state != null || result != null || typeId != null ||
+        fromText.isNotBlank() || toText.isNotBlank()
+    val invalidDates = (fromText.isNotBlank() && from == null) ||
+        (toText.isNotBlank() && to == null)
+    val selectedTypeName = sessionTypes.firstOrNull { it.id == typeId }?.name
+        ?: if (typeId != null) "Tipo seleccionado" else null
+    val filterSummary = historyFilterSummary(
+        state?.label(), result?.label(), selectedTypeName, fromText, toText,
+    )
+
     fun exportSession(sessionId: String, action: (fileName: String, json: String) -> Unit) {
         scope.launch {
             exportError = null
@@ -114,110 +125,143 @@ fun HistoryScreen(
             )
         },
     ) { padding ->
-        LazyColumn(
+        Column(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
                         Text("Filtros", style = MaterialTheme.typography.titleMedium)
-                        Text("Estado operativo")
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(selected = state == null, onClick = { state = null }, label = { Text("Todos") })
+                        TextButton(onClick = { filtersExpanded = !filtersExpanded }) {
+                            Text(if (filtersExpanded) "Ocultar filtros" else "Mostrar filtros")
                         }
-                        SessionOperationalState.entries.forEach { item ->
+                    }
+                    Text(filterSummary, style = MaterialTheme.typography.bodyMedium)
+                    if (activeFilters) {
+                        TextButton(onClick = {
+                            state = null
+                            result = null
+                            typeId = null
+                            fromText = ""
+                            toText = ""
+                        }) { Text("Limpiar filtros") }
+                    }
+                    if (invalidDates) {
+                        Text(
+                            "Usa fechas con formato YYYY-MM-DD.",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        if (!filtersExpanded) {
+                            TextButton(onClick = { filtersExpanded = true }) {
+                                Text("Corregir fechas")
+                            }
+                        }
+                    }
+                }
+            }
+            Text("${filtered.size} sesión(es)", style = MaterialTheme.typography.labelLarge)
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (filtersExpanded) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Estado operativo")
                             FilterChip(
-                                selected = state == item,
-                                onClick = { state = if (state == item) null else item },
-                                label = { Text(item.label()) },
+                                selected = state == null,
+                                onClick = { state = null },
+                                label = { Text("Todos") },
                             )
-                        }
-                        Text("Resultado")
-                        SessionExecutionResult.entries.forEach { item ->
+                            SessionOperationalState.entries.forEach { item ->
+                                FilterChip(
+                                    selected = state == item,
+                                    onClick = { state = if (state == item) null else item },
+                                    label = { Text(item.label()) },
+                                )
+                            }
+                            Text("Resultado")
+                            SessionExecutionResult.entries.forEach { item ->
+                                FilterChip(
+                                    selected = result == item,
+                                    onClick = { result = if (result == item) null else item },
+                                    label = { Text(item.label()) },
+                                )
+                            }
+                            Text("Tipo de sesión")
                             FilterChip(
-                                selected = result == item,
-                                onClick = { result = if (result == item) null else item },
-                                label = { Text(item.label()) },
+                                selected = typeId == null,
+                                onClick = { typeId = null },
+                                label = { Text("Todos") },
                             )
-                        }
-                        Text("Tipo de sesión")
-                        FilterChip(selected = typeId == null, onClick = { typeId = null }, label = { Text("Todos") })
-                        sessionTypes.forEach { type ->
-                            FilterChip(
-                                selected = typeId == type.id,
-                                onClick = { typeId = if (typeId == type.id) null else type.id },
-                                label = { Text(type.name) },
-                            )
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            sessionTypes.forEach { type ->
+                                FilterChip(
+                                    selected = typeId == type.id,
+                                    onClick = { typeId = if (typeId == type.id) null else type.id },
+                                    label = { Text(type.name) },
+                                )
+                            }
                             OutlinedTextField(
                                 value = fromText,
                                 onValueChange = { fromText = it },
                                 label = { Text("Desde YYYY-MM-DD") },
                                 singleLine = true,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.fillMaxWidth(),
+                                isError = fromText.isNotBlank() && from == null,
                             )
                             OutlinedTextField(
                                 value = toText,
                                 onValueChange = { toText = it },
                                 label = { Text("Hasta YYYY-MM-DD") },
                                 singleLine = true,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.fillMaxWidth(),
+                                isError = toText.isNotBlank() && to == null,
                             )
                         }
-                        if ((fromText.isNotBlank() && from == null) || (toText.isNotBlank() && to == null)) {
-                            Text("Usa fechas con formato YYYY-MM-DD.", color = MaterialTheme.colorScheme.error)
-                        }
-                        TextButton(
-                            onClick = {
-                                state = null
-                                result = null
-                                typeId = null
-                                fromText = ""
-                                toText = ""
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Limpiar filtros") }
                     }
                 }
-            }
-            exportError?.let { message ->
-                item { Text(message, color = MaterialTheme.colorScheme.error) }
-            }
-            item { Text("${filtered.size} sesión(es)", style = MaterialTheme.typography.labelLarge) }
-            items(filtered, key = { it.id }) { session ->
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(session.name, style = MaterialTheme.typography.titleMedium)
-                        Text("${session.date} · ${session.sessionTypeName}")
-                        Text("${session.operationalState.label()} · ${session.executionResult.label()}")
-                        TextButton(onClick = { onOpenSession(session.id) }, modifier = Modifier.fillMaxWidth()) { Text("Ver / editar") }
-                        if (session.operationalState == SessionOperationalState.REALIZED) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
-                            ) {
-                                TextButton(
-                                    onClick = {
-                                        exportSession(session.id) { fileName, json ->
-                                            pendingSaveJson = json
-                                            saveLauncher.launch(fileName)
-                                        }
-                                    },
-                                ) { Text("Guardar JSON") }
-                                TextButton(
-                                    onClick = {
-                                        exportSession(session.id) { fileName, json ->
-                                            runCatching {
-                                                val intent = AndroidSessionReportFiles.prepareShare(context, fileName, json)
-                                                context.startActivity(Intent.createChooser(intent, "Compartir informe"))
-                                            }.onFailure {
-                                                exportError = it.message ?: "No se pudo compartir el informe"
+                exportError?.let { message ->
+                    item { Text(message, color = MaterialTheme.colorScheme.error) }
+                }
+                items(filtered, key = { it.id }) { session ->
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(session.name, style = MaterialTheme.typography.titleMedium)
+                            Text("${session.date} · ${session.sessionTypeName}")
+                            Text("${session.operationalState.label()} · ${session.executionResult.label()}")
+                            TextButton(onClick = { onOpenSession(session.id) }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Ver / editar")
+                            }
+                            if (session.operationalState == SessionOperationalState.REALIZED) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                ) {
+                                    TextButton(
+                                        onClick = {
+                                            exportSession(session.id) { fileName, json ->
+                                                pendingSaveJson = json
+                                                saveLauncher.launch(fileName)
                                             }
-                                        }
-                                    },
-                                ) { Text("Compartir JSON") }
+                                        },
+                                    ) { Text("Guardar JSON") }
+                                    TextButton(
+                                        onClick = {
+                                            exportSession(session.id) { fileName, json ->
+                                                runCatching {
+                                                    val intent = AndroidSessionReportFiles.prepareShare(context, fileName, json)
+                                                    context.startActivity(Intent.createChooser(intent, "Compartir informe"))
+                                                }.onFailure {
+                                                    exportError = it.message ?: "No se pudo compartir el informe"
+                                                }
+                                            }
+                                        },
+                                    ) { Text("Compartir JSON") }
+                                }
                             }
                         }
                     }
