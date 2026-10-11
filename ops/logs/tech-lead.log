@@ -58,3 +58,4 @@
 2026-10-11T09:53:56Z | INICIO SIN_ISSUE: identificar bloqueos PROPIETARIO y explicar resolución
 2026-10-11T09:54:16Z | FIN #35, #16: identificadas ambas issues abiertas PROPIETARIO; #35 requiere autorización expresa del candidato BF-02 con alcance ya documentado y posterior prueba física; #16 decisión de licencia y revisión administrativa de main. Consulta explicativa, sin cambios de producto, CI ni APK.
 2026-10-11T10:00:04Z | INICIO #35: registrar autorización expresa del candidato BF-02
+2026-10-11T10:00:44Z | FIN #35: autorización expresa de generar/publicar candidato BF-02 registrada en comentario 6107828772; checklist de autorización marcado y label devuelta a TECH LEAD. Issue abierta por preparación del APK y validación física pendiente; no se declara prueba realizada ni se genera APK en esta operación.
