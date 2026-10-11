@@ -64,10 +64,10 @@ El estado operativo debe poder conocerse desde GitHub:
 
 Este protocolo se aplica a toda sesión que consulte GitHub para revisar, planificar, comentar, modificar o verificar una tarea. La excepción al requisito de rama/PR se limita a las dos entradas append-only del log.
 
-1. Antes de consultar `main`, la cola, Issues, PR, ramas, CI o releases, relee únicamente `ops/logs/tech-lead.log`.
-2. Si el último registro es un `INICIO` sin `FIN` posterior, no abras otra ejecución durante los primeros 30 minutos. Pasados 30 minutos, considera ese inicio huérfano: consérvalo y no fabriques un `FIN` retroactivo.
-3. Registra un único `INICIO` en `ops/logs/tech-lead.log` en `main` antes de leer el resto de GitHub. Si no puedes registrarlo, detén la revisión.
-4. Cuando terminen todas las operaciones de GitHub, añade un único `FIN` al mismo archivo. Debe ser la última operación de GitHub de esa sesión.
+1. Intenta leer primero y únicamente `ops/logs/tech-lead.log` antes de reconstruir la cola de trabajo.
+2. Si la lectura confirma un último `INICIO` sin `FIN` posterior, no abras otra ejecución concurrente durante los primeros 30 minutos. Pasados 30 minutos, considera ese inicio huérfano: consérvalo y no fabriques un `FIN` retroactivo. Si falla la lectura, continúa con las comprobaciones y evita escrituras simultáneas cuando no puedas determinar la concurrencia.
+3. Intenta registrar un único `INICIO` en `ops/logs/tech-lead.log` en `main` antes de leer el resto de GitHub. **Si la lectura o escritura de un log falla, no detengas la revisión ni el trabajo ejecutable**: consulta `main`, Issues, PR, CI y realiza las tareas permitidas. Distingue un fallo de logging de un fallo de escritura del código o de una autorización de producto.
+4. Al concluir las demás operaciones de GitHub, intenta añadir un único `FIN` al mismo archivo como última operación. Si no se puede, informa el error y el resultado efectivo de la sesión sin fabricar registros.
 
 Formato:
 
@@ -77,6 +77,8 @@ YYYY-MM-DDTHH:mm:ssZ | FIN #<issue>: <issues trabajadas y estado/resultados>
 ```
 
 Las marcas de tiempo usan UTC (`Z`) y se toman inmediatamente antes de enviar la escritura al repositorio. Si no hay Issue se usa `SIN_ISSUE`; si no hubo actividad material, se usa `FIN NINGUNA`. El `FIN` enumera lo trabajado aunque quede pendiente e incluye, cuando corresponda, PR, resultado de CI, aprobación pendiente o bloqueo. No se permiten líneas de progreso intermedias, editar entradas antiguas ni cierres retroactivos. Una interrupción inesperada deja el `INICIO` abierto y visible.
+
+**Los logs son observabilidad, no un gate de desarrollo.** También en las iteraciones que requieren `Log/automation.log` se intenta añadir exactamente una línea append-only con hora canaria e Issues realmente tratadas. Si la escritura falla, se informa del error y se continúa trabajando; no se inventan resultados ni se reescribe el historial para ocultarlo. Las restricciones genuinas de concurrencia, permisos sobre código, CI, dependencias y aprobación de producto siguen aplicándose.
 
 El log es append-only y su escritura directa en `main` es una excepción explícita para trazabilidad operativa; no puede incluir cambios de código, producto o documentación. Los workflows ordinarios deben excluir cambios exclusivos del log para evitar compilar o publicar artefactos por el heartbeat.
 

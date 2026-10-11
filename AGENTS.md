@@ -13,21 +13,21 @@ Las responsabilidades detalladas y el proceso de decisión están en `docs/PROJE
 
 ## Protocolo de entrada a GitHub y log
 
-Antes de consultar `main`, Issues, PR, ramas, CI, releases o la cola de trabajo, sigue este orden:
+Intenta primero verificar la concurrencia y registrar la entrada, sin convertir una avería del log en un bloqueo de producto:
 
-1. Lee **únicamente** `ops/logs/tech-lead.log`.
-2. Si la última entrada es `INICIO` sin un `FIN` posterior, aplica el umbral de 30 minutos: con 30 minutos o menos, no inicies trabajo concurrente; con más de 30 minutos, conserva el inicio como huérfano y continúa sin inventar un cierre retroactivo.
-3. Registra y confirma en `main` una única entrada `INICIO`. Si no se puede registrar, detente sin consultar el resto de GitHub.
-4. Solo después reconstruye el estado actual y trabaja.
+1. Intenta leer **únicamente** `ops/logs/tech-lead.log` antes de reconstruir el estado de GitHub.
+2. Si la lectura confirma un último `INICIO` sin `FIN` y tiene **30 minutos o menos**, evita el trabajo concurrente. Si han pasado más de 30 minutos, conserva el inicio huérfano sin fabricar cierres retroactivos.
+3. Intenta añadir y confirmar en `main` una única entrada `INICIO`. **Si falla la lectura o la escritura del log por permisos, conflicto, conexión o limitación de herramienta, continúa con las consultas, Issues, PR y todo el trabajo ejecutable**. Comunica al final el fallo concreto; el log nunca justifica detener el desarrollo. Si no pudo comprobarse la concurrencia, extrema la cautela al publicar cambios simultáneos, pero no detengas las comprobaciones.
+4. Reconstruye el estado vivo y trabaja sin depender del éxito del registro.
 
-Cada sesión del Tech Lead que entre en GitHub para realizar una tarea debe tener exactamente dos entradas en ese archivo, añadidas en commits separados:
+En condiciones normales, cada sesión del Tech Lead debe dejar exactamente dos entradas en ese archivo, añadidas en commits separados:
 
 ```text
 YYYY-MM-DDTHH:mm:ssZ | INICIO #<issue>: <tarea breve>
 YYYY-MM-DDTHH:mm:ssZ | FIN #<issue>: <issues atendidas y resultado; PR/CI o bloqueo>
 ```
 
-Usa hora UTC con sufijo `Z`, tomada inmediatamente antes de escribir cada entrada. Si no hay Issue, escribe `SIN_ISSUE`; si no hubo actividad material, cierra con `FIN NINGUNA`. El cierre se añade después de la última operación de GitHub e indica todas las Issues trabajadas, aunque alguna quede pendiente. No añadas líneas intermedias, no reescribas el histórico y no fabriques un `FIN` retroactivo. Si la sesión se interrumpe, deja el `INICIO` visible.
+Usa hora UTC con sufijo `Z`, tomada inmediatamente antes de escribir cada entrada. Si no hay Issue, escribe `SIN_ISSUE`; si no hubo actividad material, cierra con `FIN NINGUNA`. El cierre se añade después de la última operación de GitHub e indica todas las Issues trabajadas, aunque alguna quede pendiente. No añadas líneas intermedias, no reescribas el histórico y no fabriques un `FIN` retroactivo. Si la sesión se interrumpe, deja el `INICIO` visible. Si falla alguna escritura, no inventes entradas ni horarios; explica la ausencia y continúa con las tareas.
 
 La actualización append-only de `ops/logs/tech-lead.log` en `main` es la excepción operativa permitida al flujo por PR. Ningún cambio de producto o documentación va directamente a `main`.
 
@@ -50,7 +50,7 @@ Después de registrar `INICIO`:
 - Trabaja en rama y PR. El Tech Lead puede fusionar cuando la Issue, la revisión técnica, la CI y las dependencias estén resueltas. Antes comprueba si el merge dispara consumo facturable/cuota limitada de GitHub o uso de tokens facturados; pide autorización solo en ese caso o si no puede determinarlo. El CI estándar gratuito no exige autorización.
 - No generes, etiquetes ni publiques APK candidato/final sin presentar antes los cambios exactos respecto al último candidato y recibir autorización expresa. La prueba física del propietario es una puerta distinta de la CI.
 - Ejecuta o consulta las validaciones definidas para la tarea. No afirmes que se ejecutó una prueba que no se realizó y distingue tests JVM/Robolectric de pruebas instrumentadas o físicas.
-- Al cerrar la sesión, completa el log antes de responder. Informa Issue, PR/commit, validaciones, resultado y bloqueo restante con claridad.
+- Al cerrar la sesión, **intenta** completar los registros, pero un fallo al escribir `ops/logs/tech-lead.log` o `Log/automation.log` nunca debe impedir el desarrollo ni las comprobaciones. Informa Issue, PR/commit, validaciones, resultado, bloqueo restante y cualquier fallo de registro con claridad.
 
 ## Documentos de referencia
 
