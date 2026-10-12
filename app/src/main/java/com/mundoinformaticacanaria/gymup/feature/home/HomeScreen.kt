@@ -40,12 +40,7 @@ fun HomeScreen(
     val today = remember { LocalDate.now() }
     val todaySessions by sessionRepository.observeSessionsForDate(today)
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val prioritized = remember(todaySessions) {
-        todaySessions.sortedWith(
-            compareBy<SessionSummary> { it.operationalState.homePriority() }
-                .thenBy { it.orderInDay },
-        )
-    }
+    val prioritized = remember(todaySessions) { prioritizeTodaySessions(todaySessions) }
     val hasInProgress = prioritized.any { it.operationalState == SessionOperationalState.IN_PROGRESS }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -144,12 +139,6 @@ private fun QuickLinks(
             item { FilledTonalButton(onClick = onSettings) { Text("Ajustes") } }
         }
     }
-}
-
-private fun SessionOperationalState.homePriority(): Int = when (this) {
-    SessionOperationalState.IN_PROGRESS -> 0
-    SessionOperationalState.PLANNED -> 1
-    SessionOperationalState.REALIZED -> 2
 }
 
 private fun SessionOperationalState.actionLabel(): String = when (this) {
