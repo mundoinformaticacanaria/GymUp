@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +14,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -82,6 +84,7 @@ fun SessionDetailScreen(
     var showExercisePicker by remember { mutableStateOf(false) }
     var exerciseQuery by remember { mutableStateOf("") }
     var selectedExerciseId by remember { mutableStateOf<String?>(null) }
+    var confirmReopen by remember { mutableStateOf(false) }
 
     LaunchedEffect(sessionId, refresh) {
         detail = sessionRepository.getSessionDetail(sessionId)
@@ -115,6 +118,22 @@ fun SessionDetailScreen(
     }
 
     val selectedExercise = detail?.exercises?.firstOrNull { it.id == selectedExerciseId }
+    if (confirmReopen) {
+        AlertDialog(
+            onDismissRequest = { confirmReopen = false },
+            title = { Text("Reabrir sesión") },
+            text = { Text("La sesión volverá a En curso y conservará todos sus datos. Podrás corregirla o continuarla y finalizarla de nuevo.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmReopen = false
+                    action("Sesión reabierta. Puedes corregirla o continuarla.") {
+                        sessionRepository.reopenSession(sessionId)
+                    }
+                }) { Text("Reabrir") }
+            },
+            dismissButton = { TextButton(onClick = { confirmReopen = false }) { Text("Cancelar") } },
+        )
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -125,6 +144,33 @@ fun SessionDetailScreen(
                     }) { Text(if (selectedExerciseId != null) "Volver a sesión" else "Atrás") }
                 },
             )
+        },
+        bottomBar = {
+            val current = detail
+            if (selectedExerciseId == null && current != null) {
+                BottomAppBar {
+                    Button(
+                        onClick = {
+                            when (current.summary.operationalState) {
+                                SessionOperationalState.PLANNED ->
+                                    action { sessionRepository.setOperationalState(sessionId, SessionOperationalState.IN_PROGRESS) }
+                                SessionOperationalState.IN_PROGRESS ->
+                                    action { sessionRepository.finalizeSession(sessionId) }
+                                SessionOperationalState.REALIZED -> confirmReopen = true
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    ) {
+                        Text(
+                            when (current.summary.operationalState) {
+                                SessionOperationalState.PLANNED -> "Iniciar sesión"
+                                SessionOperationalState.IN_PROGRESS -> "Finalizar sesión"
+                                SessionOperationalState.REALIZED -> "Reabrir sesión"
+                            },
+                        )
+                    }
+                }
+            }
         },
     ) { padding ->
         val current = detail
@@ -220,9 +266,6 @@ fun SessionDetailScreen(
                     onSaveMetadata = { typeId, name, note -> action { sessionRepository.updateSessionMetadata(sessionId, typeId, name, note) } },
                     onChangePosition = { date, order -> action { sessionRepository.changeSessionPosition(sessionId, date, order) } },
                     onRecalculate = { action { sessionRepository.recalculateObjectives(sessionId) } },
-                    onStart = { action { sessionRepository.setOperationalState(sessionId, SessionOperationalState.IN_PROGRESS) } },
-                    onFinalize = { action { sessionRepository.finalizeSession(sessionId) } },
-                    onReopen = { action("Sesión reabierta. Puedes corregirla o continuarla.") { sessionRepository.reopenSession(sessionId) } },
                     onDelete = {
                         scope.launch {
                             runCatching { sessionRepository.deleteSession(sessionId) }
@@ -260,11 +303,16 @@ fun SessionDetailScreen(
                         if (candidates.isEmpty()) {
                             Text(if (exerciseQuery.isBlank()) "No hay más ejercicios disponibles." else "No hay ejercicios que coincidan con la búsqueda.")
                         }
-                        candidates.forEach { exercise ->
-                            TextButton(
-                                onClick = { action { sessionRepository.addExercise(sessionId, exercise.id) } },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text("${exercise.nameEs} · ${exercise.nameEn}") }
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            items(candidates, key = { it.id }) { exercise ->
+                                TextButton(
+                                    onClick = { action { sessionRepository.addExercise(sessionId, exercise.id) } },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text("${exercise.nameEs} · ${exercise.nameEn}") }
+                            }
                         }
                     }
                 }
@@ -347,9 +395,6 @@ private fun SessionMetadataEditor(
     onSaveMetadata: (String, String, String) -> Unit,
     onChangePosition: (LocalDate, Int) -> Unit,
     onRecalculate: () -> Unit,
-    onStart: () -> Unit,
-    onFinalize: () -> Unit,
-    onReopen: () -> Unit,
     onDelete: () -> Unit,
 ) {
     var name by remember(detail.summary.name) { mutableStateOf(if (detail.isAutoName) "" else detail.summary.name) }
@@ -360,8 +405,8 @@ private fun SessionMetadataEditor(
     var editData by remember { mutableStateOf(false) }
     var editPosition by remember { mutableStateOf(false) }
     var confirmRecalculate by remember { mutableStateOf(false) }
-    var confirmReopen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var showDetails by remember { mutableStateOf(false) }
     val hasActualData = detail.exercises.any { exercise -> exercise.sets.any { it.actualConfirmed } }
 
     if (confirmRecalculate) {
@@ -382,22 +427,21 @@ private fun SessionMetadataEditor(
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
         )
     }
-    if (confirmReopen) {
-        AlertDialog(
-            onDismissRequest = { confirmReopen = false },
-            title = { Text("Reabrir sesión") },
-            text = { Text("La sesión volverá a En curso y conservará todos sus datos. Podrás corregirla o continuarla y finalizarla de nuevo.") },
-            confirmButton = { TextButton(onClick = { confirmReopen = false; onReopen() }) { Text("Reabrir") } },
-            dismissButton = { TextButton(onClick = { confirmReopen = false }) { Text("Cancelar") } },
-        )
-    }
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(detail.summary.operationalState.label(), style = MaterialTheme.typography.titleLarge)
             Text("Tipo: ${detail.summary.sessionTypeName}")
             Text("Fecha: ${detail.summary.date} · Orden: ${detail.summary.orderInDay}")
-            detail.generalNote?.let { Text("Nota: $it") }
+            if (!showDetails) {
+                OutlinedButton(onClick = { showDetails = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Mostrar y editar detalles")
+                }
+            } else {
+                detail.generalNote?.let { Text("Nota: $it") }
+                OutlinedButton(onClick = { showDetails = false }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Ocultar detalles")
+                }
 
             if (!editData) {
                 OutlinedButton(onClick = { editData = true }, modifier = Modifier.fillMaxWidth()) { Text("Editar tipo, nombre o nota") }
@@ -435,15 +479,8 @@ private fun SessionMetadataEditor(
                 TextButton(onClick = { editPosition = false }, modifier = Modifier.fillMaxWidth()) { Text("Cancelar edición") }
             }
 
-            when (detail.summary.operationalState) {
-                SessionOperationalState.PLANNED -> Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("Iniciar sesión") }
-                SessionOperationalState.IN_PROGRESS -> Button(onClick = onFinalize, modifier = Modifier.fillMaxWidth()) { Text("Finalizar sesión") }
-                SessionOperationalState.REALIZED -> {
-                    Text("Sesión finalizada", style = MaterialTheme.typography.labelLarge)
-                    Button(onClick = { confirmReopen = true }, modifier = Modifier.fillMaxWidth()) { Text("Reabrir sesión") }
-                }
+                TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) { Text("Eliminar sesión") }
             }
-            TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) { Text("Eliminar sesión") }
             message?.let { StatusMessage(it) }
         }
     }
