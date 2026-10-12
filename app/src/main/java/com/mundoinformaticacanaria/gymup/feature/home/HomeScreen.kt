@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -39,51 +40,57 @@ fun HomeScreen(
     val today = remember { LocalDate.now() }
     val todaySessions by sessionRepository.observeSessionsForDate(today)
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val prioritized = remember(todaySessions) {
-        todaySessions.sortedWith(
-            compareBy<SessionSummary> { it.operationalState.homePriority() }
-                .thenBy { it.orderInDay },
-        )
-    }
+    val prioritized = remember(todaySessions) { prioritizeTodaySessions(todaySessions) }
     val hasInProgress = prioritized.any { it.operationalState == SessionOperationalState.IN_PROGRESS }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            Text(text = "GymUp", style = MaterialTheme.typography.headlineLarge)
-            Text(text = "Hoy", style = MaterialTheme.typography.headlineMedium)
-            Text(today.toString(), style = MaterialTheme.typography.bodyMedium)
-        }
-        if (prioritized.isEmpty()) {
-            item { Text("Todavía no hay sesiones para hoy.") }
-        } else {
-            items(prioritized, key = { it.id }) { session ->
-                TodaySessionCard(
-                    session = session,
-                    prominent = session.operationalState == SessionOperationalState.IN_PROGRESS,
-                    onOpen = { onOpenSession(session.id) },
-                )
+    Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("GymUp", style = MaterialTheme.typography.headlineLarge)
+            Text("Hoy · $today", style = MaterialTheme.typography.bodyMedium)
+            prioritized.firstOrNull {
+                it.operationalState == SessionOperationalState.IN_PROGRESS
+            }?.let { active ->
+                Button(onClick = { onOpenSession(active.id) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Continuar · ${active.name}")
+                }
             }
-        }
-        item {
             if (hasInProgress) {
-                OutlinedButton(onClick = onNewSession, modifier = Modifier.fillMaxWidth()) { Text("Nueva sesión") }
+                OutlinedButton(onClick = onNewSession, modifier = Modifier.fillMaxWidth()) {
+                    Text("Nueva sesión")
+                }
             } else {
-                Button(onClick = onNewSession, modifier = Modifier.fillMaxWidth()) { Text("Nueva sesión") }
+                Button(onClick = onNewSession, modifier = Modifier.fillMaxWidth()) {
+                    Text("Nueva sesión")
+                }
             }
         }
-        item {
-            QuickLinks(
-                onSessions = onSessions,
-                onRoutines = onRoutines,
-                onExercises = onExercises,
-                onHistory = onHistory,
-                onSettings = onSettings,
-            )
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (prioritized.isEmpty()) {
+                item { Text("Todavía no hay sesiones para hoy.") }
+            } else {
+                items(prioritized, key = { it.id }) { session ->
+                    TodaySessionCard(
+                        session = session,
+                        prominent = session.operationalState == SessionOperationalState.IN_PROGRESS,
+                        onOpen = { onOpenSession(session.id) },
+                    )
+                }
+            }
         }
+        QuickLinks(
+            onSessions = onSessions,
+            onRoutines = onRoutines,
+            onExercises = onExercises,
+            onHistory = onHistory,
+            onSettings = onSettings,
+        )
     }
 }
 
@@ -115,21 +122,23 @@ private fun QuickLinks(
     onHistory: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Accesos rápidos", style = MaterialTheme.typography.titleMedium)
-        Text("Abre directamente cada sección.", style = MaterialTheme.typography.bodySmall)
-        FilledTonalButton(onClick = onSessions, modifier = Modifier.fillMaxWidth()) { Text("Sesiones") }
-        FilledTonalButton(onClick = onRoutines, modifier = Modifier.fillMaxWidth()) { Text("Rutinas") }
-        FilledTonalButton(onClick = onExercises, modifier = Modifier.fillMaxWidth()) { Text("Ejercicios") }
-        FilledTonalButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) { Text("Histórico") }
-        FilledTonalButton(onClick = onSettings, modifier = Modifier.fillMaxWidth()) { Text("Ajustes") }
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Text(
+            "Secciones · desliza para ver más",
+            modifier = Modifier.padding(horizontal = 20.dp),
+            style = MaterialTheme.typography.labelMedium,
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item { FilledTonalButton(onClick = onSessions) { Text("Sesiones") } }
+            item { FilledTonalButton(onClick = onRoutines) { Text("Rutinas") } }
+            item { FilledTonalButton(onClick = onExercises) { Text("Ejercicios") } }
+            item { FilledTonalButton(onClick = onHistory) { Text("Histórico") } }
+            item { FilledTonalButton(onClick = onSettings) { Text("Ajustes") } }
+        }
     }
-}
-
-private fun SessionOperationalState.homePriority(): Int = when (this) {
-    SessionOperationalState.IN_PROGRESS -> 0
-    SessionOperationalState.PLANNED -> 1
-    SessionOperationalState.REALIZED -> 2
 }
 
 private fun SessionOperationalState.actionLabel(): String = when (this) {
