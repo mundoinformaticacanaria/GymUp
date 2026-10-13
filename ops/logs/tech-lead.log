@@ -72,3 +72,4 @@
 2026-10-12T14:36:56Z | INICIO SIN_ISSUE: revisión y ejecución GymUp TECH LEAD
 2026-10-12T14:39:06Z | FIN #21 #24 #25 #35: #21 PR #49 CI #372 SUCCESS pero draft, faltan ViewModel y tests específicos; #24 PR #48 CI #371 SUCCESS; #25 PR #47 CI #369 SUCCESS; #35 BF-02 d837d9e intacta, APK sin generar; escrituras de código, comentarios y Log/automation.log bloqueadas por controles del conector; sin merges ni releases
 2026-10-13T17:17:36Z | INICIO SIN_ISSUE: comprobar pendientes actuales para avanzar
+2026-10-13T17:18:44Z | FIN NINGUNA: revisión de pendientes; #35 autorización vigente, BF-02 d837d9e intacto y sin candidato nuevo entre runs recientes; conector sin dispatch/tag. PR #47/#48/#49 CI #369/#371/#372 SUCCESS; #49 draft por ViewModel/tests pendientes; #15 draft/no fusionable. Siguiente acción lanzar Android Candidate sobre fix/issue-32-series-feedback, identificar APK y realizar prueba física. Sin código, merge ni APK; Log/automation.log actualizado.
