@@ -1,4 +1,4 @@
-# ADR-003 — Stack Android y arquitectura base
+# ADR-006 — Stack Android y arquitectura base
 
 Estado: **Aceptado**  
 Fecha: 2026-08-20  
@@ -62,19 +62,19 @@ Estructura objetivo:
 
 ```text
 com.mundoinformaticacanaria.gymup
-├── app/                 # Application, AppContainer, navigation root
+├── app/
 ├── core/
-│   ├── model/           # enums/value objects compartidos
-│   ├── util/            # normalización, fechas, nombres de archivo
-│   └── ui/              # componentes comunes/theme
+│   ├── model/
+│   ├── util/
+│   └── ui/
 ├── data/
-│   ├── local/           # Room entities, DAO, database, converters
-│   ├── repository/      # implementaciones
-│   ├── export/          # session report / backup
-│   └── image/           # almacenamiento imágenes
+│   ├── local/
+│   ├── repository/
+│   ├── export/
+│   └── image/
 ├── domain/
-│   ├── repository/      # contratos
-│   └── usecase/         # reglas de negocio no triviales
+│   ├── repository/
+│   └── usecase/
 └── feature/
     ├── home/
     ├── sessions/

@@ -1,37 +1,48 @@
 package com.mundoinformaticacanaria.gymup.app
 
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.mundoinformaticacanaria.gymup.core.model.ThemeMode
 import com.mundoinformaticacanaria.gymup.core.ui.GymUpTheme
+import com.mundoinformaticacanaria.gymup.feature.exercises.ExerciseEditorScreen
 import com.mundoinformaticacanaria.gymup.feature.exercises.ExerciseHistoryScreen
 import com.mundoinformaticacanaria.gymup.feature.exercises.ExercisesScreen
 import com.mundoinformaticacanaria.gymup.feature.history.HistoryScreen
 import com.mundoinformaticacanaria.gymup.feature.home.HomeScreen
+import com.mundoinformaticacanaria.gymup.feature.routines.RoutineEditorScreen
 import com.mundoinformaticacanaria.gymup.feature.routines.RoutinesScreen
 import com.mundoinformaticacanaria.gymup.feature.sessions.NewSessionScreen
 import com.mundoinformaticacanaria.gymup.feature.sessions.SessionDetailScreen
 import com.mundoinformaticacanaria.gymup.feature.sessions.SessionsScreen
+import com.mundoinformaticacanaria.gymup.feature.settings.CatalogMaintenanceScreen
 import com.mundoinformaticacanaria.gymup.feature.settings.SettingsScreen
-import kotlinx.coroutines.launch
 
 @Composable
 fun GymUpApp(container: AppContainer) {
-    val userPreferencesRepository = container.userPreferencesRepository
-    val themeMode by userPreferencesRepository.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+    val appViewModel: AppViewModel = viewModel(
+        factory = AppViewModel.Factory(container.userPreferencesRepository),
+    )
+    val themeMode by appViewModel.themeMode.collectAsStateWithLifecycle()
     val navController = rememberNavController()
-    val scope = rememberCoroutineScope()
 
     GymUpTheme(themeMode = themeMode) {
-        NavHost(navController = navController, startDestination = Routes.HOME) {
+        NavHost(
+            navController = navController,
+            startDestination = Routes.HOME,
+            modifier = Modifier.navigationBarsPadding(),
+        ) {
             composable(Routes.HOME) {
                 HomeScreen(
+                    sessionRepository = container.sessionRepository,
                     onNewSession = { navController.navigate(Routes.NEW_SESSION) },
+                    onOpenSession = { navController.navigate(Routes.sessionDetail(it)) },
                     onSessions = { navController.navigate(Routes.SESSIONS) },
                     onRoutines = { navController.navigate(Routes.ROUTINES) },
                     onExercises = { navController.navigate(Routes.EXERCISES) },
@@ -41,7 +52,8 @@ fun GymUpApp(container: AppContainer) {
             }
             composable(Routes.NEW_SESSION) {
                 NewSessionScreen(
-                    trainingRepository = container.trainingRepository,
+                    sessionRepository = container.sessionRepository,
+                    routineRepository = container.routineRepository,
                     masterCatalogRepository = container.masterCatalogRepository,
                     exerciseCatalogRepository = container.exerciseCatalogRepository,
                     onCreated = { sessionId ->
@@ -54,7 +66,7 @@ fun GymUpApp(container: AppContainer) {
             }
             composable(Routes.SESSIONS) {
                 SessionsScreen(
-                    trainingRepository = container.trainingRepository,
+                    sessionRepository = container.sessionRepository,
                     onNewSession = { navController.navigate(Routes.NEW_SESSION) },
                     onOpenSession = { navController.navigate(Routes.sessionDetail(it)) },
                     onBack = navController::popBackStack,
@@ -64,18 +76,44 @@ fun GymUpApp(container: AppContainer) {
                 val sessionId = requireNotNull(entry.arguments?.getString("sessionId"))
                 SessionDetailScreen(
                     sessionId = sessionId,
-                    trainingRepository = container.trainingRepository,
+                    sessionRepository = container.sessionRepository,
                     masterCatalogRepository = container.masterCatalogRepository,
                     exerciseCatalogRepository = container.exerciseCatalogRepository,
+                    exerciseImageManager = container.exerciseImageManager,
                     onBack = navController::popBackStack,
                     onDeleted = { navController.popBackStack() },
                 )
             }
             composable(Routes.ROUTINES) {
                 RoutinesScreen(
-                    trainingRepository = container.trainingRepository,
+                    routineRepository = container.routineRepository,
+                    onNewRoutine = { navController.navigate(Routes.NEW_ROUTINE) },
+                    onOpenRoutine = { navController.navigate(Routes.routineEditor(it)) },
+                    onBack = navController::popBackStack,
+                )
+            }
+            composable(Routes.NEW_ROUTINE) {
+                RoutineEditorScreen(
+                    routineId = null,
+                    routineRepository = container.routineRepository,
                     masterCatalogRepository = container.masterCatalogRepository,
                     exerciseCatalogRepository = container.exerciseCatalogRepository,
+                    saveRoutineUseCase = container.saveRoutineUseCase,
+                    filterRoutineExercisesUseCase = container.filterRoutineExercisesUseCase,
+                    onFinished = navController::popBackStack,
+                    onBack = navController::popBackStack,
+                )
+            }
+            composable("${Routes.ROUTINE_DETAIL}/{routineId}") { entry ->
+                val routineId = requireNotNull(entry.arguments?.getString("routineId"))
+                RoutineEditorScreen(
+                    routineId = routineId,
+                    routineRepository = container.routineRepository,
+                    masterCatalogRepository = container.masterCatalogRepository,
+                    exerciseCatalogRepository = container.exerciseCatalogRepository,
+                    saveRoutineUseCase = container.saveRoutineUseCase,
+                    filterRoutineExercisesUseCase = container.filterRoutineExercisesUseCase,
+                    onFinished = navController::popBackStack,
                     onBack = navController::popBackStack,
                 )
             }
@@ -85,7 +123,20 @@ fun GymUpApp(container: AppContainer) {
                     masterCatalogRepository = container.masterCatalogRepository,
                     historyRepository = container.historyRepository,
                     exerciseImageManager = container.exerciseImageManager,
+                    onNewExercise = { navController.navigate(Routes.exerciseEditor(null)) },
+                    onEditExercise = { navController.navigate(Routes.exerciseEditor(it)) },
                     onOpenHistory = { navController.navigate(Routes.exerciseHistory(it)) },
+                    onBack = navController::popBackStack,
+                )
+            }
+            composable("${Routes.EXERCISE_EDITOR}/{exerciseId}") { entry ->
+                val rawId = requireNotNull(entry.arguments?.getString("exerciseId"))
+                ExerciseEditorScreen(
+                    exerciseId = rawId.takeUnless { it == Routes.NEW_EXERCISE_ID },
+                    maintenanceRepository = container.catalogMaintenanceRepository,
+                    masterCatalogRepository = container.masterCatalogRepository,
+                    onSaved = { navController.popBackStack() },
+                    onDeleted = { navController.popBackStack() },
                     onBack = navController::popBackStack,
                 )
             }
@@ -99,7 +150,7 @@ fun GymUpApp(container: AppContainer) {
             }
             composable(Routes.HISTORY) {
                 HistoryScreen(
-                    trainingRepository = container.trainingRepository,
+                    sessionRepository = container.sessionRepository,
                     masterCatalogRepository = container.masterCatalogRepository,
                     historyRepository = container.historyRepository,
                     onOpenSession = { navController.navigate(Routes.sessionDetail(it)) },
@@ -111,7 +162,14 @@ fun GymUpApp(container: AppContainer) {
                     currentMode = themeMode,
                     backupManager = container.backupManager,
                     historicalCleanupManager = container.historicalCleanupManager,
-                    onThemeModeSelected = { mode -> scope.launch { userPreferencesRepository.setThemeMode(mode) } },
+                    onThemeModeSelected = appViewModel::selectThemeMode,
+                    onCatalogMaintenance = { navController.navigate(Routes.CATALOGS) },
+                    onBack = navController::popBackStack,
+                )
+            }
+            composable(Routes.CATALOGS) {
+                CatalogMaintenanceScreen(
+                    repository = container.catalogMaintenanceRepository,
                     onBack = navController::popBackStack,
                 )
             }
@@ -125,11 +183,18 @@ private object Routes {
     const val SESSION_DETAIL = "session/detail"
     const val SESSIONS = "sessions"
     const val ROUTINES = "routines"
+    const val NEW_ROUTINE = "routine/new"
+    const val ROUTINE_DETAIL = "routine"
     const val EXERCISES = "exercises"
+    const val EXERCISE_EDITOR = "exercise/edit"
     const val EXERCISE_HISTORY = "exercise/history"
     const val HISTORY = "history"
     const val SETTINGS = "settings"
+    const val CATALOGS = "settings/catalogs"
+    const val NEW_EXERCISE_ID = "new"
 
     fun sessionDetail(id: String): String = "$SESSION_DETAIL/$id"
+    fun routineEditor(id: String): String = "$ROUTINE_DETAIL/$id"
+    fun exerciseEditor(id: String?): String = "$EXERCISE_EDITOR/${id ?: NEW_EXERCISE_ID}"
     fun exerciseHistory(id: String): String = "$EXERCISE_HISTORY/$id"
 }
