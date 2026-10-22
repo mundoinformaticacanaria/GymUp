@@ -97,3 +97,4 @@
 2026-10-22T12:12:51Z | INICIO SIN_ISSUE: revisar cola, PR, CI y trabajo TECH LEAD
 2026-10-22T14:07:17Z | INICIO SIN_ISSUE: revisión TECH LEAD de cola, PR, CI y ejecución
 2026-10-22T16:11:18Z | FIN #8 #21 #35: PR #49 HEAD 9c95d5b CI #376 SUCCESS 0 artefactos; ViewModel y 3 pruebas JVM de mensajes revisados, pendientes tests de estado y prueba física; PR #50 draft clean CI #373 SUCCESS, main solo +21 líneas de logs; BF-02 pendiente regresión/accesibilidad; INICIO, PR comentario/descripción y automation.log rechazados; sin merge ni APK
+2026-10-22T19:09:45Z | FIN #8 #21 #35: PR #49 head 9c95d5b CI #376 SUCCESS; detectado detalle obsoleto tras fallo de reload; corrección, comentario y descripción PR rechazados por conector; PR #50 draft no fusionable CI #373 SUCCESS; BF-02 pendiente accesibilidad/regresión; automation.log commit 7217780; sin merge ni APK
