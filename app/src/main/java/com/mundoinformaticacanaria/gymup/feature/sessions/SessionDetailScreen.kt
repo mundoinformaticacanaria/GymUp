@@ -29,7 +29,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -42,6 +41,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mundoinformaticacanaria.gymup.core.model.ExerciseExecutionStatus
 import com.mundoinformaticacanaria.gymup.core.model.LoadMode
 import com.mundoinformaticacanaria.gymup.core.model.MeasurementUnit
@@ -51,7 +51,6 @@ import com.mundoinformaticacanaria.gymup.core.util.swapPositions
 import com.mundoinformaticacanaria.gymup.data.images.ExerciseImageManager
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
-import com.mundoinformaticacanaria.gymup.domain.repository.MissingRirException
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionDetail
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingExercise
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
@@ -59,12 +58,6 @@ import com.mundoinformaticacanaria.gymup.domain.repository.TrainingSet
 import com.mundoinformaticacanaria.gymup.feature.exercises.ExerciseImageGallery
 import java.time.LocalDate
 import kotlinx.coroutines.launch
-
-private data class SessionUiMessage(
-    val text: String,
-    val isError: Boolean,
-    val setId: String? = null,
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,16 +73,19 @@ fun SessionDetailScreen(
     val scope = rememberCoroutineScope()
     val types by masterCatalogRepository.observeSessionTypes().collectAsStateWithLifecycle(initialValue = emptyList())
     val activeExercises by exerciseCatalogRepository.observeActiveExercises().collectAsStateWithLifecycle(initialValue = emptyList())
-    var refresh by remember { mutableIntStateOf(0) }
-    var detail by remember { mutableStateOf<SessionDetail?>(null) }
-    var message by remember { mutableStateOf<SessionUiMessage?>(null) }
+    val sessionViewModel: SessionDetailViewModel = viewModel(
+        key = "session-detail-$sessionId",
+        factory = SessionDetailViewModel.Factory(sessionId, sessionRepository),
+    )
+    val uiState by sessionViewModel.uiState.collectAsStateWithLifecycle()
+    val detail = uiState.detail
+    val message = uiState.message
     var showExercisePicker by remember { mutableStateOf(false) }
     var exerciseQuery by remember { mutableStateOf("") }
     var selectedExerciseId by remember { mutableStateOf<String?>(null) }
     var confirmReopen by remember { mutableStateOf(false) }
 
-    LaunchedEffect(sessionId, refresh) {
-        detail = sessionRepository.getSessionDetail(sessionId)
+    LaunchedEffect(detail, selectedExerciseId) {
         if (selectedExerciseId != null && detail?.exercises?.none { it.id == selectedExerciseId } == true) {
             selectedExerciseId = null
         }
@@ -101,22 +97,7 @@ fun SessionDetailScreen(
         onSuccess: (() -> Unit)? = null,
         block: suspend () -> Unit,
     ) {
-        scope.launch {
-            executeSessionAction(
-                action = block,
-                onSuccess = {
-                    refresh += 1
-                    message = successMessage?.let { SessionUiMessage(it, isError = false, setId = setId) }
-                    onSuccess?.invoke()
-                },
-                onFailure = { error ->
-                    val text = if (error is MissingRirException) {
-                        "Falta RIR obligatorio en ${error.missingSetIds.size} serie(s)."
-                    } else error.message ?: "No se pudo aplicar el cambio."
-                    message = SessionUiMessage(text, isError = true, setId = setId)
-                },
-            )
-        }
+        sessionViewModel.runAction(successMessage, setId, onSuccess, block)
     }
 
     val selectedExercise = detail?.exercises?.firstOrNull { it.id == selectedExerciseId }
@@ -188,7 +169,9 @@ fun SessionDetailScreen(
     ) { padding ->
         val current = detail
         if (current == null) {
-            Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) { Text("Cargando sesión…") }
+            Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+                Text(if (uiState.isLoading) "Cargando sesión…" else message?.text ?: "Sesión no disponible.")
+            }
             return@Scaffold
         }
 
@@ -284,10 +267,7 @@ fun SessionDetailScreen(
                             runCatching { sessionRepository.deleteSession(sessionId) }
                                 .onSuccess { onDeleted() }
                                 .onFailure {
-                                    message = SessionUiMessage(
-                                        text = it.message ?: "No se pudo eliminar la sesión.",
-                                        isError = true,
-                                    )
+                                    sessionViewModel.reportFailure(it)
                                 }
                         }
                     },
