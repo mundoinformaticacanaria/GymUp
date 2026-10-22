@@ -148,8 +148,17 @@ fun SessionDetailScreen(
         bottomBar = {
             val current = detail
             if (selectedExerciseId == null && current != null) {
-                BottomAppBar {
-                    Button(
+                Column {
+                    message?.takeIf { it.isError && it.setId == null }?.let { error ->
+                        Text(
+                            text = error.text,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+                    BottomAppBar {
+                        Button(
                         onClick = {
                             when (current.summary.operationalState) {
                                 SessionOperationalState.PLANNED ->
@@ -169,6 +178,7 @@ fun SessionDetailScreen(
                             },
                         )
                     }
+                }
                 }
             }
         },
@@ -559,6 +569,7 @@ private fun ExerciseEditor(
             }
             Button(onClick = onAddSet, modifier = Modifier.fillMaxWidth()) { Text("Añadir serie") }
             Button(onClick = onFinalizeExercise, modifier = Modifier.fillMaxWidth()) { Text("Finalizar ejercicio") }
+            message?.takeIf { it.isError && it.setId == null }?.let { StatusMessage(it) }
         }
     }
 }
