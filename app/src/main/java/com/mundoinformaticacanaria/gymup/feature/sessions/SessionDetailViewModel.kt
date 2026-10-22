@@ -47,8 +47,13 @@ internal class SessionDetailViewModel(
                     _uiState.update { it.copy(detail = detail, isLoading = false) }
                 }
                 .onFailure { error ->
-                    reportFailure(error)
-                    _uiState.update { it.copy(isLoading = false) }
+                    _uiState.update {
+                        it.copy(
+                            detail = null,
+                            message = SessionUiMessage(sessionActionErrorText(error), isError = true),
+                            isLoading = false,
+                        )
+                    }
                 }
         }
     }
