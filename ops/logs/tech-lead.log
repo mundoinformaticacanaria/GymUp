@@ -90,3 +90,4 @@
 2026-10-22T05:17:09Z | FIN #8 #21 #35: PR #50 draft ahora mergeable=false (main avanzó 12 commits, solo append de Log/automation.log y ops/logs/tech-lead.log); CI #373 SUCCESS para head a229c6b, pendiente regresión/accesibilidad y sincronizar logs al integrar. PR #49 CI #372 SUCCESS, error de finalización oculto bajo scroll confirmado; publicación de corrección/comentario rechazada por controles del conector, sin cambio de head. Escritura automation.log rechazada; sin merge ni APK.
 2026-10-22T06:11:34Z | INICIO #8, #21, #35: revisar integración BF-02 y corrección de finalización
 2026-10-22T07:15:04Z | INICIO SIN_ISSUE: revisión de cola, PR, CI y trabajo TECH LEAD
+2026-10-22T08:11:52Z | INICIO #8, #21, #35: revisar gates, PR y trabajo TECH LEAD
