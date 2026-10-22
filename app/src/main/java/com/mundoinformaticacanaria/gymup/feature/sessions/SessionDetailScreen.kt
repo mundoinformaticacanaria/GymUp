@@ -35,7 +35,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -154,7 +156,8 @@ fun SessionDetailScreen(
                             text = error.text,
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                                .semantics { liveRegion = LiveRegionMode.Assertive },
                         )
                     }
                     BottomAppBar {
@@ -272,7 +275,7 @@ fun SessionDetailScreen(
                 SessionMetadataEditor(
                     detail = current,
                     typeOptions = types.map { it.id to it.name },
-                    message = message?.takeIf { it.setId == null },
+                    message = message?.takeIf { it.setId == null && !it.isError },
                     onSaveMetadata = { typeId, name, note -> action { sessionRepository.updateSessionMetadata(sessionId, typeId, name, note) } },
                     onChangePosition = { date, order -> action { sessionRepository.changeSessionPosition(sessionId, date, order) } },
                     onRecalculate = { action { sessionRepository.recalculateObjectives(sessionId) } },
@@ -704,6 +707,9 @@ private fun StatusMessage(message: SessionUiMessage) {
         text = message.text,
         color = if (message.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.semantics {
+            liveRegion = if (message.isError) LiveRegionMode.Assertive else LiveRegionMode.Polite
+        },
     )
 }
 
