@@ -92,3 +92,4 @@
 2026-10-22T07:15:04Z | INICIO SIN_ISSUE: revisión de cola, PR, CI y trabajo TECH LEAD
 2026-10-22T08:11:52Z | INICIO #8, #21, #35: revisar gates, PR y trabajo TECH LEAD
 2026-10-22T08:20:43Z | FIN #8 #21 #35: #21 commit 6317852, CI #374 SUCCESS (0 artefactos); #8 PR #50 draft limpia por API GitHub, faltan pruebas físicas; #35 BF-02 probado parcialmente, pendiente regresión; automation.log y PR comentario rechazados; sin merge ni APK
+2026-10-22T09:05:57Z | INICIO #8, #21, #35: revisar gates BF-02, detalle de sesión y cola TECH LEAD
