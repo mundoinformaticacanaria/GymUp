@@ -1,5 +1,6 @@
 package com.mundoinformaticacanaria.gymup.feature.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -67,6 +68,9 @@ fun SettingsScreen(
     var cleanupInProgress by remember { mutableStateOf(false) }
     var previewGeneration by remember { mutableStateOf(0) }
     LaunchedEffect(selectedSection) { listState.scrollToItem(0) }
+    // Keep the composition alive until the irreversible operation reports its outcome.
+    // Otherwise system Back can cancel the screen-scoped coroutine after deletion commits.
+    BackHandler(enabled = cleanupInProgress) { /* Wait for the operation to finish. */ }
 
     LazyColumn(
         state = listState,
@@ -101,6 +105,7 @@ fun SettingsScreen(
                         previewGeneration++
                     },
                     modifier = Modifier.fillMaxWidth(),
+                    enabled = !cleanupInProgress,
                 ) { Text("Volver al índice de Ajustes") }
             }
             when (selectedSection) {
@@ -215,13 +220,20 @@ fun SettingsScreen(
                         }
                     }
 
+                    if (cleanupInProgress) {
+                        item { Text("Limpieza en curso. Espera a que termine antes de salir.") }
+                    }
                     error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
                 }
                 null -> Unit
             }
         }
         item {
-            OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
+            OutlinedButton(
+                onClick = onBack,
+                enabled = !cleanupInProgress,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Volver") }
         }
     }
 
