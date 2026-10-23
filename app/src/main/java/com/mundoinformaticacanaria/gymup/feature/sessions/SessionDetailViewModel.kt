@@ -46,18 +46,23 @@ internal class SessionDetailViewModel(
 
     private suspend fun reloadState(): Boolean {
         val result = runCatching { sessionRepository.getSessionDetail(sessionId) }
-        result.onSuccess { detail ->
+        val detail = result.getOrNull()
+        if (detail != null) {
             _uiState.update { it.copy(detail = detail, isLoading = false) }
-        }.onFailure { error ->
-            _uiState.update {
-                it.copy(
-                    detail = null,
-                    message = SessionUiMessage(sessionActionErrorText(error), isError = true),
-                    isLoading = false,
-                )
-            }
+            return true
         }
-        return result.isSuccess
+
+        // A nullable repository result is not a successful reload: navigating
+        // after a missing session would hide the failure from the user.
+        val errorText = result.exceptionOrNull()?.let(::sessionActionErrorText) ?: "Sesión no disponible."
+        _uiState.update {
+            it.copy(
+                detail = null,
+                message = SessionUiMessage(errorText, isError = true),
+                isLoading = false,
+            )
+        }
+        return false
     }
 
     fun runAction(
