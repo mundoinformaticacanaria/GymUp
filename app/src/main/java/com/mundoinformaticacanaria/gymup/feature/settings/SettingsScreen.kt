@@ -32,6 +32,10 @@ import kotlinx.coroutines.launch
 
 private enum class SettingsSection { THEME, BACKUP, CLEANUP }
 
+/** Reject a stale or edited cutoff before displaying or confirming irreversible cleanup. */
+internal fun cleanupPreviewMatchesCutoff(cutoffText: String, impact: HistoricalCleanupImpact?): Boolean =
+    impact != null && runCatching { LocalDate.parse(cutoffText.trim()) }.getOrNull() == impact.cutoffDate
+
 @Composable
 fun SettingsScreen(
     currentMode: ThemeMode,
@@ -49,6 +53,7 @@ fun SettingsScreen(
     var result by remember { mutableStateOf<HistoricalCleanupResult?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var showConfirmation by remember { mutableStateOf(false) }
+    var cleanupInProgress by remember { mutableStateOf(false) }
     LaunchedEffect(selectedSection) { listState.scrollToItem(0) }
 
     LazyColumn(
@@ -77,7 +82,7 @@ fun SettingsScreen(
         } else {
             item {
                 OutlinedButton(
-                    onClick = { selectedSection = null },
+                    onClick = { selectedSection = null; showConfirmation = false },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Volver al índice de Ajustes") }
             }
@@ -113,8 +118,10 @@ fun SettingsScreen(
                                 preview = null
                                 result = null
                                 error = null
+                                showConfirmation = false
                             },
                             label = { Text("Fecha de corte (AAAA-MM-DD)") },
+                            enabled = !cleanupInProgress,
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -130,19 +137,26 @@ fun SettingsScreen(
                                     scope.launch {
                                         runCatching { historicalCleanupManager.preview(cutoff) }
                                             .onSuccess {
-                                                preview = it
-                                                result = null
-                                                error = null
+                                                if (cutoffText.trim() == cutoff.toString()) {
+                                                    preview = it
+                                                    result = null
+                                                    error = null
+                                                }
                                             }
-                                            .onFailure { error = it.message ?: "No se pudo calcular la limpieza." }
+                                            .onFailure {
+                                                if (cutoffText.trim() == cutoff.toString()) {
+                                                    error = it.message ?: "No se pudo calcular la limpieza."
+                                                }
+                                            }
                                     }
                                 }
                             },
+                            enabled = !cleanupInProgress,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Calcular datos afectados") }
                     }
 
-                    preview?.let { impact ->
+                    preview?.takeIf { cleanupPreviewMatchesCutoff(cutoffText, it) }?.let { impact ->
                         item {
                             Text("Fecha de corte: ${impact.cutoffDate}")
                             Text("Sesiones: ${impact.sessions}")
@@ -155,7 +169,7 @@ fun SettingsScreen(
                             )
                             Button(
                                 onClick = { showConfirmation = true },
-                                enabled = impact.totalTransactionalRecords > 0,
+                                enabled = impact.totalTransactionalRecords > 0 && !cleanupInProgress,
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Eliminar datos anteriores a la fecha") }
                         }
@@ -181,7 +195,7 @@ fun SettingsScreen(
     }
 
     if (showConfirmation) {
-        val impact = preview
+        val impact = preview?.takeIf { cleanupPreviewMatchesCutoff(cutoffText, it) }
         AlertDialog(
             onDismissRequest = { showConfirmation = false },
             title = { Text("Confirmar borrado irreversible") },
@@ -202,22 +216,30 @@ fun SettingsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val currentImpact = preview ?: return@Button
+                        val currentImpact = preview?.takeIf {
+                            cleanupPreviewMatchesCutoff(cutoffText, it)
+                        } ?: return@Button
+                        if (cleanupInProgress) return@Button
+                        cleanupInProgress = true
                         showConfirmation = false
                         scope.launch {
-                            runCatching {
-                                historicalCleanupManager.execute(
+                            try {
+                                result = historicalCleanupManager.execute(
                                     cutoffDate = currentImpact.cutoffDate,
                                     confirmation = HistoricalCleanupConfirmation.IRREVERSIBLE_CONFIRMED,
                                 )
-                            }.onSuccess {
-                                result = it
                                 preview = null
                                 error = null
-                            }.onFailure { error = it.message ?: "No se pudo completar la limpieza." }
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                error = failure.message ?: "No se pudo completar la limpieza."
+                            } finally {
+                                cleanupInProgress = false
+                            }
                         }
                     },
-                    enabled = impact != null,
+                    enabled = impact != null && !cleanupInProgress,
                 ) { Text("Eliminar definitivamente") }
             },
         )
