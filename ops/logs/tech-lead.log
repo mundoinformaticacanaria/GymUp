@@ -109,3 +109,4 @@
 2026-10-23T10:09:12Z | INICIO #21: revisar PR, CI, dependencias y siguientes tareas TECH LEAD
 2026-10-23T10:10:37Z | FIN #21 #8 #35: PR #49 commit 52f4ed4 añade dos regresiones Robolectric de fallo de recarga/escritura, comentario 6362530349 publicado; CI run 39937170118 in_progress, no SUCCESS atribuido; PR #49 draft, PR #50 draft mergeable en consulta; BF-02 accesibilidad/regresion fisica pendientes; automation.log actualizado; sin merge, APK ni release.
 2026-10-23T11:14:18Z | INICIO #21: verificar CI #384 y continuar revision TECH LEAD
+2026-10-23T11:17:10Z | FIN #21 #8 #35: PR #49 commits bf9690c/6b900c3/497dba1 preservan cancelacion y añaden dos tests JVM; CI #384 SUCCESS (0 artefactos), #387 pendiente para head nuevo; PR #49 draft sobre #48, PR #50 draft sobre main, BF-02 pendiente accesibilidad/regresion fisica; automation.log actualizado; sin merges, APK ni release
