@@ -50,6 +50,7 @@ fun CatalogMaintenanceScreen(
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val equipment by repository.observeMasters(MasterCatalogKind.EQUIPMENT)
         .collectAsStateWithLifecycle(initialValue = emptyList())
+    var selectedKind by remember { mutableStateOf(MasterCatalogKind.SESSION_TYPE) }
     var editRequest by remember { mutableStateOf<MasterEditRequest?>(null) }
     var pendingDeactivate by remember { mutableStateOf<MasterEditRequest?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -81,30 +82,47 @@ fun CatalogMaintenanceScreen(
                 )
                 message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
-            masterSection(
-                title = "Tipos de sesión",
-                kind = MasterCatalogKind.SESSION_TYPE,
-                items = sessionTypes,
-                onCreate = { editRequest = MasterEditRequest(MasterCatalogKind.SESSION_TYPE) },
-                onEdit = { editRequest = MasterEditRequest(MasterCatalogKind.SESSION_TYPE, it) },
-                onDeactivate = { pendingDeactivate = MasterEditRequest(MasterCatalogKind.SESSION_TYPE, it) },
-            )
-            masterSection(
-                title = "Grupos musculares",
-                kind = MasterCatalogKind.MUSCLE_GROUP,
-                items = muscleGroups,
-                onCreate = { editRequest = MasterEditRequest(MasterCatalogKind.MUSCLE_GROUP) },
-                onEdit = { editRequest = MasterEditRequest(MasterCatalogKind.MUSCLE_GROUP, it) },
-                onDeactivate = { pendingDeactivate = MasterEditRequest(MasterCatalogKind.MUSCLE_GROUP, it) },
-            )
-            masterSection(
-                title = "Equipo",
-                kind = MasterCatalogKind.EQUIPMENT,
-                items = equipment,
-                onCreate = { editRequest = MasterEditRequest(MasterCatalogKind.EQUIPMENT) },
-                onEdit = { editRequest = MasterEditRequest(MasterCatalogKind.EQUIPMENT, it) },
-                onDeactivate = { pendingDeactivate = MasterEditRequest(MasterCatalogKind.EQUIPMENT, it) },
-            )
+            item {
+                Text("Mostrar catálogo", style = MaterialTheme.typography.titleMedium)
+                // Only the selected master catalog is expanded; switching does
+                // not change the underlying data or any historical snapshot.
+                MasterCatalogKind.entries.forEach { kind ->
+                    val selected = selectedKind == kind
+                    OutlinedButton(
+                        onClick = { selectedKind = kind; message = null },
+                        enabled = !selected,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (selected) "${kind.sectionTitle()} · seleccionado" else kind.sectionTitle())
+                    }
+                }
+            }
+            when (selectedKind) {
+                MasterCatalogKind.SESSION_TYPE -> masterSection(
+                    title = "Tipos de sesión",
+                    kind = selectedKind,
+                    items = sessionTypes,
+                    onCreate = { editRequest = MasterEditRequest(selectedKind) },
+                    onEdit = { editRequest = MasterEditRequest(selectedKind, it) },
+                    onDeactivate = { pendingDeactivate = MasterEditRequest(selectedKind, it) },
+                )
+                MasterCatalogKind.MUSCLE_GROUP -> masterSection(
+                    title = "Grupos musculares",
+                    kind = selectedKind,
+                    items = muscleGroups,
+                    onCreate = { editRequest = MasterEditRequest(selectedKind) },
+                    onEdit = { editRequest = MasterEditRequest(selectedKind, it) },
+                    onDeactivate = { pendingDeactivate = MasterEditRequest(selectedKind, it) },
+                )
+                MasterCatalogKind.EQUIPMENT -> masterSection(
+                    title = "Equipo",
+                    kind = selectedKind,
+                    items = equipment,
+                    onCreate = { editRequest = MasterEditRequest(selectedKind) },
+                    onEdit = { editRequest = MasterEditRequest(selectedKind, it) },
+                    onDeactivate = { pendingDeactivate = MasterEditRequest(selectedKind, it) },
+                )
+            }
         }
     }
 
@@ -190,6 +208,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.masterSection(
             }
         }
     }
+}
+
+private fun MasterCatalogKind.sectionTitle(): String = when (this) {
+    MasterCatalogKind.SESSION_TYPE -> "Tipos de sesión"
+    MasterCatalogKind.MUSCLE_GROUP -> "Grupos musculares"
+    MasterCatalogKind.EQUIPMENT -> "Equipo"
 }
 
 private fun MasterCatalogKind.label(): String = when (this) {
