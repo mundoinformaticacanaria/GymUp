@@ -43,4 +43,41 @@ class SessionActionRunnerTest {
         assertEquals(0, returnToSessionCalls)
         assertSame(expectedError, receivedError)
     }
+
+    @Test
+    fun navigationWaitsUntilSessionReloadCompletes() = runBlocking {
+        val events = mutableListOf<String>()
+        executeSessionActionAndReload(
+            action = { events += "save" },
+            reload = { events += "reload"; true },
+            onSuccess = { events += "navigate" },
+            onFailure = { events += "failure" },
+        )
+        assertEquals(listOf("save", "reload", "navigate"), events)
+    }
+
+    @Test
+    fun failedActionDoesNotReloadOrNavigate() = runBlocking {
+        val events = mutableListOf<String>()
+        executeSessionActionAndReload(
+            action = { throw IllegalStateException("No se pudo guardar") },
+            reload = { events += "reload"; true },
+            onSuccess = { events += "navigate" },
+            onFailure = { events += "failure" },
+        )
+        assertEquals(listOf("failure"), events)
+    }
+
+    @Test
+    fun failedReloadPreventsNavigation() = runBlocking {
+        val events = mutableListOf<String>()
+        executeSessionActionAndReload(
+            action = { events += "save" },
+            reload = { events += "reload"; false },
+            onSuccess = { events += "navigate" },
+            onFailure = { events += "failure" },
+        )
+        assertEquals(listOf("save", "reload"), events)
+    }
+
 }
