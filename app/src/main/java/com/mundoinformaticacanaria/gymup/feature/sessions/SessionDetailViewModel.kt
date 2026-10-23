@@ -99,6 +99,26 @@ internal class SessionDetailViewModel(
         }
     }
 
+    /**
+     * Deletion cannot reload the removed session. Keep it in the same
+     * single-operation guard as other writes and navigate only after success.
+     */
+    fun deleteSession(onDeleted: () -> Unit) {
+        if (_uiState.value.isActionRunning) return
+        _uiState.update { it.copy(isActionRunning = true) }
+        viewModelScope.launch {
+            try {
+                executeSessionAction(
+                    action = { sessionRepository.deleteSession(sessionId) },
+                    onSuccess = onDeleted,
+                    onFailure = { reportFailure(it) },
+                )
+            } finally {
+                _uiState.update { it.copy(isActionRunning = false) }
+            }
+        }
+    }
+
     fun reportFailure(error: Throwable, setId: String? = null) {
         _uiState.update {
             it.copy(message = SessionUiMessage(sessionActionErrorText(error), isError = true, setId = setId))

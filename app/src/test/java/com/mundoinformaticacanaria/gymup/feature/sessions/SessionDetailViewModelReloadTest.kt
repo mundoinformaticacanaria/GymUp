@@ -219,4 +219,76 @@ class SessionDetailViewModelReloadTest {
         assertEquals("No se pudo guardar", viewModel.uiState.value.message?.text)
         assertTrue(viewModel.uiState.value.message?.isError == true)
     }
+
+
+    @Test
+    fun deleteWaitsForCurrentWriteAndDoesNotReloadRemovedSession() {
+        val allowWrite = CompletableDeferred<Unit>()
+        var reloads = 0
+        var deletes = 0
+        var navigations = 0
+        val repository = Proxy.newProxyInstance(
+            SessionRepository::class.java.classLoader,
+            arrayOf(SessionRepository::class.java),
+        ) { _, method, _ ->
+            when (method.name) {
+                "getSessionDetail" -> {
+                    reloads++
+                    null
+                }
+                "deleteSession" -> {
+                    deletes++
+                    Unit
+                }
+                else -> error("Unexpected repository call: ${method.name}")
+            }
+        } as SessionRepository
+        val viewModel = SessionDetailViewModel("session", repository)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, reloads)
+
+        viewModel.runAction { allowWrite.await() }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(viewModel.uiState.value.isActionRunning)
+
+        viewModel.deleteSession { navigations++ }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(0, deletes)
+        assertEquals(0, navigations)
+
+        allowWrite.complete(Unit)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        viewModel.deleteSession { navigations++ }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(1, deletes)
+        assertEquals(1, navigations)
+        assertEquals(2, reloads) // initial load and prior write; never reload after deletion
+        assertFalse(viewModel.uiState.value.isActionRunning)
+    }
+
+    @Test
+    fun failedDeleteKeepsScreenAndReleasesActionGuard() {
+        val repository = Proxy.newProxyInstance(
+            SessionRepository::class.java.classLoader,
+            arrayOf(SessionRepository::class.java),
+        ) { _, method, _ ->
+            when (method.name) {
+                "getSessionDetail" -> null
+                "deleteSession" -> throw IllegalStateException("No se pudo eliminar")
+                else -> error("Unexpected repository call: ${method.name}")
+            }
+        } as SessionRepository
+        val viewModel = SessionDetailViewModel("session", repository)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+
+        var navigated = false
+        viewModel.deleteSession { navigated = true }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+
+        assertFalse(navigated)
+        assertFalse(viewModel.uiState.value.isActionRunning)
+        assertEquals("No se pudo eliminar", viewModel.uiState.value.message?.text)
+        assertTrue(viewModel.uiState.value.message?.isError == true)
+    }
 }

@@ -33,7 +33,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -59,7 +58,6 @@ import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.TrainingSet
 import com.mundoinformaticacanaria.gymup.feature.exercises.ExerciseImageGallery
 import java.time.LocalDate
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,7 +70,6 @@ fun SessionDetailScreen(
     onBack: () -> Unit,
     onDeleted: () -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     val types by masterCatalogRepository.observeSessionTypes().collectAsStateWithLifecycle(initialValue = emptyList())
     val activeExercises by exerciseCatalogRepository.observeActiveExercises().collectAsStateWithLifecycle(initialValue = emptyList())
     val sessionViewModel: SessionDetailViewModel = viewModel(
@@ -270,15 +267,7 @@ fun SessionDetailScreen(
                     onSaveMetadata = { typeId, name, note -> action { sessionRepository.updateSessionMetadata(sessionId, typeId, name, note) } },
                     onChangePosition = { date, order -> action { sessionRepository.changeSessionPosition(sessionId, date, order) } },
                     onRecalculate = { action { sessionRepository.recalculateObjectives(sessionId) } },
-                    onDelete = {
-                        scope.launch {
-                            executeSessionAction(
-                                action = { sessionRepository.deleteSession(sessionId) },
-                                onSuccess = onDeleted,
-                                onFailure = { sessionViewModel.reportFailure(it) },
-                            )
-                        }
-                    },
+                    onDelete = { sessionViewModel.deleteSession(onDeleted) },
                 )
             }
 
