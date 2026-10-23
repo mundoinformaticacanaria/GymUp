@@ -28,6 +28,8 @@ import com.mundoinformaticacanaria.gymup.data.cleanup.HistoricalCleanupResult
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 
+private enum class SettingsSection { THEME, BACKUP, CLEANUP }
+
 @Composable
 fun SettingsScreen(
     currentMode: ThemeMode,
@@ -38,6 +40,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    var selectedSection by remember { mutableStateOf<SettingsSection?>(null) }
     var cutoffText by remember { mutableStateOf("") }
     var preview by remember { mutableStateOf<HistoricalCleanupImpact?>(null) }
     var result by remember { mutableStateOf<HistoricalCleanupResult?>(null) }
@@ -49,22 +52,43 @@ fun SettingsScreen(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { Text(text = "Ajustes", style = MaterialTheme.typography.headlineMedium) }
+        item { Text("Ajustes", style = MaterialTheme.typography.headlineMedium) }
+        if (selectedSection == null) {
+            item {
+                Text("Elige qué quieres configurar", style = MaterialTheme.typography.titleMedium)
+                Button(onClick = { selectedSection = SettingsSection.THEME }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Apariencia · Sistema / Claro / Oscuro")
+                }
+                OutlinedButton(onClick = onCatalogMaintenance, modifier = Modifier.fillMaxWidth()) {
+                    Text("Catálogos · Tipos, grupos y equipo")
+                }
+                OutlinedButton(onClick = { selectedSection = SettingsSection.BACKUP }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Copia de seguridad · Exportar / importar")
+                }
+                OutlinedButton(onClick = { selectedSection = SettingsSection.CLEANUP }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Limpieza histórica · Ver y eliminar registros")
+                }
+            }
+        } else {
+            item {
+                OutlinedButton(
+                    onClick = { selectedSection = null },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Volver al índice de Ajustes") }
+            }
+            when (selectedSection) {
+                SettingsSection.THEME -> {
         item { Text(text = "Tema", style = MaterialTheme.typography.titleMedium) }
         item { ThemeButton("Sistema", ThemeMode.SYSTEM, currentMode, onThemeModeSelected) }
         item { ThemeButton("Claro", ThemeMode.LIGHT, currentMode, onThemeModeSelected) }
         item { ThemeButton("Oscuro", ThemeMode.DARK, currentMode, onThemeModeSelected) }
 
-        item {
-            Text(text = "Catálogos", style = MaterialTheme.typography.titleMedium)
-            Text("Crear, renombrar o desactivar tipos de sesión, grupos musculares y equipos.")
-            Button(onClick = onCatalogMaintenance, modifier = Modifier.fillMaxWidth()) {
-                Text("Gestionar catálogos")
-            }
-        }
-
+                }
+                SettingsSection.BACKUP -> {
         item { BackupSection(backupManager = backupManager) }
 
+                }
+                SettingsSection.CLEANUP -> {
         item {
             Text(text = "Limpieza histórica", style = MaterialTheme.typography.titleMedium)
             Text(
@@ -72,7 +96,7 @@ fun SettingsScreen(
                     "Los ejercicios y demás datos maestros se conservan.",
             )
             Text(
-                "Antes de eliminar puedes crear un backup completo desde la sección anterior.",
+                "Antes de eliminar puedes crear un backup completo desde Copia de seguridad en Ajustes.",
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -142,6 +166,10 @@ fun SettingsScreen(
         }
 
         error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
+                }
+                null -> Unit
+            }
+        }
         item {
             OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
         }
