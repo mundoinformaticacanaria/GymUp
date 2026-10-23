@@ -1,7 +1,11 @@
 package com.mundoinformaticacanaria.gymup.feature.sessions
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Test
 
@@ -78,6 +82,36 @@ class SessionActionRunnerTest {
             onFailure = { events += "failure" },
         )
         assertEquals(listOf("save", "reload"), events)
+    }
+
+    @Test
+    fun navigationDoesNotRunWhileAsynchronousReloadIsPending() = runBlocking {
+        val reloadStarted = CompletableDeferred<Unit>()
+        val allowReload = CompletableDeferred<Unit>()
+        val events = mutableListOf<String>()
+
+        val operation = async(start = CoroutineStart.UNDISPATCHED) {
+            executeSessionActionAndReload(
+                action = { events += "save" },
+                reload = {
+                    events += "reload-start"
+                    reloadStarted.complete(Unit)
+                    allowReload.await()
+                    events += "reload-end"
+                    true
+                },
+                onSuccess = { events += "navigate" },
+                onFailure = { events += "failure" },
+            )
+        }
+
+        reloadStarted.await()
+        assertEquals(listOf("save", "reload-start"), events)
+        assertFalse(operation.isCompleted)
+
+        allowReload.complete(Unit)
+        operation.await()
+        assertEquals(listOf("save", "reload-start", "reload-end", "navigate"), events)
     }
 
 }
