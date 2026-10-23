@@ -1,7 +1,12 @@
 package com.mundoinformaticacanaria.gymup.feature.sessions
 
 import android.os.Looper
+import com.mundoinformaticacanaria.gymup.core.model.SessionExecutionResult
+import com.mundoinformaticacanaria.gymup.core.model.SessionOperationalState
+import com.mundoinformaticacanaria.gymup.domain.repository.SessionDetail
+import com.mundoinformaticacanaria.gymup.domain.repository.SessionSummary
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
+import java.time.LocalDate
 import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,6 +20,59 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class SessionDetailViewModelReloadTest {
+    @Test
+    fun successfulWriteReloadsUpdatedSessionBeforeSuccessCallback() {
+        var writeCompleted = false
+        var reloadCalls = 0
+        val repository = Proxy.newProxyInstance(
+            SessionRepository::class.java.classLoader,
+            arrayOf(SessionRepository::class.java),
+        ) { _, method, _ ->
+            when (method.name) {
+                "getSessionDetail" -> {
+                    reloadCalls++
+                    SessionDetail(
+                        summary = SessionSummary(
+                            id = "session",
+                            date = LocalDate.of(2026, 10, 23),
+                            orderInDay = 1,
+                            name = "Sesión",
+                            sessionTypeName = "Fuerza",
+                            operationalState = if (writeCompleted) {
+                                SessionOperationalState.IN_PROGRESS
+                            } else {
+                                SessionOperationalState.PLANNED
+                            },
+                            executionResult = SessionExecutionResult.NOT_STARTED,
+                        ),
+                        generalNote = null,
+                        isAutoName = false,
+                        sessionTypeId = "type",
+                        exercises = emptyList(),
+                    )
+                }
+                else -> error("Unexpected repository call: ${method.name}")
+            }
+        } as SessionRepository
+
+        val viewModel = SessionDetailViewModel("session", repository)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(SessionOperationalState.PLANNED, viewModel.uiState.value.detail?.summary?.operationalState)
+
+        var stateObservedByCallback: SessionOperationalState? = null
+        viewModel.runAction(
+            successMessage = "Sesión iniciada.",
+            onSuccess = { stateObservedByCallback = viewModel.uiState.value.detail?.summary?.operationalState },
+        ) { writeCompleted = true }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(2, reloadCalls)
+        assertEquals(SessionOperationalState.IN_PROGRESS, stateObservedByCallback)
+        assertEquals(SessionOperationalState.IN_PROGRESS, viewModel.uiState.value.detail?.summary?.operationalState)
+        assertEquals("Sesión iniciada.", viewModel.uiState.value.message?.text)
+        assertEquals(false, viewModel.uiState.value.message?.isError)
+    }
+
     @Test
     fun missingSessionDoesNotCountAsSuccessfulReloadOrNavigate() {
         // getSessionDetail is nullable: a successful suspend call may return null.
