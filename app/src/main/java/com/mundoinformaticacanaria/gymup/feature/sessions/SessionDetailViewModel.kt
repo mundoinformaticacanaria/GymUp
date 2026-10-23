@@ -41,21 +41,23 @@ internal class SessionDetailViewModel(
     }
 
     private fun reload() {
-        viewModelScope.launch {
-            runCatching { sessionRepository.getSessionDetail(sessionId) }
-                .onSuccess { detail ->
-                    _uiState.update { it.copy(detail = detail, isLoading = false) }
-                }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            detail = null,
-                            message = SessionUiMessage(sessionActionErrorText(error), isError = true),
-                            isLoading = false,
-                        )
-                    }
-                }
+        viewModelScope.launch { reloadState() }
+    }
+
+    private suspend fun reloadState(): Boolean {
+        val result = runCatching { sessionRepository.getSessionDetail(sessionId) }
+        result.onSuccess { detail ->
+            _uiState.update { it.copy(detail = detail, isLoading = false) }
+        }.onFailure { error ->
+            _uiState.update {
+                it.copy(
+                    detail = null,
+                    message = SessionUiMessage(sessionActionErrorText(error), isError = true),
+                    isLoading = false,
+                )
+            }
         }
+        return result.isSuccess
     }
 
     fun runAction(
@@ -65,13 +67,13 @@ internal class SessionDetailViewModel(
         action: suspend () -> Unit,
     ) {
         viewModelScope.launch {
-            executeSessionAction(
+            executeSessionActionAndReload(
                 action = action,
+                reload = { reloadState() },
                 onSuccess = {
                     _uiState.update { state ->
                         state.copy(message = successMessage?.let { SessionUiMessage(it, isError = false, setId = setId) })
                     }
-                    reload()
                     onSuccess?.invoke()
                 },
                 onFailure = { reportFailure(it, setId) },
