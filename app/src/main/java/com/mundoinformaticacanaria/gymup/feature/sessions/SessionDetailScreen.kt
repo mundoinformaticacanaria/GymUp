@@ -264,11 +264,11 @@ fun SessionDetailScreen(
                     onRecalculate = { action { sessionRepository.recalculateObjectives(sessionId) } },
                     onDelete = {
                         scope.launch {
-                            runCatching { sessionRepository.deleteSession(sessionId) }
-                                .onSuccess { onDeleted() }
-                                .onFailure {
-                                    sessionViewModel.reportFailure(it)
-                                }
+                            executeSessionAction(
+                                action = { sessionRepository.deleteSession(sessionId) },
+                                onSuccess = onDeleted,
+                                onFailure = sessionViewModel::reportFailure,
+                            )
                         }
                     },
                 )
