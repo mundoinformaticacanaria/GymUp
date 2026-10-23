@@ -267,7 +267,7 @@ fun SessionDetailScreen(
                             executeSessionAction(
                                 action = { sessionRepository.deleteSession(sessionId) },
                                 onSuccess = onDeleted,
-                                onFailure = sessionViewModel::reportFailure,
+                                onFailure = { sessionViewModel.reportFailure(it) },
                             )
                         }
                     },
