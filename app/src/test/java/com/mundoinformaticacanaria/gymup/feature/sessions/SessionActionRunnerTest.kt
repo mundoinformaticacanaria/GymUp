@@ -1,5 +1,6 @@
 package com.mundoinformaticacanaria.gymup.feature.sessions
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -114,4 +115,46 @@ class SessionActionRunnerTest {
         assertEquals(listOf("save", "reload-start", "reload-end", "navigate"), events)
     }
 
+
+    @Test
+    fun cancelledActionPropagatesWithoutReloadOrNavigation() = runBlocking {
+        val cancellation = CancellationException("action cancelled")
+        val events = mutableListOf<String>()
+        var caught: Throwable? = null
+
+        try {
+            executeSessionActionAndReload(
+                action = { events += "action"; throw cancellation },
+                reload = { events += "reload"; true },
+                onSuccess = { events += "navigate" },
+                onFailure = { events += "failure" },
+            )
+        } catch (error: CancellationException) {
+            caught = error
+        }
+
+        assertSame(cancellation, caught)
+        assertEquals(listOf("action"), events)
+    }
+
+    @Test
+    fun cancelledReloadPropagatesWithoutNavigationOrFailureMessage() = runBlocking {
+        val cancellation = CancellationException("reload cancelled")
+        val events = mutableListOf<String>()
+        var caught: Throwable? = null
+
+        try {
+            executeSessionActionAndReload(
+                action = { events += "save" },
+                reload = { events += "reload"; throw cancellation },
+                onSuccess = { events += "navigate" },
+                onFailure = { events += "failure" },
+            )
+        } catch (error: CancellationException) {
+            caught = error
+        }
+
+        assertSame(cancellation, caught)
+        assertEquals(listOf("save", "reload"), events)
+    }
 }
