@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.mundoinformaticacanaria.gymup.domain.repository.MissingRirException
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionDetail
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,6 +47,8 @@ internal class SessionDetailViewModel(
 
     private suspend fun reloadState(): Boolean {
         val result = runCatching { sessionRepository.getSessionDetail(sessionId) }
+        // Do not render lifecycle cancellation as a failed repository reload.
+        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         val detail = result.getOrNull()
         if (detail != null) {
             _uiState.update { it.copy(detail = detail, isLoading = false) }
