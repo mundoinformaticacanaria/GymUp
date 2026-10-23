@@ -32,6 +32,18 @@ import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogKind
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterMaintenanceItem
 import kotlinx.coroutines.launch
 
+/** Keep the visible list limited to the selected master kind. */
+internal fun <T> catalogItemsFor(
+    kind: MasterCatalogKind,
+    sessionTypes: List<T>,
+    muscleGroups: List<T>,
+    equipment: List<T>,
+): List<T> = when (kind) {
+    MasterCatalogKind.SESSION_TYPE -> sessionTypes
+    MasterCatalogKind.MUSCLE_GROUP -> muscleGroups
+    MasterCatalogKind.EQUIPMENT -> equipment
+}
+
 private data class MasterEditRequest(
     val kind: MasterCatalogKind,
     val item: MasterMaintenanceItem? = null,
@@ -97,32 +109,14 @@ fun CatalogMaintenanceScreen(
                     }
                 }
             }
-            when (selectedKind) {
-                MasterCatalogKind.SESSION_TYPE -> masterSection(
-                    title = "Tipos de sesión",
-                    kind = selectedKind,
-                    items = sessionTypes,
-                    onCreate = { editRequest = MasterEditRequest(selectedKind) },
-                    onEdit = { editRequest = MasterEditRequest(selectedKind, it) },
-                    onDeactivate = { pendingDeactivate = MasterEditRequest(selectedKind, it) },
-                )
-                MasterCatalogKind.MUSCLE_GROUP -> masterSection(
-                    title = "Grupos musculares",
-                    kind = selectedKind,
-                    items = muscleGroups,
-                    onCreate = { editRequest = MasterEditRequest(selectedKind) },
-                    onEdit = { editRequest = MasterEditRequest(selectedKind, it) },
-                    onDeactivate = { pendingDeactivate = MasterEditRequest(selectedKind, it) },
-                )
-                MasterCatalogKind.EQUIPMENT -> masterSection(
-                    title = "Equipo",
-                    kind = selectedKind,
-                    items = equipment,
-                    onCreate = { editRequest = MasterEditRequest(selectedKind) },
-                    onEdit = { editRequest = MasterEditRequest(selectedKind, it) },
-                    onDeactivate = { pendingDeactivate = MasterEditRequest(selectedKind, it) },
-                )
-            }
+            masterSection(
+                title = selectedKind.sectionTitle(),
+                kind = selectedKind,
+                items = catalogItemsFor(selectedKind, sessionTypes, muscleGroups, equipment),
+                onCreate = { editRequest = MasterEditRequest(selectedKind) },
+                onEdit = { editRequest = MasterEditRequest(selectedKind, it) },
+                onDeactivate = { pendingDeactivate = MasterEditRequest(selectedKind, it) },
+            )
         }
     }
 
