@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -12,6 +13,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,14 +42,17 @@ fun SettingsScreen(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
     var selectedSection by remember { mutableStateOf<SettingsSection?>(null) }
     var cutoffText by remember { mutableStateOf("") }
     var preview by remember { mutableStateOf<HistoricalCleanupImpact?>(null) }
     var result by remember { mutableStateOf<HistoricalCleanupResult?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var showConfirmation by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedSection) { listState.scrollToItem(0) }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
