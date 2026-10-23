@@ -10,6 +10,8 @@ import java.time.LocalDate
 import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -156,5 +158,65 @@ class SessionDetailViewModelReloadTest {
         assertEquals(1, reloadCalls)
         assertEquals("No se pudo guardar", viewModel.uiState.value.message?.text)
         assertEquals(true, viewModel.uiState.value.message?.isError)
+    }
+
+    @Test
+    fun repeatedActionIsIgnoredUntilPendingWriteAndReloadFinish() {
+        val allowWrite = CompletableDeferred<Unit>()
+        var writes = 0
+        val repository = Proxy.newProxyInstance(
+            SessionRepository::class.java.classLoader,
+            arrayOf(SessionRepository::class.java),
+        ) { _, method, _ ->
+            when (method.name) {
+                "getSessionDetail" -> null
+                else -> error("Unexpected repository call: ${method.name}")
+            }
+        } as SessionRepository
+        val viewModel = SessionDetailViewModel("session", repository)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+
+        viewModel.runAction {
+            writes++
+            allowWrite.await()
+        }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(viewModel.uiState.value.isActionRunning)
+        assertEquals(1, writes)
+
+        viewModel.runAction { writes++ }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, writes)
+
+        allowWrite.complete(Unit)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(viewModel.uiState.value.isActionRunning)
+
+        viewModel.runAction { writes++ }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(2, writes)
+        assertFalse(viewModel.uiState.value.isActionRunning)
+    }
+
+    @Test
+    fun failedWriteReleasesActionGuard() {
+        val repository = Proxy.newProxyInstance(
+            SessionRepository::class.java.classLoader,
+            arrayOf(SessionRepository::class.java),
+        ) { _, method, _ ->
+            when (method.name) {
+                "getSessionDetail" -> null
+                else -> error("Unexpected repository call: ${method.name}")
+            }
+        } as SessionRepository
+        val viewModel = SessionDetailViewModel("session", repository)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+
+        viewModel.runAction { throw IllegalStateException("No se pudo guardar") }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+
+        assertFalse(viewModel.uiState.value.isActionRunning)
+        assertEquals("No se pudo guardar", viewModel.uiState.value.message?.text)
+        assertTrue(viewModel.uiState.value.message?.isError == true)
     }
 }
