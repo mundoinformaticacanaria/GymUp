@@ -50,6 +50,28 @@ class SessionActionRunnerTest {
     }
 
     @Test
+    fun cancelledActionDoesNotNavigateOrReportBusinessFailure() = runBlocking {
+        val cancellation = CancellationException("session deletion cancelled")
+        var navigated = false
+        var reportedFailure = false
+        var caught: Throwable? = null
+
+        try {
+            executeSessionAction(
+                action = { throw cancellation },
+                onSuccess = { navigated = true },
+                onFailure = { reportedFailure = true },
+            )
+        } catch (error: CancellationException) {
+            caught = error
+        }
+
+        assertSame(cancellation, caught)
+        assertFalse(navigated)
+        assertFalse(reportedFailure)
+    }
+
+    @Test
     fun navigationWaitsUntilSessionReloadCompletes() = runBlocking {
         val events = mutableListOf<String>()
         executeSessionActionAndReload(
