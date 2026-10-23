@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -19,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +58,7 @@ fun CatalogMaintenanceScreen(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
     val sessionTypes by repository.observeMasters(MasterCatalogKind.SESSION_TYPE)
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val muscleGroups by repository.observeMasters(MasterCatalogKind.MUSCLE_GROUP)
@@ -66,6 +69,7 @@ fun CatalogMaintenanceScreen(
     var editRequest by remember { mutableStateOf<MasterEditRequest?>(null) }
     var pendingDeactivate by remember { mutableStateOf<MasterEditRequest?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(selectedKind) { listState.scrollToItem(0) }
 
     fun runAction(block: suspend () -> Unit) {
         scope.launch {
@@ -84,6 +88,7 @@ fun CatalogMaintenanceScreen(
         },
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
