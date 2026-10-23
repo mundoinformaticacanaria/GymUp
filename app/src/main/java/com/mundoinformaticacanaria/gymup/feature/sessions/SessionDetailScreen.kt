@@ -1,5 +1,7 @@
 package com.mundoinformaticacanaria.gymup.feature.sessions
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -137,7 +139,12 @@ fun SessionDetailScreen(
                             text = error.text,
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                            modifier = Modifier.fillMaxWidth()
+                                // Keep the session action visible even when large text or a long
+                                // repository error would otherwise expand the fixed bottom bar.
+                                .heightIn(max = 120.dp)
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
                                 .semantics { liveRegion = LiveRegionMode.Assertive },
                         )
                     }
