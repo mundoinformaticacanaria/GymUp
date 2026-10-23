@@ -23,6 +23,7 @@ internal data class SessionDetailUiState(
     val detail: SessionDetail? = null,
     val message: SessionUiMessage? = null,
     val isLoading: Boolean = true,
+    val isActionRunning: Boolean = false,
 )
 
 internal fun sessionActionErrorText(error: Throwable): String = when (error) {
@@ -74,18 +75,27 @@ internal class SessionDetailViewModel(
         onSuccess: (() -> Unit)? = null,
         action: suspend () -> Unit,
     ) {
+        // A second tap while persistence/reload is pending must not start
+        // another write against the same (possibly stale) session state.
+        if (_uiState.value.isActionRunning) return
+        _uiState.update { it.copy(isActionRunning = true) }
         viewModelScope.launch {
-            executeSessionActionAndReload(
-                action = action,
-                reload = { reloadState() },
-                onSuccess = {
-                    _uiState.update { state ->
-                        state.copy(message = successMessage?.let { SessionUiMessage(it, isError = false, setId = setId) })
-                    }
-                    onSuccess?.invoke()
-                },
-                onFailure = { reportFailure(it, setId) },
-            )
+            try {
+                executeSessionActionAndReload(
+                    action = action,
+                    reload = { reloadState() },
+                    onSuccess = {
+                        _uiState.update { state ->
+                            state.copy(message = successMessage?.let { SessionUiMessage(it, isError = false, setId = setId) })
+                        }
+                        onSuccess?.invoke()
+                    },
+                    onFailure = { reportFailure(it, setId) },
+                )
+            } finally {
+                // Also release the guard on cancellation or failed reload.
+                _uiState.update { it.copy(isActionRunning = false) }
+            }
         }
     }
 
