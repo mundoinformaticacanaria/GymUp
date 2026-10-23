@@ -1,5 +1,6 @@
 package com.mundoinformaticacanaria.gymup.feature.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -46,6 +47,20 @@ internal fun <T> catalogItemsFor(
     MasterCatalogKind.EQUIPMENT -> equipment
 }
 
+/** Prevent overlapping master writes, including rapid repeat taps. */
+internal class CatalogActionGate {
+    var running by mutableStateOf(false)
+        private set
+
+    fun tryStart(): Boolean {
+        if (running) return false
+        running = true
+        return true
+    }
+
+    fun finish() { running = false }
+}
+
 private data class MasterEditRequest(
     val kind: MasterCatalogKind,
     val item: MasterMaintenanceItem? = null,
@@ -59,6 +74,7 @@ fun CatalogMaintenanceScreen(
 ) {
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val actionGate = remember { CatalogActionGate() }
     val sessionTypes by repository.observeMasters(MasterCatalogKind.SESSION_TYPE)
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val muscleGroups by repository.observeMasters(MasterCatalogKind.MUSCLE_GROUP)
@@ -70,8 +86,11 @@ fun CatalogMaintenanceScreen(
     var pendingDeactivate by remember { mutableStateOf<MasterEditRequest?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(selectedKind) { listState.scrollToItem(0) }
+    // A confirmed catalog write must not be cancelled by leaving this screen.
+    BackHandler(enabled = actionGate.running) { /* Wait for the write to complete. */ }
 
     fun runAction(block: suspend () -> Unit) {
+        if (!actionGate.tryStart()) return
         scope.launch {
             try {
                 block()
@@ -80,6 +99,8 @@ fun CatalogMaintenanceScreen(
                 throw cancelled
             } catch (failure: Exception) {
                 message = failure.message ?: "No se pudo aplicar el cambio"
+            } finally {
+                actionGate.finish()
             }
         }
     }
@@ -88,7 +109,7 @@ fun CatalogMaintenanceScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Catálogos") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Atrás") } },
+                navigationIcon = { TextButton(onClick = onBack, enabled = !actionGate.running) { Text("Atrás") } },
             )
         },
     ) { padding ->
@@ -103,6 +124,7 @@ fun CatalogMaintenanceScreen(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (actionGate.running) Text("Guardando cambio de catálogo. Espera a que termine.")
             }
             item {
                 Text("Mostrar catálogo", style = MaterialTheme.typography.titleMedium)
@@ -112,7 +134,7 @@ fun CatalogMaintenanceScreen(
                     val selected = selectedKind == kind
                     OutlinedButton(
                         onClick = { selectedKind = kind; message = null },
-                        enabled = !selected,
+                        enabled = !selected && !actionGate.running,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(if (selected) "${kind.sectionTitle()} · seleccionado" else kind.sectionTitle())
@@ -122,6 +144,7 @@ fun CatalogMaintenanceScreen(
             masterSection(
                 title = selectedKind.sectionTitle(),
                 kind = selectedKind,
+                actionsEnabled = !actionGate.running,
                 items = catalogItemsFor(selectedKind, sessionTypes, muscleGroups, equipment),
                 onCreate = { editRequest = MasterEditRequest(selectedKind) },
                 onEdit = { editRequest = MasterEditRequest(selectedKind, it) },
@@ -154,7 +177,7 @@ fun CatalogMaintenanceScreen(
                             else repository.renameMaster(current.kind, current.item.id, name)
                         }
                     },
-                    enabled = name.isNotBlank(),
+                    enabled = name.isNotBlank() && !actionGate.running,
                 ) { Text("Guardar") }
             },
         )
@@ -172,7 +195,7 @@ fun CatalogMaintenanceScreen(
             },
             dismissButton = { TextButton(onClick = { pendingDeactivate = null }) { Text("Cancelar") } },
             confirmButton = {
-                Button(onClick = {
+                Button(enabled = !actionGate.running, onClick = {
                     val current = pendingDeactivate ?: return@Button
                     pendingDeactivate = null
                     runAction { repository.deactivateMaster(current.kind, requireNotNull(current.item).id) }
@@ -185,6 +208,7 @@ fun CatalogMaintenanceScreen(
 private fun androidx.compose.foundation.lazy.LazyListScope.masterSection(
     title: String,
     kind: MasterCatalogKind,
+    actionsEnabled: Boolean,
     items: List<MasterMaintenanceItem>,
     onCreate: () -> Unit,
     onEdit: (MasterMaintenanceItem) -> Unit,
@@ -193,7 +217,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.masterSection(
     item {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge)
-            OutlinedButton(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = onCreate, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth()) {
                 Text("Añadir ${kind.label()}")
             }
         }
@@ -206,8 +230,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.masterSection(
                     style = MaterialTheme.typography.titleMedium,
                 )
                 if (!item.protected) {
-                    OutlinedButton(onClick = { onEdit(item) }, modifier = Modifier.fillMaxWidth()) { Text("Renombrar") }
-                    TextButton(onClick = { onDeactivate(item) }, modifier = Modifier.fillMaxWidth()) { Text("Desactivar") }
+                    OutlinedButton(onClick = { onEdit(item) }, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth()) { Text("Renombrar") }
+                    TextButton(onClick = { onDeactivate(item) }, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth()) { Text("Desactivar") }
                 }
             }
         }
