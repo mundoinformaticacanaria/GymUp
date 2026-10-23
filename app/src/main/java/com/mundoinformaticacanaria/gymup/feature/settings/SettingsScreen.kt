@@ -150,6 +150,8 @@ fun SettingsScreen(
                                 previewGeneration++
                                 val requestGeneration = previewGeneration
                                 preview = null
+                                result = null // Do not show the outcome of a previous deletion for a new request.
+                                error = null
                                 showConfirmation = false
                                 val cutoff = runCatching { LocalDate.parse(cutoffText.trim()) }.getOrNull()
                                 if (cutoff == null) {
