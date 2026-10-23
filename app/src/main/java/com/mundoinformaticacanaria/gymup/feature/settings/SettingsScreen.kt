@@ -36,6 +36,17 @@ private enum class SettingsSection { THEME, BACKUP, CLEANUP }
 internal fun cleanupPreviewMatchesCutoff(cutoffText: String, impact: HistoricalCleanupImpact?): Boolean =
     impact != null && runCatching { LocalDate.parse(cutoffText.trim()) }.getOrNull() == impact.cutoffDate
 
+/** Reject responses from superseded requests and responses arriving during deletion. */
+internal fun cleanupPreviewResponseIsCurrent(
+    requestedCutoff: LocalDate,
+    cutoffText: String,
+    requestGeneration: Int,
+    activeGeneration: Int,
+    cleanupInProgress: Boolean,
+): Boolean = !cleanupInProgress &&
+    requestGeneration == activeGeneration &&
+    runCatching { LocalDate.parse(cutoffText.trim()) }.getOrNull() == requestedCutoff
+
 @Composable
 fun SettingsScreen(
     currentMode: ThemeMode,
@@ -54,6 +65,7 @@ fun SettingsScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var showConfirmation by remember { mutableStateOf(false) }
     var cleanupInProgress by remember { mutableStateOf(false) }
+    var previewGeneration by remember { mutableStateOf(0) }
     LaunchedEffect(selectedSection) { listState.scrollToItem(0) }
 
     LazyColumn(
@@ -82,7 +94,12 @@ fun SettingsScreen(
         } else {
             item {
                 OutlinedButton(
-                    onClick = { selectedSection = null; showConfirmation = false },
+                    onClick = {
+                        selectedSection = null
+                        showConfirmation = false
+                        preview = null
+                        previewGeneration++
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Volver al índice de Ajustes") }
             }
@@ -115,6 +132,7 @@ fun SettingsScreen(
                             value = cutoffText,
                             onValueChange = {
                                 cutoffText = it
+                                previewGeneration++
                                 preview = null
                                 result = null
                                 error = null
@@ -129,25 +147,36 @@ fun SettingsScreen(
                     item {
                         Button(
                             onClick = {
+                                previewGeneration++
+                                val requestGeneration = previewGeneration
+                                preview = null
+                                showConfirmation = false
                                 val cutoff = runCatching { LocalDate.parse(cutoffText.trim()) }.getOrNull()
                                 if (cutoff == null) {
                                     error = "Introduce una fecha válida con formato AAAA-MM-DD."
-                                    preview = null
                                 } else {
                                     scope.launch {
-                                        runCatching { historicalCleanupManager.preview(cutoff) }
-                                            .onSuccess {
-                                                if (cutoffText.trim() == cutoff.toString()) {
-                                                    preview = it
-                                                    result = null
-                                                    error = null
-                                                }
+                                        fun isCurrent() = cleanupPreviewResponseIsCurrent(
+                                            requestedCutoff = cutoff,
+                                            cutoffText = cutoffText,
+                                            requestGeneration = requestGeneration,
+                                            activeGeneration = previewGeneration,
+                                            cleanupInProgress = cleanupInProgress,
+                                        ) && selectedSection == SettingsSection.CLEANUP
+                                        try {
+                                            val impact = historicalCleanupManager.preview(cutoff)
+                                            if (isCurrent()) {
+                                                preview = impact
+                                                result = null
+                                                error = null
                                             }
-                                            .onFailure {
-                                                if (cutoffText.trim() == cutoff.toString()) {
-                                                    error = it.message ?: "No se pudo calcular la limpieza."
-                                                }
+                                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                            throw cancelled
+                                        } catch (failure: Exception) {
+                                            if (isCurrent()) {
+                                                error = failure.message ?: "No se pudo calcular la limpieza."
                                             }
+                                        }
                                     }
                                 }
                             },
@@ -220,6 +249,7 @@ fun SettingsScreen(
                             cleanupPreviewMatchesCutoff(cutoffText, it)
                         } ?: return@Button
                         if (cleanupInProgress) return@Button
+                        previewGeneration++ // Discard outstanding previews before deleting.
                         cleanupInProgress = true
                         showConfirmation = false
                         scope.launch {
