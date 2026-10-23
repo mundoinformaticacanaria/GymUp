@@ -73,9 +73,14 @@ fun CatalogMaintenanceScreen(
 
     fun runAction(block: suspend () -> Unit) {
         scope.launch {
-            runCatching { block() }
-                .onSuccess { message = null }
-                .onFailure { message = it.message ?: "No se pudo aplicar el cambio" }
+            try {
+                block()
+                message = null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                message = failure.message ?: "No se pudo aplicar el cambio"
+            }
         }
     }
 
