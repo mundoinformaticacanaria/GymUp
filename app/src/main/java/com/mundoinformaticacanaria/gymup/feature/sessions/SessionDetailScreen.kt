@@ -150,6 +150,7 @@ fun SessionDetailScreen(
                     }
                     BottomAppBar {
                         Button(
+                        enabled = !uiState.isActionRunning,
                         onClick = {
                             when (current.summary.operationalState) {
                                 SessionOperationalState.PLANNED ->
