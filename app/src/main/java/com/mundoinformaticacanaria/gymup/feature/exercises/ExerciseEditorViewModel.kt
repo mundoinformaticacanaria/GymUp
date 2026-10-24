@@ -118,7 +118,8 @@ class ExerciseEditorViewModel(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
-                    change { it.copy(loaded = true, error = failure.message ?: "No se pudo cargar el ejercicio") }
+                    // A failed lookup must never expose an empty editable form for an existing ID.
+                    change { it.copy(loaded = false, error = failure.message ?: "No se pudo cargar el ejercicio") }
                 }
             }
         }
