@@ -22,6 +22,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,9 +88,11 @@ fun CatalogMaintenanceScreen(
     var editRequest by remember { mutableStateOf<MasterEditRequest?>(null) }
     var pendingDeactivate by remember { mutableStateOf<MasterEditRequest?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+    var messageRevision by remember { mutableIntStateOf(0) }
     LaunchedEffect(selectedKind) { listState.scrollToItem(0) }
-    // Keep repository errors visible even when the user acted on a long catalog list.
-    LaunchedEffect(message) { if (message != null) listState.scrollToItem(0) }
+    // A repeated failure may have identical text. Advance the revision so it
+    // still scrolls into view after every failed action on a long catalog.
+    LaunchedEffect(messageRevision) { if (message != null) listState.scrollToItem(0) }
     // A confirmed catalog write must not be cancelled by leaving this screen.
     BackHandler(enabled = actionGate.running) { /* Wait for the write to complete. */ }
 
@@ -103,6 +106,7 @@ fun CatalogMaintenanceScreen(
                 throw cancelled
             } catch (failure: Exception) {
                 message = failure.message ?: "No se pudo aplicar el cambio"
+                messageRevision++
             } finally {
                 actionGate.finish()
             }
