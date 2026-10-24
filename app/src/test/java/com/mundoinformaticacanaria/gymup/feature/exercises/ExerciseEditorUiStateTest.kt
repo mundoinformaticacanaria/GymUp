@@ -53,5 +53,7 @@ class ExerciseEditorUiStateTest {
         assertTrue(!validState().copy(nameEn = "").canSave)
         assertTrue(!validState().copy(muscleGroupId = null).canSave)
         assertTrue(!validState().copy(isBusy = true).canSave)
+        // Failed master loads must not allow writing a blank replacement.
+        assertTrue(!validState().copy(loaded = false, error = "Ejercicio inexistente").canSave)
     }
 }
