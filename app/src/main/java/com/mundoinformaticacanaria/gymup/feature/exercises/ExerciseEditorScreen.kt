@@ -31,7 +31,7 @@ import com.mundoinformaticacanaria.gymup.domain.repository.CatalogMaintenanceRep
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseDeletionPreview
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
 
-internal enum class ExerciseEditorSection { IDENTITY, CONFIGURATION, DEFAULTS }
+enum class ExerciseEditorSection { IDENTITY, CONFIGURATION, DEFAULTS }
 
 internal fun ExerciseEditorSection.next(): ExerciseEditorSection? = when (this) {
     ExerciseEditorSection.IDENTITY -> ExerciseEditorSection.CONFIGURATION
@@ -45,7 +45,7 @@ private fun ExerciseEditorSection.label(): String = when (this) {
     ExerciseEditorSection.DEFAULTS -> "Valores iniciales"
 }
 
-internal enum class ExerciseConfigSelector { GROUP, EQUIPMENT, LOAD_MODE, MEASUREMENT_UNIT }
+enum class ExerciseConfigSelector { GROUP, EQUIPMENT, LOAD_MODE, MEASUREMENT_UNIT }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
