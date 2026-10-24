@@ -36,10 +36,15 @@ data class ExerciseEditorUiState(
     val expandedSelector: ExerciseConfigSelector? = null,
     val isBusy: Boolean = false,
     val error: String? = null,
+    val errorRevision: Int = 0,
     val deletionPreview: ExerciseDeletionPreview? = null,
     val savedExerciseId: String? = null,
     val deleted: Boolean = false,
 ) {
+    /** Increment even for identical failures so the UI can reveal each occurrence. */
+    fun withFailure(message: String): ExerciseEditorUiState =
+        copy(error = message, errorRevision = errorRevision + 1)
+
     val canSave: Boolean get() = loaded && !isBusy &&
         nameEs.isNotBlank() && nameEn.isNotBlank() && muscleGroupId != null
 
@@ -121,7 +126,7 @@ class ExerciseEditorViewModel(
                     throw cancelled
                 } catch (failure: Exception) {
                     // A failed lookup must never expose an empty editable form for an existing ID.
-                    change { it.copy(loaded = false, error = failure.message ?: "No se pudo cargar el ejercicio") }
+                    change { it.withFailure(failure.message ?: "No se pudo cargar el ejercicio").copy(loaded = false) }
                 }
             }
         }
@@ -161,7 +166,7 @@ class ExerciseEditorViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                change { it.copy(error = failure.message ?: "No se pudo guardar el ejercicio") }
+                change { it.withFailure(failure.message ?: "No se pudo guardar el ejercicio") }
             } finally {
                 change { it.copy(isBusy = false) }
             }
@@ -179,7 +184,7 @@ class ExerciseEditorViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                change { it.copy(error = failure.message ?: "No se pudo preparar la baja") }
+                change { it.withFailure(failure.message ?: "No se pudo preparar la baja") }
             } finally {
                 change { it.copy(isBusy = false) }
             }
@@ -197,7 +202,7 @@ class ExerciseEditorViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                change { it.copy(error = failure.message ?: "No se pudo eliminar el ejercicio") }
+                change { it.withFailure(failure.message ?: "No se pudo eliminar el ejercicio") }
             } finally {
                 change { it.copy(isBusy = false) }
             }
