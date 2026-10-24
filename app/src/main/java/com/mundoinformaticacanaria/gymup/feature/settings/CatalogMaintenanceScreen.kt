@@ -88,6 +88,8 @@ fun CatalogMaintenanceScreen(
     var pendingDeactivate by remember { mutableStateOf<MasterEditRequest?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(selectedKind) { listState.scrollToItem(0) }
+    // Keep repository errors visible even when the user acted on a long catalog list.
+    LaunchedEffect(message) { if (message != null) listState.scrollToItem(0) }
     // A confirmed catalog write must not be cancelled by leaving this screen.
     BackHandler(enabled = actionGate.running) { /* Wait for the write to complete. */ }
 
