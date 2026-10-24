@@ -28,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mundoinformaticacanaria.gymup.domain.repository.CatalogMaintenanceRepository
@@ -133,9 +135,14 @@ fun CatalogMaintenanceScreen(
                 MasterCatalogKind.entries.forEach { kind ->
                     val selected = selectedKind == kind
                     OutlinedButton(
-                        onClick = { selectedKind = kind; message = null },
-                        enabled = !selected && !actionGate.running,
-                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            if (!selected) {
+                                selectedKind = kind
+                                message = null
+                            }
+                        },
+                        enabled = !actionGate.running,
+                        modifier = Modifier.fillMaxWidth().semantics { this.selected = selected },
                     ) {
                         Text(if (selected) "${kind.sectionTitle()} · seleccionado" else kind.sectionTitle())
                     }
