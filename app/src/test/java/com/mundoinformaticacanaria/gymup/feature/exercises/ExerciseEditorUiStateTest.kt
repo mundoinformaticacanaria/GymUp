@@ -47,6 +47,15 @@ class ExerciseEditorUiStateTest {
     }
 
     @Test
+    fun rejectsNonFiniteInitialLoadBeforePersistence() {
+        listOf("Infinity", "-Infinity", "NaN", "1e309").forEach { invalid ->
+            val result = runCatching { validState().copy(initialLoadText = invalid).toInput() }
+            assertTrue("Invalid load $invalid must fail", result.isFailure)
+        }
+        assertEquals(12.5, validState().toInput().initialLoad ?: 0.0, 0.001)
+    }
+
+    @Test
     fun cannotSaveWithoutRequiredNamesOrGroup() {
         assertTrue(validState().canSave)
         assertTrue(!validState().copy(nameEs = "").canSave)
