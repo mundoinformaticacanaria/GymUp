@@ -36,10 +36,13 @@ Se fija API 36 deliberadamente para el MVP: cubre Android 15+ y el dispositivo A
 
 ### Estado y concurrencia
 
-- `ViewModel` + `StateFlow` para estado observable de pantalla.
-- Coroutines/Flow para operaciones asíncronas.
-- Estado de UI inmutable; eventos de usuario explícitos.
-- Operaciones de persistencia fuera del main thread.
+- `AppViewModel` centraliza el estado global de aplicación (por ejemplo, la preferencia de tema).
+- Las pantallas Compose pueden mantener **únicamente estado efímero de presentación** y recibir contratos de repositorio desde `AppContainer`; no se exige un `ViewModel` por pantalla.
+- Un `ViewModel` de feature con estado observable inmutable (`StateFlow` cuando corresponda) se introduce cuando hay coordinación asíncrona, estado que deba sobrevivir a recreación, lógica de presentación difícil de probar de forma pura o riesgo por complejidad. Los flujos de rutinas ya usan `RoutineListViewModel` y `RoutineEditorViewModel`.
+- Los eventos del usuario deben ser explícitos. La persistencia, las validaciones y las transacciones permanecen en repositorios o funciones de dominio testeables; no se trasladan SQL ni reglas de negocio a Compose.
+- Coroutines/Flow para operaciones asíncronas; operaciones de persistencia fuera del main thread.
+
+**Aclaración técnica (2026-10-24, Issue #16):** esta redacción reconcilia la prescripción inicial de `ViewModel + StateFlow` para toda pantalla con la decisión vigente en `docs/TECHNICAL_ARCHITECTURE_V1.md`, sección «Decisión vigente sobre estado de UI». No modifica el contrato funcional ni exige refactorizar pantallas que ya cumplen la separación de responsabilidades.
 
 ### Persistencia y preferencias
 
