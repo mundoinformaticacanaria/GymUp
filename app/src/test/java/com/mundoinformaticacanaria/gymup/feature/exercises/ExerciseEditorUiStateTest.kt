@@ -56,6 +56,17 @@ class ExerciseEditorUiStateTest {
     }
 
     @Test
+    fun repeatedIdenticalErrorsStillAdvanceVisibilityRevision() {
+        val first = validState().withFailure("Series iniciales debe ser un número entero")
+        // A quick retry may clear and re-emit the same error within one UI frame.
+        val second = first.copy(error = null).withFailure("Series iniciales debe ser un número entero")
+
+        assertEquals(first.error, second.error)
+        assertEquals(first.errorRevision + 1, second.errorRevision)
+        assertTrue(second.errorRevision > first.errorRevision)
+    }
+
+    @Test
     fun cannotSaveWithoutRequiredNamesOrGroup() {
         assertTrue(validState().canSave)
         assertTrue(!validState().copy(nameEs = "").canSave)
