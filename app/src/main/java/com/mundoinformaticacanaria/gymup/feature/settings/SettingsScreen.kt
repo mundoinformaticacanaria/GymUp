@@ -75,6 +75,8 @@ fun SettingsScreen(
 
     LazyColumn(
         state = listState,
+        // Keep the BackupSection item composed while its screen-scoped operation runs.
+        userScrollEnabled = !backupInProgress,
         modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
