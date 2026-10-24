@@ -54,7 +54,15 @@ class HistoricalCleanupManager(
     ): HistoricalCleanupResult {
         require(confirmation == HistoricalCleanupConfirmation.IRREVERSIBLE_CONFIRMED)
         val deleted = store.deleteTransactionalData(cutoffDate)
-        val (before, after) = store.compact()
+        // Deletion has already committed. A VACUUM failure must not report that
+        // the irreversible deletion failed; only the reclaimed-size estimate is lost.
+        val (before, after) = try {
+            store.compact()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null to null
+        }
         return HistoricalCleanupResult(
             deleted = deleted,
             bytesBeforeCompaction = before,

@@ -1,11 +1,13 @@
 package com.mundoinformaticacanaria.gymup.feature.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -19,18 +21,48 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mundoinformaticacanaria.gymup.domain.repository.CatalogMaintenanceRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogKind
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterMaintenanceItem
 import kotlinx.coroutines.launch
+
+/** Keep the visible list limited to the selected master kind. */
+internal fun <T> catalogItemsFor(
+    kind: MasterCatalogKind,
+    sessionTypes: List<T>,
+    muscleGroups: List<T>,
+    equipment: List<T>,
+): List<T> = when (kind) {
+    MasterCatalogKind.SESSION_TYPE -> sessionTypes
+    MasterCatalogKind.MUSCLE_GROUP -> muscleGroups
+    MasterCatalogKind.EQUIPMENT -> equipment
+}
+
+/** Prevent overlapping master writes, including rapid repeat taps. */
+internal class CatalogActionGate {
+    var running by mutableStateOf(false)
+        private set
+
+    fun tryStart(): Boolean {
+        if (running) return false
+        running = true
+        return true
+    }
+
+    fun finish() { running = false }
+}
 
 private data class MasterEditRequest(
     val kind: MasterCatalogKind,
@@ -44,21 +76,40 @@ fun CatalogMaintenanceScreen(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    val actionGate = remember { CatalogActionGate() }
     val sessionTypes by repository.observeMasters(MasterCatalogKind.SESSION_TYPE)
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val muscleGroups by repository.observeMasters(MasterCatalogKind.MUSCLE_GROUP)
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val equipment by repository.observeMasters(MasterCatalogKind.EQUIPMENT)
         .collectAsStateWithLifecycle(initialValue = emptyList())
+    var selectedKind by remember { mutableStateOf(MasterCatalogKind.SESSION_TYPE) }
     var editRequest by remember { mutableStateOf<MasterEditRequest?>(null) }
     var pendingDeactivate by remember { mutableStateOf<MasterEditRequest?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+    var messageRevision by remember { mutableIntStateOf(0) }
+    LaunchedEffect(selectedKind) { listState.scrollToItem(0) }
+    // A repeated failure may have identical text. Advance the revision so it
+    // still scrolls into view after every failed action on a long catalog.
+    LaunchedEffect(messageRevision) { if (message != null) listState.scrollToItem(0) }
+    // A confirmed catalog write must not be cancelled by leaving this screen.
+    BackHandler(enabled = actionGate.running) { /* Wait for the write to complete. */ }
 
     fun runAction(block: suspend () -> Unit) {
+        if (!actionGate.tryStart()) return
         scope.launch {
-            runCatching { block() }
-                .onSuccess { message = null }
-                .onFailure { message = it.message ?: "No se pudo aplicar el cambio" }
+            try {
+                block()
+                message = null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                message = failure.message ?: "No se pudo aplicar el cambio"
+                messageRevision++
+            } finally {
+                actionGate.finish()
+            }
         }
     }
 
@@ -66,11 +117,12 @@ fun CatalogMaintenanceScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Catálogos") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Atrás") } },
+                navigationIcon = { TextButton(onClick = onBack, enabled = !actionGate.running) { Text("Atrás") } },
             )
         },
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -80,30 +132,36 @@ fun CatalogMaintenanceScreen(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (actionGate.running) Text("Guardando cambio de catálogo. Espera a que termine.")
+            }
+            item {
+                Text("Mostrar catálogo", style = MaterialTheme.typography.titleMedium)
+                // Only the selected master catalog is expanded; switching does
+                // not change the underlying data or any historical snapshot.
+                MasterCatalogKind.entries.forEach { kind ->
+                    val selected = selectedKind == kind
+                    OutlinedButton(
+                        onClick = {
+                            if (!selected) {
+                                selectedKind = kind
+                                message = null
+                            }
+                        },
+                        enabled = !actionGate.running,
+                        modifier = Modifier.fillMaxWidth().semantics { this.selected = selected },
+                    ) {
+                        Text(if (selected) "${kind.sectionTitle()} · seleccionado" else kind.sectionTitle())
+                    }
+                }
             }
             masterSection(
-                title = "Tipos de sesión",
-                kind = MasterCatalogKind.SESSION_TYPE,
-                items = sessionTypes,
-                onCreate = { editRequest = MasterEditRequest(MasterCatalogKind.SESSION_TYPE) },
-                onEdit = { editRequest = MasterEditRequest(MasterCatalogKind.SESSION_TYPE, it) },
-                onDeactivate = { pendingDeactivate = MasterEditRequest(MasterCatalogKind.SESSION_TYPE, it) },
-            )
-            masterSection(
-                title = "Grupos musculares",
-                kind = MasterCatalogKind.MUSCLE_GROUP,
-                items = muscleGroups,
-                onCreate = { editRequest = MasterEditRequest(MasterCatalogKind.MUSCLE_GROUP) },
-                onEdit = { editRequest = MasterEditRequest(MasterCatalogKind.MUSCLE_GROUP, it) },
-                onDeactivate = { pendingDeactivate = MasterEditRequest(MasterCatalogKind.MUSCLE_GROUP, it) },
-            )
-            masterSection(
-                title = "Equipo",
-                kind = MasterCatalogKind.EQUIPMENT,
-                items = equipment,
-                onCreate = { editRequest = MasterEditRequest(MasterCatalogKind.EQUIPMENT) },
-                onEdit = { editRequest = MasterEditRequest(MasterCatalogKind.EQUIPMENT, it) },
-                onDeactivate = { pendingDeactivate = MasterEditRequest(MasterCatalogKind.EQUIPMENT, it) },
+                title = selectedKind.sectionTitle(),
+                kind = selectedKind,
+                actionsEnabled = !actionGate.running,
+                items = catalogItemsFor(selectedKind, sessionTypes, muscleGroups, equipment),
+                onCreate = { editRequest = MasterEditRequest(selectedKind) },
+                onEdit = { editRequest = MasterEditRequest(selectedKind, it) },
+                onDeactivate = { pendingDeactivate = MasterEditRequest(selectedKind, it) },
             )
         }
     }
@@ -132,7 +190,7 @@ fun CatalogMaintenanceScreen(
                             else repository.renameMaster(current.kind, current.item.id, name)
                         }
                     },
-                    enabled = name.isNotBlank(),
+                    enabled = name.isNotBlank() && !actionGate.running,
                 ) { Text("Guardar") }
             },
         )
@@ -150,7 +208,7 @@ fun CatalogMaintenanceScreen(
             },
             dismissButton = { TextButton(onClick = { pendingDeactivate = null }) { Text("Cancelar") } },
             confirmButton = {
-                Button(onClick = {
+                Button(enabled = !actionGate.running, onClick = {
                     val current = pendingDeactivate ?: return@Button
                     pendingDeactivate = null
                     runAction { repository.deactivateMaster(current.kind, requireNotNull(current.item).id) }
@@ -163,6 +221,7 @@ fun CatalogMaintenanceScreen(
 private fun androidx.compose.foundation.lazy.LazyListScope.masterSection(
     title: String,
     kind: MasterCatalogKind,
+    actionsEnabled: Boolean,
     items: List<MasterMaintenanceItem>,
     onCreate: () -> Unit,
     onEdit: (MasterMaintenanceItem) -> Unit,
@@ -171,7 +230,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.masterSection(
     item {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge)
-            OutlinedButton(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = onCreate, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth()) {
                 Text("Añadir ${kind.label()}")
             }
         }
@@ -184,12 +243,18 @@ private fun androidx.compose.foundation.lazy.LazyListScope.masterSection(
                     style = MaterialTheme.typography.titleMedium,
                 )
                 if (!item.protected) {
-                    OutlinedButton(onClick = { onEdit(item) }, modifier = Modifier.fillMaxWidth()) { Text("Renombrar") }
-                    TextButton(onClick = { onDeactivate(item) }, modifier = Modifier.fillMaxWidth()) { Text("Desactivar") }
+                    OutlinedButton(onClick = { onEdit(item) }, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth()) { Text("Renombrar") }
+                    TextButton(onClick = { onDeactivate(item) }, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth()) { Text("Desactivar") }
                 }
             }
         }
     }
+}
+
+private fun MasterCatalogKind.sectionTitle(): String = when (this) {
+    MasterCatalogKind.SESSION_TYPE -> "Tipos de sesión"
+    MasterCatalogKind.MUSCLE_GROUP -> "Grupos musculares"
+    MasterCatalogKind.EQUIPMENT -> "Equipo"
 }
 
 private fun MasterCatalogKind.label(): String = when (this) {
