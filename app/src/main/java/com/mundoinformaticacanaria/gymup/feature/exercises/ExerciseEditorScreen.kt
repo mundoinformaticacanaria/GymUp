@@ -21,21 +21,15 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mundoinformaticacanaria.gymup.core.model.LoadMode
 import com.mundoinformaticacanaria.gymup.core.model.MeasurementUnit
 import com.mundoinformaticacanaria.gymup.domain.repository.CatalogMaintenanceRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseDeletionPreview
-import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseDeletionResult
-import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseMaintenanceInput
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
-import kotlinx.coroutines.launch
 
 internal enum class ExerciseEditorSection { IDENTITY, CONFIGURATION, DEFAULTS }
 
@@ -51,7 +45,7 @@ private fun ExerciseEditorSection.label(): String = when (this) {
     ExerciseEditorSection.DEFAULTS -> "Valores iniciales"
 }
 
-private enum class ExerciseConfigSelector { GROUP, EQUIPMENT, LOAD_MODE, MEASUREMENT_UNIT }
+internal enum class ExerciseConfigSelector { GROUP, EQUIPMENT, LOAD_MODE, MEASUREMENT_UNIT }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,76 +57,34 @@ fun ExerciseEditorScreen(
     onDeleted: () -> Unit,
     onBack: () -> Unit,
 ) {
-    val groups by masterCatalogRepository.observeMuscleGroups().collectAsStateWithLifecycle(initialValue = emptyList())
-    val equipment by masterCatalogRepository.observeEquipment().collectAsStateWithLifecycle(initialValue = emptyList())
-    val scope = rememberCoroutineScope()
+    val editorViewModel: ExerciseEditorViewModel = viewModel(
+        key = "exercise-editor-" + (exerciseId ?: "new"),
+        factory = ExerciseEditorViewModel.Factory(exerciseId, maintenanceRepository, masterCatalogRepository),
+    )
+    val state by editorViewModel.uiState.collectAsStateWithLifecycle()
+    val groups = state.groups
+    val equipment = state.equipment
+    val loaded = state.loaded
+    val nameEs = state.nameEs
+    val nameEn = state.nameEn
+    val muscleGroupId = state.muscleGroupId
+    val equipmentId = state.equipmentId
+    val loadMode = state.loadMode
+    val measurementUnit = state.measurementUnit
+    val rirRequired = state.rirRequired
+    val initialSetsText = state.initialSetsText
+    val initialLoadText = state.initialLoadText
+    val initialMeasurementText = state.initialMeasurementText
+    val description = state.description
+    val error = state.error
+    val selectedSection = state.selectedSection
+    val expandedSelector = state.expandedSelector
+    val saveInProgress = state.isBusy
+    val deletionPreview = state.deletionPreview
+    val savedExerciseId = state.savedExerciseId
 
-    var loaded by remember(exerciseId) { mutableStateOf(exerciseId == null) }
-    var nameEs by remember(exerciseId) { mutableStateOf("") }
-    var nameEn by remember(exerciseId) { mutableStateOf("") }
-    var muscleGroupId by remember(exerciseId) { mutableStateOf<String?>(null) }
-    var equipmentId by remember(exerciseId) { mutableStateOf<String?>(null) }
-    var loadMode by remember(exerciseId) { mutableStateOf(LoadMode.KG_TOTAL) }
-    var measurementUnit by remember(exerciseId) { mutableStateOf(MeasurementUnit.REPETITIONS) }
-    var rirRequired by remember(exerciseId) { mutableStateOf(true) }
-    var initialSetsText by remember(exerciseId) { mutableStateOf("") }
-    var initialLoadText by remember(exerciseId) { mutableStateOf("") }
-    var initialMeasurementText by remember(exerciseId) { mutableStateOf("") }
-    var description by remember(exerciseId) { mutableStateOf("") }
-    var error by remember(exerciseId) { mutableStateOf<String?>(null) }
-    var deletionPreview by remember { mutableStateOf<ExerciseDeletionPreview?>(null) }
-    var savedExerciseId by remember { mutableStateOf<String?>(null) }
-    var selectedSection by remember(exerciseId) { mutableStateOf(ExerciseEditorSection.IDENTITY) }
-    var expandedSelector by remember(exerciseId) { mutableStateOf<ExerciseConfigSelector?>(null) }
-    var saveInProgress by remember(exerciseId) { mutableStateOf(false) }
-    BackHandler(enabled = saveInProgress) { /* Keep the editor alive while saving. */ }
-
-    LaunchedEffect(exerciseId) {
-        if (exerciseId != null) {
-            runCatching { requireNotNull(maintenanceRepository.getExercise(exerciseId)) { "Ejercicio inexistente" } }
-                .onSuccess { exercise ->
-                    nameEs = exercise.nameEs
-                    nameEn = exercise.nameEn
-                    muscleGroupId = exercise.muscleGroupId
-                    equipmentId = exercise.equipmentId
-                    loadMode = exercise.loadMode
-                    measurementUnit = exercise.measurementUnit
-                    rirRequired = exercise.rirRequired
-                    initialSetsText = exercise.initialSetCount?.toString().orEmpty()
-                    initialLoadText = exercise.initialLoad?.toSpanishDecimal().orEmpty()
-                    initialMeasurementText = exercise.initialMeasurement?.toString().orEmpty()
-                    description = exercise.description.orEmpty()
-                    loaded = true
-                }
-                .onFailure { error = it.message ?: "No se pudo cargar el ejercicio" }
-        }
-    }
-    LaunchedEffect(groups, loaded) {
-        if (loaded && muscleGroupId == null && groups.isNotEmpty()) muscleGroupId = groups.first().id
-    }
-
-    fun buildInput(): ExerciseMaintenanceInput {
-        val selectedGroup = requireNotNull(muscleGroupId) { "Selecciona un grupo muscular" }
-        val initialSets = initialSetsText.optionalInt("Series iniciales")
-        val initialLoad = initialLoadText.optionalDecimal("Carga inicial")
-        val initialMeasurement = initialMeasurementText.optionalInt("Medición inicial")
-        require(initialSets != null || (initialLoad == null && initialMeasurement == null)) {
-            "Indica las series iniciales cuando configures carga o medición inicial."
-        }
-        return ExerciseMaintenanceInput(
-            nameEs = nameEs,
-            nameEn = nameEn,
-            muscleGroupId = selectedGroup,
-            equipmentId = equipmentId,
-            loadMode = loadMode,
-            measurementUnit = measurementUnit,
-            rirRequired = rirRequired,
-            initialSetCount = initialSets,
-            initialLoad = initialLoad,
-            initialMeasurement = initialMeasurement,
-            description = description,
-        )
-    }
+    BackHandler(enabled = saveInProgress) { /* Wait for the in-flight repository operation. */ }
+    LaunchedEffect(state.deleted) { if (state.deleted) onDeleted() }
 
     Scaffold(
         topBar = {
@@ -145,29 +97,7 @@ fun ExerciseEditorScreen(
             if (loaded) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Button(
-                        onClick = {
-                            if (!saveInProgress) {
-                                saveInProgress = true
-                                scope.launch {
-                                    try {
-                                        val input = buildInput()
-                                        val id = if (exerciseId == null) maintenanceRepository.createExercise(input)
-                                            else {
-                                                maintenanceRepository.updateExercise(exerciseId, input)
-                                                exerciseId
-                                            }
-                                        error = null
-                                        savedExerciseId = id
-                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                        throw cancelled
-                                    } catch (failure: Exception) {
-                                        error = failure.message ?: "No se pudo guardar el ejercicio"
-                                    } finally {
-                                        saveInProgress = false
-                                    }
-                                }
-                            }
-                        },
+                        onClick = editorViewModel::save,
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !saveInProgress && nameEs.isNotBlank() && nameEn.isNotBlank() && muscleGroupId != null,
                     ) { Text(if (saveInProgress) "Guardando ejercicio…" else "Guardar ejercicio") }
@@ -198,7 +128,7 @@ fun ExerciseEditorScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     ExerciseEditorSection.entries.forEach { section ->
                         OutlinedButton(
-                            onClick = { selectedSection = section; expandedSelector = null },
+                            onClick = { editorViewModel.selectSection(section) },
                             enabled = !saveInProgress,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
@@ -210,11 +140,11 @@ fun ExerciseEditorScreen(
             when (selectedSection) {
                 ExerciseEditorSection.IDENTITY -> {
                     item { Text("Identidad", style = MaterialTheme.typography.titleLarge) }
-                    item { OutlinedTextField(nameEs, { nameEs = it }, label = { Text("Nombre español") }, modifier = Modifier.fillMaxWidth()) }
-                    item { OutlinedTextField(nameEn, { nameEn = it }, label = { Text("English name") }, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(nameEs, { editorViewModel.updateNameEs(it) }, label = { Text("Nombre español") }, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(nameEn, { editorViewModel.updateNameEn(it) }, label = { Text("English name") }, modifier = Modifier.fillMaxWidth()) }
                     item {
                         OutlinedTextField(
-                            description, { description = it },
+                            description, { editorViewModel.updateDescription(it) },
                             label = { Text("Descripción / instrucciones") },
                             modifier = Modifier.fillMaxWidth(), minLines = 3,
                         )
@@ -230,24 +160,24 @@ fun ExerciseEditorScreen(
                         val equipmentName = equipment.firstOrNull { it.id == equipmentId }?.name ?: "Sin equipo"
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             OutlinedButton(
-                                onClick = { expandedSelector = if (expandedSelector == ExerciseConfigSelector.GROUP) null else ExerciseConfigSelector.GROUP },
+                                onClick = { editorViewModel.toggleSelector(ExerciseConfigSelector.GROUP) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Grupo muscular: " + groupName) }
                             OutlinedButton(
-                                onClick = { expandedSelector = if (expandedSelector == ExerciseConfigSelector.EQUIPMENT) null else ExerciseConfigSelector.EQUIPMENT },
+                                onClick = { editorViewModel.toggleSelector(ExerciseConfigSelector.EQUIPMENT) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Equipo: " + equipmentName) }
                             OutlinedButton(
-                                onClick = { expandedSelector = if (expandedSelector == ExerciseConfigSelector.LOAD_MODE) null else ExerciseConfigSelector.LOAD_MODE },
+                                onClick = { editorViewModel.toggleSelector(ExerciseConfigSelector.LOAD_MODE) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Modalidad de carga: " + loadMode.label()) }
                             OutlinedButton(
-                                onClick = { expandedSelector = if (expandedSelector == ExerciseConfigSelector.MEASUREMENT_UNIT) null else ExerciseConfigSelector.MEASUREMENT_UNIT },
+                                onClick = { editorViewModel.toggleSelector(ExerciseConfigSelector.MEASUREMENT_UNIT) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Unidad: " + measurementUnit.label()) }
                             FilterChip(
                                 selected = rirRequired,
-                                onClick = { rirRequired = !rirRequired },
+                                onClick = { editorViewModel.toggleRir() },
                                 label = { Text(if (rirRequired) "RIR obligatorio" else "RIR opcional") },
                             )
                         }
@@ -258,7 +188,7 @@ fun ExerciseEditorScreen(
                                 groups.forEach { group ->
                                     FilterChip(
                                         selected = muscleGroupId == group.id,
-                                        onClick = { muscleGroupId = group.id; expandedSelector = null },
+                                        onClick = { editorViewModel.selectMuscleGroup(group.id) },
                                         label = { Text(group.name) },
                                     )
                                 }
@@ -268,13 +198,13 @@ fun ExerciseEditorScreen(
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 FilterChip(
                                     selected = equipmentId == null,
-                                    onClick = { equipmentId = null; expandedSelector = null },
+                                    onClick = { editorViewModel.selectEquipment(null) },
                                     label = { Text("Sin equipo") },
                                 )
                                 equipment.forEach { entry ->
                                     FilterChip(
                                         selected = equipmentId == entry.id,
-                                        onClick = { equipmentId = entry.id; expandedSelector = null },
+                                        onClick = { editorViewModel.selectEquipment(entry.id) },
                                         label = { Text(entry.name) },
                                     )
                                 }
@@ -285,7 +215,7 @@ fun ExerciseEditorScreen(
                                 LoadMode.entries.forEach { mode ->
                                     FilterChip(
                                         selected = loadMode == mode,
-                                        onClick = { loadMode = mode; expandedSelector = null },
+                                        onClick = { editorViewModel.selectLoadMode(mode) },
                                         label = { Text(mode.label()) },
                                     )
                                 }
@@ -296,7 +226,7 @@ fun ExerciseEditorScreen(
                                 MeasurementUnit.entries.forEach { unit ->
                                     FilterChip(
                                         selected = measurementUnit == unit,
-                                        onClick = { measurementUnit = unit; expandedSelector = null },
+                                        onClick = { editorViewModel.selectMeasurementUnit(unit) },
                                         label = { Text(unit.label()) },
                                     )
                                 }
@@ -313,19 +243,13 @@ fun ExerciseEditorScreen(
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
-                    item { OutlinedTextField(initialSetsText, { initialSetsText = it }, label = { Text("Series iniciales (opcional)") }, modifier = Modifier.fillMaxWidth()) }
-                    item { OutlinedTextField(initialLoadText, { initialLoadText = it }, label = { Text("Carga inicial (opcional, admite coma)") }, modifier = Modifier.fillMaxWidth()) }
-                    item { OutlinedTextField(initialMeasurementText, { initialMeasurementText = it }, label = { Text("Medición inicial (opcional)") }, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(initialSetsText, { editorViewModel.updateInitialSets(it) }, label = { Text("Series iniciales (opcional)") }, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(initialLoadText, { editorViewModel.updateInitialLoad(it) }, label = { Text("Carga inicial (opcional, admite coma)") }, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(initialMeasurementText, { editorViewModel.updateInitialMeasurement(it) }, label = { Text("Medición inicial (opcional)") }, modifier = Modifier.fillMaxWidth()) }
                     if (exerciseId != null) {
                         item {
                             OutlinedButton(
-                                onClick = {
-                                    scope.launch {
-                                        runCatching { maintenanceRepository.previewExerciseDeletion(exerciseId) }
-                                            .onSuccess { deletionPreview = it }
-                                            .onFailure { error = it.message ?: "No se pudo preparar la baja" }
-                                    }
-                                },
+                                onClick = editorViewModel::previewDeletion,
                                 enabled = !saveInProgress,
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Eliminar / dar de baja") }
@@ -336,7 +260,7 @@ fun ExerciseEditorScreen(
             selectedSection.next()?.let { next ->
                 item {
                     OutlinedButton(
-                        onClick = { selectedSection = next; expandedSelector = null },
+                        onClick = { editorViewModel.selectSection(next) },
                         enabled = !saveInProgress,
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Siguiente: " + next.label()) }
@@ -364,7 +288,6 @@ fun ExerciseEditorScreen(
             },
             confirmButton = {
                 Button(onClick = {
-                    savedExerciseId = null
                     onSaved(savedId)
                 }) { Text("Volver al maestro") }
             },
@@ -373,7 +296,7 @@ fun ExerciseEditorScreen(
 
     deletionPreview?.let { preview ->
         AlertDialog(
-            onDismissRequest = { deletionPreview = null },
+            onDismissRequest = { editorViewModel.dismissDeletionPreview() },
             title = { Text(if (preview.willDeactivate) "Dar de baja ejercicio" else "Eliminar ejercicio") },
             text = {
                 Text(
@@ -384,40 +307,13 @@ fun ExerciseEditorScreen(
                     },
                 )
             },
-            dismissButton = { TextButton(onClick = { deletionPreview = null }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { editorViewModel.dismissDeletionPreview() }) { Text("Cancelar") } },
             confirmButton = {
-                Button(onClick = {
-                    val id = exerciseId ?: return@Button
-                    deletionPreview = null
-                    scope.launch {
-                        runCatching { maintenanceRepository.deleteExercise(id, confirmRoutineRemoval = true) }
-                            .onSuccess { result ->
-                                when (result) {
-                                    ExerciseDeletionResult.Deactivated -> onDeleted()
-                                    is ExerciseDeletionResult.Deleted -> onDeleted()
-                                }
-                            }
-                            .onFailure { error = it.message ?: "No se pudo eliminar el ejercicio" }
-                    }
-                }) { Text(if (preview.willDeactivate) "Dar de baja" else "Eliminar definitivamente") }
+                Button(onClick = editorViewModel::confirmDeletion, enabled = !saveInProgress) { Text(if (preview.willDeactivate) "Dar de baja" else "Eliminar definitivamente") }
             },
         )
     }
 }
-
-private fun String.optionalInt(label: String): Int? {
-    val clean = trim()
-    if (clean.isEmpty()) return null
-    return clean.toIntOrNull() ?: error("$label debe ser un número entero")
-}
-
-private fun String.optionalDecimal(label: String): Double? {
-    val clean = trim()
-    if (clean.isEmpty()) return null
-    return clean.replace(',', '.').toDoubleOrNull() ?: error("$label debe ser un número válido")
-}
-
-private fun Double.toSpanishDecimal(): String = toString().replace('.', ',')
 
 private fun LoadMode.label(): String = when (this) {
     LoadMode.KG_TOTAL -> "kg total"
