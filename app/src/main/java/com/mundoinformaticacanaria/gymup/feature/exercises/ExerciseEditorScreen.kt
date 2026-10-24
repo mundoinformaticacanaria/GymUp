@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -24,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -104,7 +106,7 @@ fun ExerciseEditorScreen(
         },
         bottomBar = {
             if (loaded) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Button(
                         onClick = editorViewModel::save,
                         modifier = Modifier.fillMaxWidth(),
@@ -171,22 +173,30 @@ fun ExerciseEditorScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             OutlinedButton(
                                 onClick = { editorViewModel.toggleSelector(ExerciseConfigSelector.GROUP) },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().semantics {
+                                    stateDescription = if (expandedSelector == ExerciseConfigSelector.GROUP) "Desplegado" else "Contraído"
+                                },
                                 enabled = fieldsEnabled,
                             ) { Text("Grupo muscular: " + groupName) }
                             OutlinedButton(
                                 onClick = { editorViewModel.toggleSelector(ExerciseConfigSelector.EQUIPMENT) },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().semantics {
+                                    stateDescription = if (expandedSelector == ExerciseConfigSelector.EQUIPMENT) "Desplegado" else "Contraído"
+                                },
                                 enabled = fieldsEnabled,
                             ) { Text("Equipo: " + equipmentName) }
                             OutlinedButton(
                                 onClick = { editorViewModel.toggleSelector(ExerciseConfigSelector.LOAD_MODE) },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().semantics {
+                                    stateDescription = if (expandedSelector == ExerciseConfigSelector.LOAD_MODE) "Desplegado" else "Contraído"
+                                },
                                 enabled = fieldsEnabled,
                             ) { Text("Modalidad de carga: " + loadMode.label()) }
                             OutlinedButton(
                                 onClick = { editorViewModel.toggleSelector(ExerciseConfigSelector.MEASUREMENT_UNIT) },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().semantics {
+                                    stateDescription = if (expandedSelector == ExerciseConfigSelector.MEASUREMENT_UNIT) "Desplegado" else "Contraído"
+                                },
                                 enabled = fieldsEnabled,
                             ) { Text("Unidad: " + measurementUnit.label()) }
                             FilterChip(
