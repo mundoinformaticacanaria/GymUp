@@ -41,7 +41,40 @@ class HistoricalCleanupManagerTest {
         assertEquals(35, result.deleted.totalTransactionalRecords)
     }
 
+    @Test
+    fun `failed compaction does not disguise a committed deletion as failed`() = runBlocking {
+        val store = FakeStore().apply { compactFailure = IllegalStateException("VACUUM unavailable") }
+        val result = HistoricalCleanupManager(store).execute(
+            cutoffDate = cutoff,
+            confirmation = HistoricalCleanupConfirmation.IRREVERSIBLE_CONFIRMED,
+        )
+
+        assertEquals(1, store.deleteCalls)
+        assertEquals(1, store.compactCalls)
+        assertEquals(35, result.deleted.totalTransactionalRecords)
+        assertEquals(null, result.bytesReclaimed)
+        assertEquals(null, result.bytesBeforeCompaction)
+        assertEquals(null, result.bytesAfterCompaction)
+    }
+
+    @Test
+    fun `compaction cancellation is not swallowed`() = runBlocking {
+        val store = FakeStore().apply {
+            compactFailure = kotlinx.coroutines.CancellationException("cancelled")
+        }
+        try {
+            HistoricalCleanupManager(store).execute(
+                cutoffDate = cutoff,
+                confirmation = HistoricalCleanupConfirmation.IRREVERSIBLE_CONFIRMED,
+            )
+            org.junit.Assert.fail("Expected cancellation to propagate")
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            assertEquals(1, store.deleteCalls)
+        }
+    }
+
     private inner class FakeStore : HistoricalCleanupStore {
+        var compactFailure: Exception? = null
         var deleteCalls = 0
         var compactCalls = 0
         val operations = mutableListOf<String>()
@@ -64,6 +97,7 @@ class HistoricalCleanupManagerTest {
         override suspend fun compact(): Pair<Long?, Long?> {
             operations += "compact"
             compactCalls += 1
+            compactFailure?.let { throw it }
             return 16_384L to 12_288L
         }
     }

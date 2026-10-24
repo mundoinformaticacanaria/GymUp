@@ -1,5 +1,6 @@
 package com.mundoinformaticacanaria.gymup.feature.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -26,14 +27,51 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Serializes backup operations that may replace all local data. */
+internal class BackupActionGate {
+    var running by mutableStateOf(false)
+        private set
+
+    fun tryStart(): Boolean {
+        if (running) return false
+        running = true
+        return true
+    }
+
+    fun finish() { running = false }
+}
+
 @Composable
-fun BackupSection(backupManager: BackupManager) {
+fun BackupSection(
+    backupManager: BackupManager,
+    onBusyChanged: (Boolean) -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var pendingExport by remember { mutableStateOf<ByteArray?>(null) }
     var pendingImport by remember { mutableStateOf<ByteArray?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    val actionGate = remember { BackupActionGate() }
+    BackHandler(enabled = actionGate.running) { /* Do not cancel an in-flight replace-all. */ }
+
+    fun launchExclusive(fallbackError: String, block: suspend () -> Unit) {
+        if (!actionGate.tryStart()) return
+        onBusyChanged(true)
+        scope.launch {
+            try {
+                block()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                error = failure.message ?: fallbackError
+                status = null
+            } finally {
+                actionGate.finish()
+                onBusyChanged(false)
+            }
+        }
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(AndroidBackupFiles.MIME_TYPE),
@@ -41,18 +79,12 @@ fun BackupSection(backupManager: BackupManager) {
         val bytes = pendingExport
         pendingExport = null
         if (destination != null && bytes != null) {
-            scope.launch {
-                runCatching {
-                    withContext(Dispatchers.IO) {
-                        AndroidBackupFiles.writeToDocument(context, destination, bytes)
-                    }
-                }.onSuccess {
-                    status = "Backup guardado correctamente."
-                    error = null
-                }.onFailure {
-                    error = it.message ?: "No se pudo guardar el backup."
-                    status = null
+            launchExclusive("No se pudo guardar el backup.") {
+                withContext(Dispatchers.IO) {
+                    AndroidBackupFiles.writeToDocument(context, destination, bytes)
                 }
+                status = "Backup guardado correctamente."
+                error = null
             }
         }
     }
@@ -61,17 +93,12 @@ fun BackupSection(backupManager: BackupManager) {
         ActivityResultContracts.OpenDocument(),
     ) { source ->
         if (source != null) {
-            scope.launch {
-                runCatching {
-                    withContext(Dispatchers.IO) { AndroidBackupFiles.readFromDocument(context, source) }
-                }.onSuccess {
-                    pendingImport = it
-                    status = null
-                    error = null
-                }.onFailure {
-                    error = it.message ?: "No se pudo leer el backup."
-                    status = null
+            launchExclusive("No se pudo leer el backup.") {
+                pendingImport = withContext(Dispatchers.IO) {
+                    AndroidBackupFiles.readFromDocument(context, source)
                 }
+                status = null
+                error = null
             }
         }
     }
@@ -84,27 +111,23 @@ fun BackupSection(backupManager: BackupManager) {
         )
         Button(
             onClick = {
-                scope.launch {
-                    runCatching { withContext(Dispatchers.IO) { backupManager.export() } }
-                        .onSuccess {
-                            pendingExport = it
-                            status = null
-                            error = null
-                            exportLauncher.launch(AndroidBackupFiles.defaultFileName())
-                        }
-                        .onFailure {
-                            error = it.message ?: "No se pudo crear el backup."
-                            status = null
-                        }
+                launchExclusive("No se pudo crear el backup.") {
+                    pendingExport = withContext(Dispatchers.IO) { backupManager.export() }
+                    status = null
+                    error = null
+                    exportLauncher.launch(AndroidBackupFiles.defaultFileName())
                 }
             },
             modifier = Modifier.fillMaxWidth(),
+            enabled = !actionGate.running,
         ) { Text("Crear backup completo") }
         OutlinedButton(
             onClick = { importLauncher.launch(arrayOf(AndroidBackupFiles.MIME_TYPE, "application/octet-stream")) },
             modifier = Modifier.fillMaxWidth(),
+            enabled = !actionGate.running,
         ) { Text("Importar backup") }
         Text("Importar sustituye todos los datos actuales; no se realiza merge.")
+        if (actionGate.running) Text("Operación de backup en curso. Espera a que termine.")
         status?.let { Text(it) }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
@@ -125,27 +148,24 @@ fun BackupSection(backupManager: BackupManager) {
             confirmButton = {
                 Button(
                     onClick = {
+                        if (actionGate.running) return@Button
                         pendingImport = null
-                        scope.launch {
-                            runCatching {
-                                withContext(Dispatchers.IO) { backupManager.importReplaceAll(archive) }
-                            }.onSuccess { result ->
-                                when (result) {
-                                    is BackupImportResult.Imported -> {
-                                        status = "Backup importado correctamente (${result.imageCount} imagen(es))."
-                                        error = null
-                                    }
-                                    is BackupImportResult.Rejected -> {
-                                        error = result.reason
-                                        status = null
-                                    }
+                        launchExclusive("No se pudo importar el backup.") {
+                            when (val result = withContext(Dispatchers.IO) {
+                                backupManager.importReplaceAll(archive)
+                            }) {
+                                is BackupImportResult.Imported -> {
+                                    status = "Backup importado correctamente (${result.imageCount} imagen(es))."
+                                    error = null
                                 }
-                            }.onFailure {
-                                error = it.message ?: "No se pudo importar el backup."
-                                status = null
+                                is BackupImportResult.Rejected -> {
+                                    error = result.reason
+                                    status = null
+                                }
                             }
                         }
                     },
+                    enabled = !actionGate.running,
                 ) { Text("Validar y reemplazar") }
             },
         )
