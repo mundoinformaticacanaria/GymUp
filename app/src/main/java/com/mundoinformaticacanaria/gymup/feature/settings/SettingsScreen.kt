@@ -66,11 +66,12 @@ fun SettingsScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var showConfirmation by remember { mutableStateOf(false) }
     var cleanupInProgress by remember { mutableStateOf(false) }
+    var backupInProgress by remember { mutableStateOf(false) }
     var previewGeneration by remember { mutableStateOf(0) }
     LaunchedEffect(selectedSection) { listState.scrollToItem(0) }
     // Keep the composition alive until the irreversible operation reports its outcome.
     // Otherwise system Back can cancel the screen-scoped coroutine after deletion commits.
-    BackHandler(enabled = cleanupInProgress) { /* Wait for the operation to finish. */ }
+    BackHandler(enabled = cleanupInProgress || backupInProgress) { /* Wait for the operation to finish. */ }
 
     LazyColumn(
         state = listState,
@@ -105,7 +106,7 @@ fun SettingsScreen(
                         previewGeneration++
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !cleanupInProgress,
+                    enabled = !cleanupInProgress && !backupInProgress,
                 ) { Text("Volver al índice de Ajustes") }
             }
             when (selectedSection) {
@@ -117,7 +118,12 @@ fun SettingsScreen(
 
                 }
                 SettingsSection.BACKUP -> {
-                    item { BackupSection(backupManager = backupManager) }
+                    item {
+                        BackupSection(
+                            backupManager = backupManager,
+                            onBusyChanged = { backupInProgress = it },
+                        )
+                    }
 
                 }
                 SettingsSection.CLEANUP -> {
@@ -231,7 +237,7 @@ fun SettingsScreen(
         item {
             OutlinedButton(
                 onClick = onBack,
-                enabled = !cleanupInProgress,
+                enabled = !cleanupInProgress && !backupInProgress,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Volver") }
         }
