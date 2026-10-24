@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -22,6 +23,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -57,6 +60,7 @@ fun ExerciseEditorScreen(
     onDeleted: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val listState = rememberLazyListState()
     val editorViewModel: ExerciseEditorViewModel = viewModel(
         key = "exercise-editor-" + (exerciseId ?: "new"),
         factory = ExerciseEditorViewModel.Factory(exerciseId, maintenanceRepository, masterCatalogRepository),
@@ -82,6 +86,10 @@ fun ExerciseEditorScreen(
     val saveInProgress = state.isBusy
     val deletionPreview = state.deletionPreview
     val savedExerciseId = state.savedExerciseId
+
+    // Keep the newly selected section and validation errors visible even after scrolling.
+    LaunchedEffect(selectedSection) { listState.scrollToItem(0) }
+    LaunchedEffect(error) { if (error != null) listState.scrollToItem(0) }
 
     BackHandler(enabled = saveInProgress) { /* Wait for the in-flight repository operation. */ }
     LaunchedEffect(state.deleted) { if (state.deleted) onDeleted() }
@@ -112,6 +120,7 @@ fun ExerciseEditorScreen(
             return@Scaffold
         }
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -130,7 +139,7 @@ fun ExerciseEditorScreen(
                         OutlinedButton(
                             onClick = { editorViewModel.selectSection(section) },
                             enabled = !saveInProgress,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().semantics { selected = selectedSection == section },
                         ) {
                             Text(section.label() + if (selectedSection == section) " · seleccionada" else "")
                         }
