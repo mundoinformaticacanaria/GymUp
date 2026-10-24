@@ -70,7 +70,9 @@ private fun String.optionalEditorInt(label: String): Int? {
 private fun String.optionalEditorDecimal(label: String): Double? {
     val value = trim()
     if (value.isEmpty()) return null
-    return value.replace(',', '.').toDoubleOrNull() ?: error("$label debe ser un número válido")
+    val parsed = value.replace(',', '.').toDoubleOrNull() ?: error("$label debe ser un número válido")
+    require(parsed.isFinite()) { "$label debe ser un número finito" }
+    return parsed
 }
 
 class ExerciseEditorViewModel(
