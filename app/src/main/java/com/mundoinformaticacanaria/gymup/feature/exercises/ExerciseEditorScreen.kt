@@ -92,7 +92,8 @@ fun ExerciseEditorScreen(
 
     // Keep the newly selected section and validation errors visible even after scrolling.
     LaunchedEffect(selectedSection) { listState.scrollToItem(0) }
-    LaunchedEffect(error) { if (error != null) listState.scrollToItem(0) }
+    // The same validation failure can recur before Compose observes an intermediate clear.
+    LaunchedEffect(state.errorRevision) { if (error != null) listState.scrollToItem(0) }
 
     BackHandler(enabled = saveInProgress) { /* Wait for the in-flight repository operation. */ }
     LaunchedEffect(state.deleted) { if (state.deleted) onDeleted() }
