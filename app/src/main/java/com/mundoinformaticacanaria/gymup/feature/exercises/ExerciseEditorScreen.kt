@@ -84,6 +84,7 @@ fun ExerciseEditorScreen(
     val selectedSection = state.selectedSection
     val expandedSelector = state.expandedSelector
     val saveInProgress = state.isBusy
+    val fieldsEnabled = loaded && !saveInProgress
     val deletionPreview = state.deletionPreview
     val savedExerciseId = state.savedExerciseId
 
@@ -107,7 +108,7 @@ fun ExerciseEditorScreen(
                     Button(
                         onClick = editorViewModel::save,
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !saveInProgress && nameEs.isNotBlank() && nameEn.isNotBlank() && muscleGroupId != null,
+                        enabled = state.canSave,
                     ) { Text(if (saveInProgress) "Guardando ejercicio…" else "Guardar ejercicio") }
                 }
             }
@@ -149,13 +150,13 @@ fun ExerciseEditorScreen(
             when (selectedSection) {
                 ExerciseEditorSection.IDENTITY -> {
                     item { Text("Identidad", style = MaterialTheme.typography.titleLarge) }
-                    item { OutlinedTextField(nameEs, { editorViewModel.updateNameEs(it) }, label = { Text("Nombre español") }, modifier = Modifier.fillMaxWidth()) }
-                    item { OutlinedTextField(nameEn, { editorViewModel.updateNameEn(it) }, label = { Text("English name") }, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(nameEs, { editorViewModel.updateNameEs(it) }, label = { Text("Nombre español") }, modifier = Modifier.fillMaxWidth(), enabled = fieldsEnabled) }
+                    item { OutlinedTextField(nameEn, { editorViewModel.updateNameEn(it) }, label = { Text("English name") }, modifier = Modifier.fillMaxWidth(), enabled = fieldsEnabled) }
                     item {
                         OutlinedTextField(
                             description, { editorViewModel.updateDescription(it) },
                             label = { Text("Descripción / instrucciones") },
-                            modifier = Modifier.fillMaxWidth(), minLines = 3,
+                            modifier = Modifier.fillMaxWidth(), minLines = 3, enabled = fieldsEnabled,
                         )
                     }
                 }
@@ -171,22 +172,27 @@ fun ExerciseEditorScreen(
                             OutlinedButton(
                                 onClick = { editorViewModel.toggleSelector(ExerciseConfigSelector.GROUP) },
                                 modifier = Modifier.fillMaxWidth(),
+                                enabled = fieldsEnabled,
                             ) { Text("Grupo muscular: " + groupName) }
                             OutlinedButton(
                                 onClick = { editorViewModel.toggleSelector(ExerciseConfigSelector.EQUIPMENT) },
                                 modifier = Modifier.fillMaxWidth(),
+                                enabled = fieldsEnabled,
                             ) { Text("Equipo: " + equipmentName) }
                             OutlinedButton(
                                 onClick = { editorViewModel.toggleSelector(ExerciseConfigSelector.LOAD_MODE) },
                                 modifier = Modifier.fillMaxWidth(),
+                                enabled = fieldsEnabled,
                             ) { Text("Modalidad de carga: " + loadMode.label()) }
                             OutlinedButton(
                                 onClick = { editorViewModel.toggleSelector(ExerciseConfigSelector.MEASUREMENT_UNIT) },
                                 modifier = Modifier.fillMaxWidth(),
+                                enabled = fieldsEnabled,
                             ) { Text("Unidad: " + measurementUnit.label()) }
                             FilterChip(
                                 selected = rirRequired,
                                 onClick = { editorViewModel.toggleRir() },
+                                enabled = fieldsEnabled,
                                 label = { Text(if (rirRequired) "RIR obligatorio" else "RIR opcional") },
                             )
                         }
@@ -197,6 +203,7 @@ fun ExerciseEditorScreen(
                                 groups.forEach { group ->
                                     FilterChip(
                                         selected = muscleGroupId == group.id,
+                                        enabled = fieldsEnabled,
                                         onClick = { editorViewModel.selectMuscleGroup(group.id) },
                                         label = { Text(group.name) },
                                     )
@@ -207,12 +214,14 @@ fun ExerciseEditorScreen(
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 FilterChip(
                                     selected = equipmentId == null,
+                                        enabled = fieldsEnabled,
                                     onClick = { editorViewModel.selectEquipment(null) },
                                     label = { Text("Sin equipo") },
                                 )
                                 equipment.forEach { entry ->
                                     FilterChip(
                                         selected = equipmentId == entry.id,
+                                        enabled = fieldsEnabled,
                                         onClick = { editorViewModel.selectEquipment(entry.id) },
                                         label = { Text(entry.name) },
                                     )
@@ -224,6 +233,7 @@ fun ExerciseEditorScreen(
                                 LoadMode.entries.forEach { mode ->
                                     FilterChip(
                                         selected = loadMode == mode,
+                                        enabled = fieldsEnabled,
                                         onClick = { editorViewModel.selectLoadMode(mode) },
                                         label = { Text(mode.label()) },
                                     )
@@ -235,6 +245,7 @@ fun ExerciseEditorScreen(
                                 MeasurementUnit.entries.forEach { unit ->
                                     FilterChip(
                                         selected = measurementUnit == unit,
+                                        enabled = fieldsEnabled,
                                         onClick = { editorViewModel.selectMeasurementUnit(unit) },
                                         label = { Text(unit.label()) },
                                     )
@@ -252,9 +263,9 @@ fun ExerciseEditorScreen(
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
-                    item { OutlinedTextField(initialSetsText, { editorViewModel.updateInitialSets(it) }, label = { Text("Series iniciales (opcional)") }, modifier = Modifier.fillMaxWidth()) }
-                    item { OutlinedTextField(initialLoadText, { editorViewModel.updateInitialLoad(it) }, label = { Text("Carga inicial (opcional, admite coma)") }, modifier = Modifier.fillMaxWidth()) }
-                    item { OutlinedTextField(initialMeasurementText, { editorViewModel.updateInitialMeasurement(it) }, label = { Text("Medición inicial (opcional)") }, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(initialSetsText, { editorViewModel.updateInitialSets(it) }, label = { Text("Series iniciales (opcional)") }, modifier = Modifier.fillMaxWidth(), enabled = fieldsEnabled) }
+                    item { OutlinedTextField(initialLoadText, { editorViewModel.updateInitialLoad(it) }, label = { Text("Carga inicial (opcional, admite coma)") }, modifier = Modifier.fillMaxWidth(), enabled = fieldsEnabled) }
+                    item { OutlinedTextField(initialMeasurementText, { editorViewModel.updateInitialMeasurement(it) }, label = { Text("Medición inicial (opcional)") }, modifier = Modifier.fillMaxWidth(), enabled = fieldsEnabled) }
                     if (exerciseId != null) {
                         item {
                             OutlinedButton(
@@ -316,7 +327,7 @@ fun ExerciseEditorScreen(
                     },
                 )
             },
-            dismissButton = { TextButton(onClick = { editorViewModel.dismissDeletionPreview() }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { editorViewModel.dismissDeletionPreview() }, enabled = !saveInProgress) { Text("Cancelar") } },
             confirmButton = {
                 Button(onClick = editorViewModel::confirmDeletion, enabled = !saveInProgress) { Text(if (preview.willDeactivate) "Dar de baja" else "Eliminar definitivamente") }
             },
