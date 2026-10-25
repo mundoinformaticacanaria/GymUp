@@ -15,6 +15,8 @@ import com.mundoinformaticacanaria.gymup.data.local.SessionExerciseEntity
 import com.mundoinformaticacanaria.gymup.data.local.SessionSetEntity
 import com.mundoinformaticacanaria.gymup.data.preferences.UserPreferencesRepository
 import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
+import com.mundoinformaticacanaria.gymup.domain.backup.BackupArchiveCodec
+import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataCodec
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataValidationResult
 import java.time.LocalDate
@@ -183,6 +185,17 @@ class RoomBackupDataSourceTest {
 
         // An invalid import must leave persisted Room rows, images and preferences untouched.
         assertTrue(manager.importReplaceAll("not-a-zip".encodeToByteArray()) is BackupImportResult.Rejected)
+        assertNotNull(database.trainingDao().getSession(sessionId))
+        assertArrayEquals(imageBytes, imageManager.readBytes(image))
+        assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+
+        // A ZIP with correct checksums but invalid data.json must not trigger replace-all.
+        val malformedDataArchive = BackupArchiveCodec.create(
+            BackupSnapshot(data = "not-json".encodeToByteArray()),
+            appVersion = "0.1.0",
+        )
+        val malformedImport = runCatching { manager.importReplaceAll(malformedDataArchive) }
+        assertTrue(malformedImport.exceptionOrNull() is IllegalArgumentException)
         assertNotNull(database.trainingDao().getSession(sessionId))
         assertArrayEquals(imageBytes, imageManager.readBytes(image))
         assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
