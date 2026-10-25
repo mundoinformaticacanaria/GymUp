@@ -36,11 +36,14 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupSessionType
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 class RoomBackupDataSource(
     context: Context,
     private val database: GymUpDatabase,
     private val preferences: UserPreferencesRepository,
+    private val importFault: (BackupReplacePhase) -> Unit = {},
 ) : BackupDataSource {
     private val backupDao = database.backupDao()
     private val imageStore = UserExerciseImageStore(context.applicationContext)
@@ -93,6 +96,7 @@ class RoomBackupDataSource(
             "Las imágenes del ZIP no coinciden con exercise_images"
         }
         val stagedImages = imageStore.stageReplacement(snapshot.images)
+        val previousTheme = preferences.currentThemeMode()
 
         try {
             database.withTransaction {
@@ -117,13 +121,22 @@ class RoomBackupDataSource(
                 backupDao.insertSessions(data.sessions.map { it.toEntity() })
                 backupDao.insertSessionExercises(data.sessionExercises.map { it.toEntity() })
                 backupDao.insertSessionSets(data.sessionSets.map { it.toEntity() })
+                // Keep Room uncommitted until images and preferences have been activated.
+                stagedImages.activate()
+                importFault(BackupReplacePhase.AFTER_IMAGES_ACTIVATED)
+                preferences.setThemeMode(ThemeMode.valueOf(data.preferences.themeMode))
+                importFault(BackupReplacePhase.AFTER_PREFERENCES_UPDATED)
             }
-            preferences.setThemeMode(ThemeMode.valueOf(data.preferences.themeMode))
-            stagedImages.commit()
         } catch (error: Throwable) {
-            stagedImages.discard()
+            // Room rolls back its transaction; restore the other stores even on cancellation.
+            withContext(NonCancellable) {
+                runCatching { stagedImages.rollback() }.onFailure(error::addSuppressed)
+                runCatching { preferences.setThemeMode(previousTheme) }.onFailure(error::addSuppressed)
+            }
             throw error
         }
+        // Cleanup is best-effort: never turn a committed import into a false failure.
+        stagedImages.complete()
     }
 
     private fun SessionTypeEntity.toBackup() = BackupSessionType(id, name, isActive, isProtectedOther)
@@ -311,29 +324,46 @@ private class UserExerciseImageStore(context: Context) {
     }
 }
 
+/** Deterministic fault points for the non-atomic Room/files/DataStore import path. */
+enum class BackupReplacePhase { AFTER_IMAGES_ACTIVATED, AFTER_PREFERENCES_UPDATED }
+
 private class StagedImageReplacement(
     private val current: File,
     private val staged: File,
 ) {
+    // Unique path: never delete another operation's preserved user images.
+    private val previous = File(current.parentFile, "${current.name}-previous-${UUID.randomUUID()}")
+    private var oldMoved = false
+    private var activated = false
     private var finished = false
 
-    fun commit() {
+    fun activate() {
+        check(!finished && !activated) { "La sustitución de imágenes ya se activó" }
+        if (current.exists()) {
+            check(current.renameTo(previous)) { "No se pudieron preservar las imágenes actuales" }
+            oldMoved = true
+        }
+        check(staged.renameTo(current)) { "No se pudieron activar las imágenes importadas" }
+        activated = true
+    }
+
+    fun rollback() {
         check(!finished) { "La sustitución de imágenes ya terminó" }
-        val previous = File(current.parentFile, "${current.name}-previous")
-        previous.deleteRecursively()
-        if (current.exists() && !current.renameTo(previous)) {
-            throw IllegalStateException("No se pudieron preservar las imágenes actuales")
+        // Preserve the previous directory if deletion/restoration fails; never erase it.
+        if (activated && current.exists()) {
+            check(current.deleteRecursively()) { "No se pudieron retirar las imágenes importadas" }
         }
-        if (!staged.renameTo(current)) {
-            if (previous.exists()) previous.renameTo(current)
-            throw IllegalStateException("No se pudieron activar las imágenes importadas")
+        if (oldMoved) {
+            check(previous.renameTo(current)) { "No se pudieron recuperar las imágenes anteriores" }
         }
-        previous.deleteRecursively()
+        staged.deleteRecursively()
         finished = true
     }
 
-    fun discard() {
-        if (!finished) staged.deleteRecursively()
+    fun complete() {
+        check(activated && !finished) { "La sustitución de imágenes no está activada" }
+        // A failed cleanup leaves a recoverable copy rather than reporting an import failure.
+        previous.deleteRecursively()
         finished = true
     }
 }
