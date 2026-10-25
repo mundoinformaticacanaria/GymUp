@@ -117,4 +117,103 @@ class BackupRecoverySnapshotAdapterTest {
             File(context.filesDir, "exercise-images").deleteRecursively()
         }
     }
+
+    @Test
+    fun `journaled import restores real Room images and theme when delegate fails after commit`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GymUpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val journalDir = File(context.filesDir, "recovery-after-commit-${UUID.randomUUID()}")
+        try {
+            DatabaseSeeder(context, database).seedIfNeeded()
+            val preferences = UserPreferencesRepository(context)
+            preferences.setThemeMode(ThemeMode.DARK)
+            val dao = database.backupDao()
+            val type = dao.getSessionTypes().first()
+            val exercise = dao.getExercises().first()
+            val sessionId = UUID.randomUUID().toString()
+            dao.insertSessions(
+                listOf(
+                    SessionEntity(
+                        id = sessionId,
+                        sessionDateEpochDay = LocalDate.of(2026, 10, 25).toEpochDay(),
+                        orderInDay = 1,
+                        sessionTypeId = type.id,
+                        sessionTypeNameSnapshot = type.name,
+                        name = "Sesión protegida",
+                        isAutoName = false,
+                        generalNote = null,
+                        operationalState = SessionOperationalState.PLANNED,
+                        executionResult = SessionExecutionResult.NOT_STARTED,
+                    ),
+                ),
+            )
+            val images = ExerciseImageManager(context, database.exerciseDao())
+            val oldBytes = byteArrayOf(1, 2, 3)
+            val newBytes = byteArrayOf(4, 5, 6)
+            val image = images.addUserImage(exercise.id, oldBytes)
+            val source = RoomBackupDataSource(context, database, preferences)
+            val before = BackupDataCodec.decode(source.exportSnapshot().data.decodeToString()).getOrThrow()
+            val replacement = BackupSnapshot(
+                data = BackupDataCodec.encode(
+                    before.copy(
+                        sessions = emptyList(),
+                        preferences = BackupPreferences(ThemeMode.LIGHT.name),
+                    ),
+                ).encodeToByteArray(),
+                images = mapOf(image.storageKey to newBytes),
+            )
+
+            // Simulate an error after the delegate has committed all three real stores but
+            // before the coordinator can publish the COMMITTED journal marker.
+            var failAfterCommit = true
+            val interruptedDelegate = object : BackupDataSource {
+                override suspend fun exportSnapshot(): BackupSnapshot = source.exportSnapshot()
+
+                override suspend fun replaceAll(snapshot: BackupSnapshot) {
+                    source.replaceAll(snapshot)
+                    if (failAfterCommit) {
+                        failAfterCommit = false
+                        error("Injected interruption after Room/images/DataStore commit")
+                    }
+                }
+            }
+            val journaled = JournaledBackupDataSource(
+                interruptedDelegate,
+                BackupRecoveryCoordinator(BackupRecoveryJournal(journalDir)),
+                "1.0-test",
+            )
+
+            assertTrue(runCatching { journaled.replaceAll(replacement) }.isFailure)
+            assertNotNull(database.trainingDao().getSession(sessionId))
+            assertEquals(1, dao.getSessions().size)
+            assertArrayEquals(oldBytes, images.readBytes(image))
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+            assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(journalDir).inspect())
+
+            // A new coordinator cleans up the completed rollback without replaying old data.
+            JournaledBackupDataSource(
+                source,
+                BackupRecoveryCoordinator(BackupRecoveryJournal(journalDir)),
+                "1.0-test",
+            ).recoverBeforeDataAccess()
+            assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(journalDir).inspect())
+
+            // The import remains usable after the injected interruption and recovery.
+            JournaledBackupDataSource(
+                source,
+                BackupRecoveryCoordinator(BackupRecoveryJournal(journalDir)),
+                "1.0-test",
+            ).replaceAll(replacement)
+            assertEquals(0, dao.getSessions().size)
+            assertArrayEquals(newBytes, images.readBytes(image))
+            assertEquals(ThemeMode.LIGHT, preferences.currentThemeMode())
+        } finally {
+            database.close()
+            journalDir.deleteRecursively()
+            File(context.filesDir, "exercise-images").deleteRecursively()
+        }
+    }
+
 }
