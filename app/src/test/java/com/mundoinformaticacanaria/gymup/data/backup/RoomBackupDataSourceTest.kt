@@ -199,6 +199,14 @@ class RoomBackupDataSourceTest {
         assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
         val restoredImage = imageManager.observeImages(exercise.id).first().single()
         assertArrayEquals(imageBytes, imageManager.readBytes(restoredImage))
+
+        // Importing the same valid backup twice must not duplicate persisted rows or images.
+        assertEquals(BackupImportResult.Imported(1), manager.importReplaceAll(archive))
+        assertEquals(1, dao.getSessions().size)
+        assertEquals(1, dao.getExerciseImages().size)
+        val imageAfterSecondImport = imageManager.observeImages(exercise.id).first().single()
+        assertArrayEquals(imageBytes, imageManager.readBytes(imageAfterSecondImport))
+        assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
     }
 
 }
