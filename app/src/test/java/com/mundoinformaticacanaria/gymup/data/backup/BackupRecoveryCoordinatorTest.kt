@@ -97,6 +97,37 @@ class BackupRecoveryCoordinatorTest {
     }
 
     @Test
+    fun `interrupted committed cleanup does not restore previous data`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val retired = File(temp.root, "recovery.retired")
+        val journal = BackupRecoveryJournal(dir)
+        journal.prepare(byteArrayOf(1, 2, 3))
+        journal.markCommitted()
+        assertTrue(dir.renameTo(retired))
+        assertTrue(File(retired, "state").delete())
+
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+            error("Committed data must not be rolled back during cleanup")
+        }
+        assertFalse(dir.exists())
+        assertFalse(retired.exists())
+    }
+
+    @Test
+    fun `retired cleanup blocks new journal until completed`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val retired = File(temp.root, "recovery.retired")
+        val journal = BackupRecoveryJournal(dir)
+        journal.prepare(byteArrayOf(1))
+        journal.markCommitted()
+        assertTrue(dir.renameTo(retired))
+        assertTrue(runCatching { journal.prepare(byteArrayOf(2)) }.isFailure)
+        journal.cleanupRetired()
+        journal.prepare(byteArrayOf(2))
+        assertTrue(journal.inspect() is BackupRecoveryJournal.State.Prepared)
+    }
+
+    @Test
     fun `successful replacement commits and removes journal`() = runBlocking {
         val dir = File(temp.root, "recovery")
         var captures = 0

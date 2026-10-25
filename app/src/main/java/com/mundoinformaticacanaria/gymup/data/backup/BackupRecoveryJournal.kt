@@ -13,6 +13,8 @@ import java.security.MessageDigest
  * of directory metadata still needs verification on the supported Android filesystems.
  */
 internal class BackupRecoveryJournal(private val directory: File) {
+    // Retire COMMITTED state before deleting files: a crash must not leave a partial active journal.
+    private val retiredDirectory = File(directory.parentFile, "${directory.name}.retired")
     sealed interface State {
         data object Absent : State
         data class Prepared(val previousArchive: ByteArray) : State
@@ -44,6 +46,7 @@ internal class BackupRecoveryJournal(private val directory: File) {
             "Tamaño de copia previa no válido"
         }
         check(!directory.exists()) { "Ya existe un journal de recuperación: resolver antes de importar" }
+        check(!retiredDirectory.exists()) { "Queda una limpieza anterior pendiente" }
         check(directory.mkdirs()) { "No se pudo crear el journal de recuperación" }
         // If writing fails, leave the directory in place to force explicit recovery/inspection.
         writeSynced(File(directory, ARCHIVE_FILE), previousArchive)
@@ -58,10 +61,22 @@ internal class BackupRecoveryJournal(private val directory: File) {
         writeSynced(File(directory, STATE_FILE), "$VERSION COMMITTED $digest\n".toByteArray(Charsets.US_ASCII), replace = true)
     }
 
-    /** Only committed journals can be discarded; a failed deletion remains retryable. */
+    /**
+     * Move the complete COMMITTED journal aside before deleting any contents. A process death
+     * during deletion leaves only retired garbage, not a half-deleted active journal.
+     */
     fun cleanupCommitted() {
         check(inspect() is State.Committed) { "No se puede eliminar un journal pendiente" }
-        check(directory.deleteRecursively()) { "No se pudo limpiar el journal confirmado" }
+        check(!retiredDirectory.exists()) { "Queda una limpieza anterior pendiente" }
+        check(directory.renameTo(retiredDirectory)) { "No se pudo retirar el journal confirmado" }
+        cleanupRetired()
+    }
+
+    /** Retry cleanup of a previously COMMITTED journal after an interrupted deletion. */
+    fun cleanupRetired() {
+        if (retiredDirectory.exists()) {
+            check(retiredDirectory.deleteRecursively()) { "No se pudo limpiar el journal retirado" }
+        }
     }
 
     private fun writeSynced(target: File, bytes: ByteArray, replace: Boolean = false) {

@@ -21,6 +21,20 @@ Añadido `BackupRecoveryCoordinator` (PR #57) como máquina de estados aislada, 
 
 Se añadieron cinco tests JVM para journal ausente, restauración correcta, reintento tras fallo, limpieza de `COMMITTED` y rechazo de `PREPARED` corrupto. Estos tests simulan reconstrucción del componente, **no muerte real del proceso ni restauración de Room/imágenes/DataStore**. CI del nuevo HEAD pendiente de verificación. Queda por implementar el adaptador de restauración idempotente y la puerta de arranque antes del seeder y la UI; no considerar #56 resuelta.
 
+## Avance técnico — 25/10/2026 20:10 UTC
+
+Se ha endurecido la limpieza del journal COMMITTED: primero se renombra el directorio
+completo a una ruta retirada, después se eliminan sus archivos. Una interrupción durante
+la limpieza ya no deja un marcador activo parcialmente eliminado que pueda confundirse
+con un PREPARED corrupto. El coordinador reintenta eliminar el directorio retirado al
+reconstruirse, y la preparación de otro journal queda bloqueada mientras exista ese
+residuo. Se añaden dos tests JVM para interrupción de limpieza y exclusión. **La CI
+del nuevo commit está pendiente**.
+
+Esta mitigación no acredita durabilidad del renombrado de directorios tras corte de
+alimentación, exclusión global de escrituras, ni conexión con la importación y el arranque.
+La recuperación ante muerte real del proceso continúa sin estar garantizada.
+
 ## Protocolo técnico propuesto (pendiente de integración y pruebas completas)
 
 1. **Exclusión mutua**: impedir dos importaciones simultáneas y escrituras de dominio concurrentes durante la ventana de reemplazo. Exportar una instantánea consistente del estado previo (Room + imágenes de usuario + tema) y validar sus referencias. Si no puede obtenerse, abortar antes de modificar datos.
