@@ -122,6 +122,7 @@ class RoomBackupDataSource(
                 backupDao.insertSessionExercises(data.sessionExercises.map { it.toEntity() })
                 backupDao.insertSessionSets(data.sessionSets.map { it.toEntity() })
                 // Keep Room uncommitted until images and preferences have been activated.
+                importFault(BackupReplacePhase.BEFORE_IMAGES_ACTIVATED)
                 stagedImages.activate()
                 importFault(BackupReplacePhase.AFTER_IMAGES_ACTIVATED)
                 preferences.setThemeMode(ThemeMode.valueOf(data.preferences.themeMode))
@@ -325,7 +326,7 @@ private class UserExerciseImageStore(context: Context) {
 }
 
 /** Deterministic fault points for the non-atomic Room/files/DataStore import path. */
-enum class BackupReplacePhase { AFTER_IMAGES_ACTIVATED, AFTER_PREFERENCES_UPDATED }
+enum class BackupReplacePhase { BEFORE_IMAGES_ACTIVATED, AFTER_IMAGES_ACTIVATED, AFTER_PREFERENCES_UPDATED }
 
 private class StagedImageReplacement(
     private val current: File,
