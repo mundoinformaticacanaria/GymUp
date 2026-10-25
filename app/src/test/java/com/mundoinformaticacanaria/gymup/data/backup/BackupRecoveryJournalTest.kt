@@ -57,6 +57,17 @@ class BackupRecoveryJournalTest {
     }
 
     @Test
+    fun `oversized state marker fails closed without removing previous archive`() {
+        val directory = File(temp.root, "recovery")
+        val journal = BackupRecoveryJournal(directory)
+        journal.prepare(byteArrayOf(1, 2, 3))
+        File(directory, "state").writeText("x".repeat(1024))
+        assertTrue(runCatching { journal.inspect() }.isFailure)
+        assertTrue(runCatching { journal.cleanupCommitted() }.isFailure)
+        assertTrue(File(directory, "previous.zip").exists())
+    }
+
+    @Test
     fun `partial preparation never looks like a safe empty journal`() {
         val directory = File(temp.root, "recovery")
         assertTrue(directory.mkdir())
