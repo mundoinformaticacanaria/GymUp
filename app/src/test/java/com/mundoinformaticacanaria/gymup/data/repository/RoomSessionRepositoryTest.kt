@@ -147,6 +147,8 @@ class RoomSessionRepositoryTest {
         assertThrows(MissingRirException::class.java) {
             runBlocking { repository.finalizeSession(sessionId) }
         }
+        // JUnit 4 requires a void test method; assertThrows returns the exception.
+        Unit
     }
 
     @Test
