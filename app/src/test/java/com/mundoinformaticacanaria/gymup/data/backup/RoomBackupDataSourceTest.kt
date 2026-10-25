@@ -16,6 +16,8 @@ import com.mundoinformaticacanaria.gymup.data.local.SessionSetEntity
 import com.mundoinformaticacanaria.gymup.data.preferences.UserPreferencesRepository
 import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataCodec
+import com.mundoinformaticacanaria.gymup.domain.backup.BackupPreferences
+import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataValidationResult
 import java.time.LocalDate
 import java.util.UUID
@@ -153,4 +155,63 @@ class RoomBackupDataSourceTest {
         assertArrayEquals(imageBytes, imageManager.readBytes(restoredImage))
         assertTrue(restoredImage.localFile?.isFile == true)
     }
+
+    @Test
+    fun `injected import failures restore Room images and DataStore without data loss`() = runBlocking {
+        val dao = database.backupDao()
+        val type = dao.getSessionTypes().first()
+        val exercise = dao.getExercises().first()
+        val sessionId = UUID.randomUUID().toString()
+        dao.insertSessions(
+            listOf(
+                SessionEntity(
+                    id = sessionId,
+                    sessionDateEpochDay = LocalDate.of(2026, 10, 25).toEpochDay(),
+                    orderInDay = 1,
+                    sessionTypeId = type.id,
+                    sessionTypeNameSnapshot = type.name,
+                    name = "Sesión previa",
+                    isAutoName = false,
+                    generalNote = null,
+                    operationalState = SessionOperationalState.PLANNED,
+                    executionResult = SessionExecutionResult.NOT_STARTED,
+                ),
+            ),
+        )
+        val imageManager = ExerciseImageManager(context, database.exerciseDao())
+        val originalBytes = byteArrayOf(1, 3, 5, 7)
+        val image = imageManager.addUserImage(exercise.id, originalBytes)
+        val source = RoomBackupDataSource(context, database, preferences)
+        val original = source.exportSnapshot()
+        val decoded = BackupDataCodec.decode(original.data.decodeToString()).getOrThrow()
+        val replacementBytes = byteArrayOf(2, 4, 6, 8)
+        val replacement = BackupSnapshot(
+            data = BackupDataCodec.encode(
+                decoded.copy(
+                    sessions = emptyList(),
+                    preferences = BackupPreferences(ThemeMode.LIGHT.name),
+                ),
+            ).encodeToByteArray(),
+            images = mapOf(image.storageKey to replacementBytes),
+        )
+
+        for (phase in BackupReplacePhase.entries) {
+            val failingSource = RoomBackupDataSource(context, database, preferences) { current ->
+                if (current == phase) error("Fallo inyectado en $phase")
+            }
+            val failure = runCatching { failingSource.replaceAll(replacement) }.exceptionOrNull()
+            assertTrue("Se esperaba fallo en $phase", failure is IllegalStateException)
+            assertNotNull("Room no debe perder la sesión en $phase", database.trainingDao().getSession(sessionId))
+            assertEquals(1, dao.getSessions().size)
+            assertArrayEquals("La imagen anterior debe sobrevivir a $phase", originalBytes, imageManager.readBytes(image))
+            assertEquals("El tema anterior debe sobrevivir a $phase", ThemeMode.DARK, preferences.currentThemeMode())
+        }
+
+        // The same payload must still be importable after all failed attempts.
+        source.replaceAll(replacement)
+        assertEquals(0, dao.getSessions().size)
+        assertArrayEquals(replacementBytes, imageManager.readBytes(image))
+        assertEquals(ThemeMode.LIGHT, preferences.currentThemeMode())
+    }
+
 }
