@@ -56,6 +56,10 @@ La CI del commit debe confirmarse antes de declarar superada esta regresión.
 seeder/UI sin exclusión global de escrituras y recuperación obligatoria antes del
 primer acceso a datos. La Issue #56 permanece abierta.
 
+## Cobertura incremental — 2026-10-25 23:07 UTC
+
+Se añade en PR #57 la prueba Robolectric `prepared journal before any mutation preserves real stores on restart` (commit `dc938df`): con Room, imágenes privadas y DataStore reales, prepara el journal y reconstruye el coordinador **antes de modificar ningún almacén**. Comprueba que la recuperación no altera el estado previo y elimina el journal tras éxito. Esto cubre un punto adicional de la matriz de interrupciones; **no es una muerte real del proceso**, no demuestra durabilidad ante corte eléctrico ni resuelve la barrera global de escrituras. La CI del commit debe verificarse antes de considerar superada la prueba. No conectar a producción ni cerrar #56.
+
 ## Protocolo técnico propuesto (pendiente de integración y pruebas completas)
 
 1. **Exclusión mutua**: impedir dos importaciones simultáneas y escrituras de dominio concurrentes durante la ventana de reemplazo. Exportar una instantánea consistente del estado previo (Room + imágenes de usuario + tema) y validar sus referencias. Si no puede obtenerse, abortar antes de modificar datos.
