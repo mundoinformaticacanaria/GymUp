@@ -216,4 +216,43 @@ class BackupRecoverySnapshotAdapterTest {
         }
     }
 
+
+    @Test
+    fun `prepared journal before any mutation preserves real stores on restart`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GymUpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val journalDir = File(context.filesDir, "recovery-before-mutation-${UUID.randomUUID()}")
+        try {
+            DatabaseSeeder(context, database).seedIfNeeded()
+            val preferences = UserPreferencesRepository(context)
+            preferences.setThemeMode(ThemeMode.DARK)
+            val images = ExerciseImageManager(context, database.exerciseDao())
+            val exercise = database.backupDao().getExercises().first()
+            val bytes = byteArrayOf(8, 6, 4, 2)
+            val image = images.addUserImage(exercise.id, bytes)
+            val source = RoomBackupDataSource(context, database, preferences)
+            val before = source.exportSnapshot()
+            val journal = BackupRecoveryJournal(journalDir)
+
+            // Process death after PREPARED but before Room/images/DataStore were changed.
+            journal.prepare(BackupRecoverySnapshotAdapter(source, "1.0-test").capturePrevious())
+            JournaledBackupDataSource(
+                source,
+                BackupRecoveryCoordinator(BackupRecoveryJournal(journalDir)),
+                "1.0-test",
+            ).recoverBeforeDataAccess()
+
+            val after = source.exportSnapshot()
+            assertArrayEquals(before.data, after.data)
+            assertArrayEquals(bytes, images.readBytes(image))
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+            assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(journalDir).inspect())
+        } finally {
+            database.close()
+            journalDir.deleteRecursively()
+            File(context.filesDir, "exercise-images").deleteRecursively()
+        }
+    }
 }
