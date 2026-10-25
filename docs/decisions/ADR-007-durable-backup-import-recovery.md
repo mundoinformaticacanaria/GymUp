@@ -1,6 +1,6 @@
 # ADR-007 (propuesta) — Recuperación duradera de importación replace-all
 
-Estado: **PROPUESTO / NO IMPLEMENTADO**  
+Estado: **PROPUESTO / IMPLEMENTACIÓN PARCIAL NO CONECTADA**  
 Fecha: 2026-10-25  
 Issue: #56 · PR: #57  
 Relacionado: ADR-005 y contrato funcional v1 §17
@@ -11,7 +11,7 @@ Room, el directorio privado de imágenes y DataStore no comparten una transacci�
 
 El objetivo es garantizar que, al reabrir la app tras una interrupción, el usuario encuentre un estado completo anterior o nuevo, nunca una combinación silenciosa de ambos. Se mantiene ZIP v1, importación completa replace-all, almacenamiento offline y sin servicios externos.
 
-## Protocolo técnico propuesto (pendiente de implementación y pruebas)
+## Avance técnico — 25/10/2026 16:xx UTC\n\nLa PR #57 incorpora `BackupRecoveryJournal` y cuatro tests JVM de persistencia entre instancias, corrupción, exclusión de journals pendientes y limpieza posterior a confirmación. El journal escribe una copia previa y marcador versionado con SHA-256, sincroniza los ficheros y falla cerrado ante estado incompleto. **Aún no se utiliza en `RoomBackupDataSource` ni en el arranque; no ofrece recuperación de una importación real tras crash.** La durabilidad de renombres/metadatos de directorio en Android está pendiente de validación, al igual que la coordinación con escrituras concurrentes. La CI del nuevo código debe validarse antes de atribuirle cobertura.\n\n## Protocolo técnico propuesto (pendiente de integración y pruebas completas)
 
 1. **Exclusión mutua**: impedir dos importaciones simultáneas y escrituras de dominio concurrentes durante la ventana de reemplazo. Exportar una instantánea consistente del estado previo (Room + imágenes de usuario + tema) y validar sus referencias. Si no puede obtenerse, abortar antes de modificar datos.
 2. **Journal privado duradero**: escribir la instantánea anterior en un directorio exclusivo por operación con manifiesto, checksums y versión del protocolo. Crear una marca `PREPARED` de forma atómica **solo después** de persistir y verificar todos los archivos; sincronizar archivos y metadatos de directorio según las garantías reales de Android. Nunca almacenar contenido personal en logs.
@@ -44,4 +44,4 @@ Implementar tests Robolectric con puntos de corte deterministas y reconstrucció
 
 ## Gates y alcance
 
-Esta ADR es **propuesta técnica**, no evidencia de implementación. No cambiar el contrato de backup, no modificar el APK BF-02 probado y no fusionar PR #57 ni cerrar #56 hasta implementar, verificar CI y resolver la validación física aplicable. La autorización de un candidato APK sigue siendo exclusiva del propietario conforme a #35.
+Esta ADR es **propuesta técnica con infraestructura parcial sin conectar**, no evidencia de recuperación real ante crash. No cambiar el contrato de backup, no modificar el APK BF-02 probado y no fusionar PR #57 ni cerrar #56 hasta implementar, verificar CI y resolver la validación física aplicable. La autorización de un candidato APK sigue siendo exclusiva del propietario conforme a #35.
