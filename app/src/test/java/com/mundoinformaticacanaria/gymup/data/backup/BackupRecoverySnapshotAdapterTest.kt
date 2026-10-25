@@ -87,7 +87,18 @@ class BackupRecoverySnapshotAdapterTest {
             assertEquals(ThemeMode.LIGHT, preferences.currentThemeMode())
 
             // Simulate death after applying the new data but before marking the journal COMMITTED.
-            // A new coordinator instance must replay the pre-image before any data is exposed.
+            // The first replay itself is interrupted after restoring data, before journal commit.
+            val interruptedReplay = runCatching {
+                BackupRecoveryCoordinator(BackupRecoveryJournal(journalDir))
+                    .recoverBeforeDataAccess { archive ->
+                        adapter.restorePrevious(archive)
+                        error("Simulated death after replay, before journal commit")
+                    }
+            }
+            assertTrue(interruptedReplay.isFailure)
+            assertTrue(BackupRecoveryJournal(journalDir).inspect() is BackupRecoveryJournal.State.Prepared)
+
+            // A second coordinator must safely replay the same Room/images/theme pre-image again.
             BackupRecoveryCoordinator(BackupRecoveryJournal(journalDir))
                 .recoverBeforeDataAccess(adapter::restorePrevious)
             assertNotNull(database.trainingDao().getSession(sessionId))
