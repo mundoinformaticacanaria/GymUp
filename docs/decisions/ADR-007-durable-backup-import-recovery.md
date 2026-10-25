@@ -41,6 +41,21 @@ Se incorpora `JournaledBackupDataSource` (PR #57, commits `59a9b28` y `4406ef8`)
 
 Este paso verifica la composición de los componentes, **no su integración productiva**: aún faltan barrera global de escrituras, captura consistente de Room/imágenes/DataStore, recuperación obligatoria antes del seeder y de la UI, durabilidad de metadatos y pruebas de corte real. No utilizar este adaptador en producción sin esos gates. CI del nuevo HEAD pendiente de resultado definitivo.
 
+## Avance de pruebas — 25/10/2026 22:08 UTC
+
+La PR #57 incorpora en `5db682e` una regresión Robolectric adicional que utiliza
+**Room real en memoria, imágenes privadas y DataStore**, en lugar de un delegado falso
+como almacén principal. Inyecta un error **después de que el delegado confirme los
+tres almacenes**, pero antes de que el coordinador publique `COMMITTED`; comprueba
+la restauración de sesión, imagen y tema, la limpieza tras reconstruir el coordinador
+y la posibilidad de importar de nuevo. Esta es una **interrupción controlada
+inyectada**, no una muerte del proceso ni una prueba de durabilidad en dispositivo.
+La CI del commit debe confirmarse antes de declarar superada esta regresión.
+
+**No conectar todavía** `JournaledBackupDataSource` a `AppContainer` ni al
+seeder/UI sin exclusión global de escrituras y recuperación obligatoria antes del
+primer acceso a datos. La Issue #56 permanece abierta.
+
 ## Protocolo técnico propuesto (pendiente de integración y pruebas completas)
 
 1. **Exclusión mutua**: impedir dos importaciones simultáneas y escrituras de dominio concurrentes durante la ventana de reemplazo. Exportar una instantánea consistente del estado previo (Room + imágenes de usuario + tema) y validar sus referencias. Si no puede obtenerse, abortar antes de modificar datos.
