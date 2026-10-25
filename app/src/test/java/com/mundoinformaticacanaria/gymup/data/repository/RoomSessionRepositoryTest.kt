@@ -92,6 +92,64 @@ class RoomSessionRepositoryTest {
     }
 
     @Test
+    fun fulfillWithoutTargetsDoesNotInventActualDataOrStartSession() = runBlocking {
+        val type = database.masterDataDao().getSessionTypes().first()
+        val exercise = database.exerciseDao().getAll().first { it.rirRequired }
+        val sessionId = repository.createSession(
+            LocalDate.of(2026, 10, 25), type.id, null, null, SessionSource.Empty,
+        ).sessionId
+        repository.addExercise(sessionId, exercise.id)
+        var detail = requireNotNull(repository.getSessionDetail(sessionId))
+        if (detail.exercises.single().sets.isEmpty()) repository.addSet(detail.exercises.single().id)
+        detail = requireNotNull(repository.getSessionDetail(sessionId))
+        val set = detail.exercises.single().sets.first()
+
+        repository.updateSetTargets(
+            set.id, null, null, exercise.defaultLoadMode, exercise.defaultMeasurementUnit,
+        )
+        repository.fulfillSet(set.id)
+
+        val after = requireNotNull(repository.getSessionDetail(sessionId))
+        val actual = after.exercises.single().sets.first()
+        assertEquals(null, actual.actualLoad)
+        assertEquals(null, actual.actualMeasurement)
+        assertEquals(null, actual.rir)
+        assertEquals(false, actual.actualConfirmed)
+        assertEquals(SessionOperationalState.PLANNED, after.summary.operationalState)
+        assertEquals(SessionExecutionResult.NOT_STARTED, after.summary.executionResult)
+    }
+
+    @Test
+    fun fulfillWithOnlyMeasurementTargetCopiesOnlyThatValueAndStillRequiresRir() = runBlocking {
+        val type = database.masterDataDao().getSessionTypes().first()
+        val exercise = database.exerciseDao().getAll().first { it.rirRequired }
+        val sessionId = repository.createSession(
+            LocalDate.of(2026, 10, 26), type.id, null, null, SessionSource.Empty,
+        ).sessionId
+        repository.addExercise(sessionId, exercise.id)
+        var detail = requireNotNull(repository.getSessionDetail(sessionId))
+        if (detail.exercises.single().sets.isEmpty()) repository.addSet(detail.exercises.single().id)
+        detail = requireNotNull(repository.getSessionDetail(sessionId))
+        val set = detail.exercises.single().sets.first()
+
+        repository.updateSetTargets(
+            set.id, null, 8, exercise.defaultLoadMode, exercise.defaultMeasurementUnit,
+        )
+        repository.fulfillSet(set.id)
+
+        val after = requireNotNull(repository.getSessionDetail(sessionId))
+        val actual = after.exercises.single().sets.first()
+        assertEquals(null, actual.actualLoad)
+        assertEquals(8, actual.actualMeasurement)
+        assertEquals(null, actual.rir)
+        assertEquals(true, actual.actualConfirmed)
+        assertEquals(SessionOperationalState.IN_PROGRESS, after.summary.operationalState)
+        assertThrows(MissingRirException::class.java) {
+            runBlocking { repository.finalizeSession(sessionId) }
+        }
+    }
+
+    @Test
     fun reopenSessionPreservesDataAndAllowsValidatedFinalizationAgain() = runBlocking {
         val type = database.masterDataDao().getSessionTypes().first()
         val exercise = database.exerciseDao().getAll().first { it.rirRequired }
