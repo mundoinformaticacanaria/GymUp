@@ -95,8 +95,8 @@ class RoomBackupDataSource(
         require(snapshot.images.keys == expectedImageKeys) {
             "Las imágenes del ZIP no coinciden con exercise_images"
         }
-        val stagedImages = imageStore.stageReplacement(snapshot.images)
         val previousTheme = preferences.currentThemeMode()
+        val stagedImages = imageStore.stageReplacement(snapshot.images)
 
         try {
             database.withTransaction {
