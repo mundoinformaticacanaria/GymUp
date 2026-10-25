@@ -23,7 +23,7 @@ internal class BackupRecoveryJournal(private val directory: File) {
         if (!directory.exists()) return State.Absent
         check(directory.isDirectory) { "El journal no es un directorio" }
         val stateFile = File(directory, STATE_FILE)
-        check(stateFile.isFile) { "Journal incompleto: falta estado" }
+        check(stateFile.isFile && stateFile.length() in 1..MAX_STATE_BYTES) { "Journal incompleto o marcador de tamaño inválido" }
         val parts = stateFile.readText(Charsets.US_ASCII).trimEnd('\n').split(' ')
         check(parts.size == 3 && parts[0] == VERSION && parts[2].matches(SHA256)) {
             "Journal de recuperación desconocido o corrupto"
@@ -88,6 +88,7 @@ internal class BackupRecoveryJournal(private val directory: File) {
         const val ARCHIVE_FILE = "previous.zip"
         const val STATE_FILE = "state"
         const val MAX_ARCHIVE_BYTES = 100L * 1024L * 1024L
+        const val MAX_STATE_BYTES = 128L
         val SHA256 = Regex("[0-9a-f]{64}")
     }
 }
