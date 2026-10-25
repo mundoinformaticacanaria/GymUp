@@ -117,6 +117,54 @@ class RoomSessionRepositoryTest {
         assertEquals(false, actual.actualConfirmed)
         assertEquals(SessionOperationalState.PLANNED, after.summary.operationalState)
         assertEquals(SessionExecutionResult.NOT_STARTED, after.summary.executionResult)
+
+        // An untouched set must not demand RIR or prevent a Realizada + No iniciada session.
+        repository.finalizeSession(sessionId)
+        val finalized = requireNotNull(repository.getSessionDetail(sessionId)).summary
+        assertEquals(SessionOperationalState.REALIZED, finalized.operationalState)
+        assertEquals(SessionExecutionResult.NOT_STARTED, finalized.executionResult)
+    }
+
+    @Test
+    fun fulfillWithZeroLoadTargetPreservesConfirmedZeroWithoutInventingMeasurement() = runBlocking {
+        val maintenance = RoomCatalogMaintenanceRepository(context, database)
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val type = database.masterDataDao().getSessionTypes().first { it.isActive }
+        val exerciseId = maintenance.createExercise(
+            ExerciseMaintenanceInput(
+                nameEs = "Carga cero",
+                nameEn = "Zero load",
+                muscleGroupId = group.id,
+                equipmentId = null,
+                loadMode = LoadMode.KG_TOTAL,
+                measurementUnit = MeasurementUnit.REPETITIONS,
+                rirRequired = true,
+                initialSetCount = 1,
+                initialLoad = null,
+                initialMeasurement = null,
+                description = null,
+            ),
+        )
+        val sessionId = repository.createSession(
+            LocalDate.of(2026, 10, 27), type.id, null, null, SessionSource.Empty,
+        ).sessionId
+        repository.addExercise(sessionId, exerciseId)
+        val set = requireNotNull(repository.getSessionDetail(sessionId)).exercises.single().sets.single()
+
+        repository.updateSetTargets(set.id, 0.0, null, LoadMode.KG_TOTAL, MeasurementUnit.REPETITIONS)
+        repository.fulfillSet(set.id)
+
+        val after = requireNotNull(repository.getSessionDetail(sessionId))
+        val actual = after.exercises.single().sets.single()
+        assertEquals(0.0, actual.actualLoad ?: -1.0, 0.0)
+        assertEquals(null, actual.actualMeasurement)
+        assertEquals(null, actual.rir)
+        assertEquals(true, actual.actualConfirmed)
+        assertEquals(SessionOperationalState.IN_PROGRESS, after.summary.operationalState)
+        assertThrows(MissingRirException::class.java) {
+            runBlocking { repository.finalizeSession(sessionId) }
+        }
+        Unit
     }
 
     @Test
