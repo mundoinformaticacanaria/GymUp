@@ -1,5 +1,7 @@
 package com.mundoinformaticacanaria.gymup.data.backup
 
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -31,6 +33,44 @@ internal class BackupRecoveryCoordinator(private val journal: BackupRecoveryJour
                     journal.cleanupCommitted()
                 }
             }
+        }
+    }
+
+    /**
+     * Orchestrates a reversible replace-all around a durable pre-image.
+     *
+     * Not yet connected to the real import path: callers must ensure an app-wide write barrier,
+     * a consistent pre-image and a durable/idempotent [restorePrevious] implementation.
+     * If restoration fails, PREPARED is retained for startup recovery. A failed cleanup after
+     * successful commit leaves COMMITTED for the next startup; it is not a failed import.
+     */
+    suspend fun replaceWithRecovery(
+        capturePrevious: suspend () -> ByteArray,
+        applyReplacement: suspend () -> Unit,
+        restorePrevious: suspend (ByteArray) -> Unit,
+    ) {
+        mutex.withLock {
+            check(journal.inspect() is BackupRecoveryJournal.State.Absent) {
+                "Existe una recuperación pendiente: no se puede importar"
+            }
+            val previous = capturePrevious()
+            journal.prepare(previous)
+            try {
+                applyReplacement()
+                journal.markCommitted()
+            } catch (failure: Throwable) {
+                withContext(NonCancellable) {
+                    try {
+                        restorePrevious(previous)
+                        journal.markCommitted()
+                    } catch (recoveryFailure: Throwable) {
+                        failure.addSuppressed(recoveryFailure)
+                    }
+                }
+                throw failure
+            }
+            // Committed data is authoritative even if obsolete journal cleanup cannot complete.
+            runCatching { journal.cleanupCommitted() }
         }
     }
 }

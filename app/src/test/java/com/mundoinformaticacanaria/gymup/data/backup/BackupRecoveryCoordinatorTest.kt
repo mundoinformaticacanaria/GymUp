@@ -95,4 +95,83 @@ class BackupRecoveryCoordinatorTest {
         assertFalse(called)
         assertTrue(dir.exists())
     }
+
+    @Test
+    fun `successful replacement commits and removes journal`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        var captures = 0
+        var applied = 0
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).replaceWithRecovery(
+            capturePrevious = { captures++; byteArrayOf(1, 2) },
+            applyReplacement = { applied++ },
+            restorePrevious = { error("No rollback on success") },
+        )
+        assertEquals(1, captures)
+        assertEquals(1, applied)
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
+    }
+
+    @Test
+    fun `failed replacement restores preimage and retains committed cleanup for restart`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val before = byteArrayOf(3, 4)
+        var restored: ByteArray? = null
+        val result = runCatching {
+            BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).replaceWithRecovery(
+                capturePrevious = { before },
+                applyReplacement = { error("Simulated replacement failure") },
+                restorePrevious = { restored = it },
+            )
+        }
+        assertTrue(result.isFailure)
+        assertArrayEquals(before, restored)
+        assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(dir).inspect())
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+            error("Committed journal must not replay preimage")
+        }
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
+    }
+
+    @Test
+    fun `failed rollback keeps prepared preimage for retry after restart`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val before = byteArrayOf(5, 6)
+        val result = runCatching {
+            BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).replaceWithRecovery(
+                capturePrevious = { before },
+                applyReplacement = { error("Simulated interruption") },
+                restorePrevious = { error("Simulated rollback failure") },
+            )
+        }
+        assertTrue(result.isFailure)
+        assertEquals(1, result.exceptionOrNull()!!.suppressed.size)
+        assertArrayEquals(
+            before,
+            (BackupRecoveryJournal(dir).inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
+        )
+        var replayed = false
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+            assertArrayEquals(before, it)
+            replayed = true
+        }
+        assertTrue(replayed)
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
+    }
+
+    @Test
+    fun `pending journal blocks replacement before capture or mutation`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        BackupRecoveryJournal(dir).prepare(byteArrayOf(7, 8))
+        var invoked = false
+        val result = runCatching {
+            BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).replaceWithRecovery(
+                capturePrevious = { invoked = true; byteArrayOf(1) },
+                applyReplacement = { invoked = true },
+                restorePrevious = { invoked = true },
+            )
+        }
+        assertTrue(result.isFailure)
+        assertFalse(invoked)
+        assertTrue(BackupRecoveryJournal(dir).inspect() is BackupRecoveryJournal.State.Prepared)
+    }
 }
