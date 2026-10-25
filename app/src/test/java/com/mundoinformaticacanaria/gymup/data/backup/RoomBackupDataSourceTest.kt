@@ -15,6 +15,8 @@ import com.mundoinformaticacanaria.gymup.data.local.SessionExerciseEntity
 import com.mundoinformaticacanaria.gymup.data.local.SessionSetEntity
 import com.mundoinformaticacanaria.gymup.data.preferences.UserPreferencesRepository
 import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
+import com.mundoinformaticacanaria.gymup.domain.backup.BackupArchiveCodec
+import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataCodec
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataValidationResult
 import java.time.LocalDate
@@ -153,4 +155,71 @@ class RoomBackupDataSourceTest {
         assertArrayEquals(imageBytes, imageManager.readBytes(restoredImage))
         assertTrue(restoredImage.localFile?.isFile == true)
     }
+    @Test
+    fun `backup manager ZIP round trip restores Room session image and preferences after rejecting invalid archive`() = runBlocking {
+        val dao = database.backupDao()
+        val sessionType = dao.getSessionTypes().first()
+        val exercise = dao.getExercises().first()
+        val sessionId = UUID.randomUUID().toString()
+        dao.insertSessions(
+            listOf(
+                SessionEntity(
+                    id = sessionId,
+                    sessionDateEpochDay = LocalDate.of(2026, 10, 25).toEpochDay(),
+                    orderInDay = 1,
+                    sessionTypeId = sessionType.id,
+                    sessionTypeNameSnapshot = sessionType.name,
+                    name = "Conservar en backup",
+                    isAutoName = false,
+                    generalNote = null,
+                    operationalState = SessionOperationalState.PLANNED,
+                    executionResult = SessionExecutionResult.NOT_STARTED,
+                ),
+            ),
+        )
+        val imageManager = ExerciseImageManager(context, database.exerciseDao())
+        val imageBytes = byteArrayOf(8, 5, 2, 1)
+        val image = imageManager.addUserImage(exercise.id, imageBytes)
+        val manager = BackupManager(RoomBackupDataSource(context, database, preferences), "0.1.0")
+        val archive = manager.export(java.time.Instant.parse("2026-10-25T00:00:00Z"))
+
+        // An invalid import must leave persisted Room rows, images and preferences untouched.
+        assertTrue(manager.importReplaceAll("not-a-zip".encodeToByteArray()) is BackupImportResult.Rejected)
+        assertNotNull(database.trainingDao().getSession(sessionId))
+        assertArrayEquals(imageBytes, imageManager.readBytes(image))
+        assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+
+        // A ZIP with correct checksums but invalid data.json must not trigger replace-all.
+        val malformedDataArchive = BackupArchiveCodec.create(
+            BackupSnapshot(data = "not-json".encodeToByteArray()),
+            appVersion = "0.1.0",
+        )
+        val malformedImport = runCatching { manager.importReplaceAll(malformedDataArchive) }
+        assertTrue(malformedImport.exceptionOrNull() is IllegalArgumentException)
+        assertNotNull(database.trainingDao().getSession(sessionId))
+        assertArrayEquals(imageBytes, imageManager.readBytes(image))
+        assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+
+        dao.deleteSessions()
+        imageManager.deleteUserImage(image.id)
+        preferences.setThemeMode(ThemeMode.LIGHT)
+
+        val result = manager.importReplaceAll(archive)
+
+        assertTrue(result is BackupImportResult.Imported)
+        assertEquals(1, (result as BackupImportResult.Imported).imageCount)
+        assertNotNull(database.trainingDao().getSession(sessionId))
+        assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+        val restoredImage = imageManager.observeImages(exercise.id).first().single()
+        assertArrayEquals(imageBytes, imageManager.readBytes(restoredImage))
+
+        // Importing the same valid backup twice must not duplicate persisted rows or images.
+        assertEquals(BackupImportResult.Imported(1), manager.importReplaceAll(archive))
+        assertEquals(1, dao.getSessions().size)
+        assertEquals(1, dao.getExerciseImages().size)
+        val imageAfterSecondImport = imageManager.observeImages(exercise.id).first().single()
+        assertArrayEquals(imageBytes, imageManager.readBytes(imageAfterSecondImport))
+        assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+    }
+
 }
