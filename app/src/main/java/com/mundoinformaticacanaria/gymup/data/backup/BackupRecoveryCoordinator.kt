@@ -19,7 +19,11 @@ import kotlinx.coroutines.sync.withLock
  * not protect direct repository writes, external processes, or the app's startup UI/seeder; a
  * global domain write barrier is still required before production wiring.
  */
-internal class BackupRecoveryCoordinator(private val journal: BackupRecoveryJournal) {
+internal class BackupRecoveryCoordinator(
+    private val journal: BackupRecoveryJournal,
+    // Deterministic crash-window seam: production uses the no-op default.
+    private val afterRestoreBeforeCommit: suspend () -> Unit = {},
+) {
     private val mutex = locks.computeIfAbsent(journal.lockKey) { Mutex() }
 
     private companion object {
@@ -51,7 +55,9 @@ internal class BackupRecoveryCoordinator(private val journal: BackupRecoveryJour
                 is BackupRecoveryJournal.State.Prepared -> {
                     // Do not catch restoration failures or cancellation: keep the pre-image.
                     restorePrevious(state.previousArchive)
-                    // A crash here may cause another restore; restorePrevious must be idempotent.
+                    // A crash after replay but before COMMITTED must leave PREPARED intact.
+                    // Tests inject a failure here; production performs no additional work.
+                    afterRestoreBeforeCommit()
                     journal.markCommitted()
                     // Successful recovery must not be invalidated by obsolete-file cleanup failure.
                     runCatching { journal.cleanupCommitted() }
