@@ -23,6 +23,7 @@ internal class BackupRecoveryCoordinator(private val journal: BackupRecoveryJour
     suspend fun recoverBeforeDataAccess(restorePrevious: suspend (ByteArray) -> Unit) {
         mutex.withLock {
             runCatching { journal.cleanupRetired() }
+            journal.cleanupAbandonedPreparation()
             when (val state = journal.inspect()) {
                 BackupRecoveryJournal.State.Absent -> Unit
                 BackupRecoveryJournal.State.Committed -> runCatching { journal.cleanupCommitted() }.getOrNull()
@@ -53,6 +54,7 @@ internal class BackupRecoveryCoordinator(private val journal: BackupRecoveryJour
     ) {
         mutex.withLock {
             runCatching { journal.cleanupRetired() }
+            journal.cleanupAbandonedPreparation()
             check(journal.inspect() is BackupRecoveryJournal.State.Absent) {
                 "Existe una recuperación pendiente: no se puede importar"
             }
