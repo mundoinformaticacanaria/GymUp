@@ -76,4 +76,41 @@ class BackupRecoveryJournalTest {
         assertTrue(runCatching { BackupRecoveryJournal(directory).prepare(byteArrayOf(2)) }.isFailure)
         assertTrue(File(directory, "previous.zip").exists())
     }
+    @Test
+    fun `crash during unpublished preparation is cleaned without touching active data`() {
+        val directory = File(temp.root, "recovery")
+        val preparing = File(temp.root, "recovery.preparing")
+        assertTrue(preparing.mkdir())
+        File(preparing, "previous.zip").writeBytes(byteArrayOf(1, 2, 3))
+        val journal = BackupRecoveryJournal(directory)
+        // PREPARED has not been published: the import cannot have mutated domain data.
+        assertEquals(BackupRecoveryJournal.State.Absent, journal.inspect())
+        assertTrue(runCatching { journal.prepare(byteArrayOf(4)) }.isFailure)
+        journal.cleanupAbandonedPreparation()
+        assertFalse(preparing.exists())
+        journal.prepare(byteArrayOf(4, 5))
+        assertArrayEquals(
+            byteArrayOf(4, 5),
+            (BackupRecoveryJournal(directory).inspect() as BackupRecoveryJournal.State.Prepared)
+                .previousArchive,
+        )
+    }
+
+    @Test
+    fun `unpublished preparation cannot be discarded while active journal exists`() {
+        val directory = File(temp.root, "recovery")
+        val journal = BackupRecoveryJournal(directory)
+        val original = byteArrayOf(6, 7, 8)
+        journal.prepare(original)
+        val preparing = File(temp.root, "recovery.preparing")
+        assertTrue(preparing.mkdir())
+        File(preparing, "previous.zip").writeBytes(byteArrayOf(99))
+        assertTrue(runCatching { journal.cleanupAbandonedPreparation() }.isFailure)
+        assertTrue(preparing.exists())
+        assertArrayEquals(
+            original,
+            (journal.inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
+        )
+    }
+
 }
