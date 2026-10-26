@@ -20,6 +20,19 @@ import kotlinx.coroutines.sync.withLock
 internal class BackupRecoveryCoordinator(private val journal: BackupRecoveryJournal) {
     private val mutex = Mutex()
 
+    /**
+     * Serializes backup exports with replacements on this coordinator instance and refuses to
+     * expose a snapshot while recovery is pending. This is NOT an app-wide write barrier:
+     * production must also coordinate all repositories and startup before using this adapter.
+     */
+    suspend fun <T> readSnapshotIfRecovered(readSnapshot: suspend () -> T): T =
+        mutex.withLock {
+            check(journal.inspect() is BackupRecoveryJournal.State.Absent) {
+                "Existe una recuperación pendiente: no se puede exportar"
+            }
+            readSnapshot()
+        }
+
     suspend fun recoverBeforeDataAccess(restorePrevious: suspend (ByteArray) -> Unit) {
         mutex.withLock {
             runCatching { journal.cleanupRetired() }
