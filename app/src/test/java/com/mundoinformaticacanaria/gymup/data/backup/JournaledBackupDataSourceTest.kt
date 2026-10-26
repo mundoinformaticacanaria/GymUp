@@ -3,6 +3,7 @@ package com.mundoinformaticacanaria.gymup.data.backup
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -127,7 +128,7 @@ class JournaledBackupDataSourceTest {
         val exporter = wrapper(source, File(temp.root, "./recovery"))
         val importing = async { importer.replaceAll(snapshot("after")) }
         entered.await()
-        val exporting = async { exporter.exportSnapshot() }
+        val exporting = async(start = CoroutineStart.UNDISPATCHED) { exporter.exportSnapshot() }
         yield()
         assertTrue("Another coordinator must not read a partial replacement", !exporting.isCompleted)
         release.complete(Unit)
@@ -153,7 +154,7 @@ class JournaledBackupDataSourceTest {
         val recovering = wrapper(source, File(temp.root, "./recovery"))
         val importing = async { importer.replaceAll(snapshot("after")) }
         entered.await()
-        val recovery = async { recovering.recoverBeforeDataAccess() }
+        val recovery = async(start = CoroutineStart.UNDISPATCHED) { recovering.recoverBeforeDataAccess() }
         yield()
         assertTrue("Recovery must not race a second coordinator's import", !recovery.isCompleted)
         release.complete(Unit)
