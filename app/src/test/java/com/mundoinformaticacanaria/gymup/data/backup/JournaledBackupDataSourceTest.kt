@@ -2,7 +2,10 @@ package com.mundoinformaticacanaria.gymup.data.backup
 
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -69,6 +72,42 @@ class JournaledBackupDataSourceTest {
         assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
     }
 
+    @Test
+    fun `export fails closed while prepared recovery is pending`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val source = MutableSource(snapshot("possibly-partial"))
+        BackupRecoveryJournal(dir).prepare(byteArrayOf(1, 2, 3))
+        val result = runCatching { wrapper(source, dir).exportSnapshot() }
+        assertTrue(result.isFailure)
+        assertEquals(0, source.exportCount)
+        assertTrue(BackupRecoveryJournal(dir).inspect() is BackupRecoveryJournal.State.Prepared)
+    }
+
+    @Test
+    fun `export waits for replacement on same coordinator and reads new snapshot`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val source = object : BackupDataSource {
+            var current = snapshot("before")
+            override suspend fun exportSnapshot(): BackupSnapshot = current
+            override suspend fun replaceAll(snapshot: BackupSnapshot) {
+                entered.complete(Unit)
+                release.await()
+                current = snapshot
+            }
+        }
+        val journaled = wrapper(source, dir)
+        val importing = async { journaled.replaceAll(snapshot("after")) }
+        entered.await()
+        val exporting = async { journaled.exportSnapshot() }
+        yield()
+        assertTrue("Export must wait for replacement", !exporting.isCompleted)
+        release.complete(Unit)
+        importing.await()
+        assertArrayEquals(snapshot("after").data, exporting.await().data)
+    }
+
     private fun wrapper(source: BackupDataSource, directory: File): JournaledBackupDataSource =
         JournaledBackupDataSource(
             source,
@@ -80,8 +119,12 @@ class JournaledBackupDataSourceTest {
 
     private class MutableSource(var current: BackupSnapshot) : BackupDataSource {
         var failNextWrites = 0
+        var exportCount = 0
 
-        override suspend fun exportSnapshot(): BackupSnapshot = current
+        override suspend fun exportSnapshot(): BackupSnapshot {
+            exportCount++
+            return current
+        }
 
         override suspend fun replaceAll(snapshot: BackupSnapshot) {
             current = snapshot
