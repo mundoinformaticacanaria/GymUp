@@ -1,5 +1,6 @@
 package com.mundoinformaticacanaria.gymup.data.backup
 
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
@@ -14,11 +15,18 @@ import kotlinx.coroutines.sync.withLock
  * confirm that the restored state is durable before returning. A failed or cancelled restoration
  * leaves PREPARED intact for a retry on the next startup.
  *
- * The mutex only serializes calls on this instance; app-wide writes and multiple processes still
- * require separate exclusion before this coordinator can be used in production.
+ * Coordinators targeting the same canonical journal path share an in-process mutex. This does
+ * not protect direct repository writes, external processes, or the app's startup UI/seeder; a
+ * global domain write barrier is still required before production wiring.
  */
 internal class BackupRecoveryCoordinator(private val journal: BackupRecoveryJournal) {
-    private val mutex = Mutex()
+    private val mutex = locks.computeIfAbsent(journal.lockKey) { Mutex() }
+
+    private companion object {
+        // Multiple wrappers for the same journal must not independently inspect/modify PREPARED.
+        // The map is process-local; it deliberately does not claim cross-process safety.
+        val locks = ConcurrentHashMap<String, Mutex>()
+    }
 
     /**
      * Serializes backup exports with replacements on this coordinator instance and refuses to
