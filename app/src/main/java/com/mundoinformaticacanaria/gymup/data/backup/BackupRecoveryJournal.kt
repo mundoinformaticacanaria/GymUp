@@ -63,6 +63,15 @@ internal class BackupRecoveryJournal(private val directory: File) {
     fun markCommitted() {
         val prepared = inspect()
         check(prepared is State.Prepared) { "No hay recuperación preparada que confirmar" }
+        // A process may die after syncing state.tmp but before renaming it over PREPARED.
+        // PREPARED is still authoritative; discard only this uncommitted marker so startup
+        // recovery can finish instead of being permanently blocked by the stale temp file.
+        val interruptedCommit = File(directory, "$STATE_FILE.tmp")
+        if (interruptedCommit.exists()) {
+            check(interruptedCommit.isFile && interruptedCommit.delete()) {
+                "No se pudo limpiar un marcador COMMITTED interrumpido"
+            }
+        }
         val digest = sha256(prepared.previousArchive)
         writeSynced(File(directory, STATE_FILE), "$VERSION COMMITTED $digest\n".toByteArray(Charsets.US_ASCII), replace = true)
     }
