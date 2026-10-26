@@ -432,3 +432,20 @@ parcial no ofrece consistencia global; siguen pendientes escritores de imágenes
 DAO directos y cableado de `AppContainer`, recuperación obligatoria antes de
 seeding/UI, durabilidad de metadatos y prueba de interrupción real. La CI del
 HEAD nuevo requiere verificación; PR #57 continúa draft e Issue #56 abierta.
+
+## Cobertura incremental de imágenes — 2026-10-26 21:17 UTC
+
+PR #57 incorpora `BarrierProtectedExerciseImageWriter` (commit `7b2c9e4`), un
+adaptador **aislado** para serializar `ExerciseImageManager.addUserImage` y
+`deleteUserImage` con la misma `BackupDomainWriteBarrier`. La exclusión cubre
+toda la mutación (archivo privado y metadatos Room), no solamente la llamada DAO.
+Cinco pruebas JVM (commit `a0db7e3`) verifican espera de alta/borrado ante backup,
+espera de backup ante alta, cancelación antes de escribir y liberación tras error.
+
+**No está conectado a `AppContainer`**: la UI sigue recibiendo el gestor de imágenes
+directamente, por lo que puede saltarse el adaptador. Instalarlo exige ajustar la
+interfaz expuesta a los consumidores y auditar escrituras directas adicionales;
+no debe hacerse parcialmente porque crearía una falsa garantía de exclusión.
+La recuperación antes de UI/seeding, la durabilidad de metadatos y la prueba de
+muerte real del proceso siguen pendientes. La CI del nuevo HEAD debe verificarse;
+no se fusiona PR #57 ni se cierra #56 por esta cobertura aislada.
