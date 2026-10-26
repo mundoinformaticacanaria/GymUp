@@ -201,3 +201,9 @@ Implementar tests Robolectric con puntos de corte deterministas y reconstrucció
 ## Gates y alcance
 
 Esta ADR es **propuesta técnica con infraestructura parcial sin conectar**, no evidencia de recuperación real ante crash. No cambiar el contrato de backup, no modificar el APK BF-02 probado y no fusionar PR #57 ni cerrar #56 hasta implementar, verificar CI y resolver la validación física aplicable. La autorización de un candidato APK sigue siendo exclusiva del propietario conforme a #35.
+
+## Cobertura de concurrencia de arranque — 2026-10-26 08:28 UTC
+
+PR #57 incorpora dos pruebas JVM adicionales en `BackupStartupGateTest` (commit `f1ba4d9`): (1) si una recuperación activa falla mientras otra llamada espera, la segunda reintenta la recuperación antes de ejecutar el seeder, sin habilitar el acceso prematuramente; (2) cancelar una llamada que espera no cancela la recuperación activa ni duplica el seeding. Son pruebas de coordinación de la primitiva aislada, **no pruebas de integración con AppContainer/MainActivity ni de muerte real del proceso**. La CI del nuevo HEAD debe verificarse por separado.
+
+Persisten como gates: barrera global para todos los escritores Room/imágenes/DataStore, conexión de recuperación obligatoria antes del seeder y la UI, durabilidad de directorios y pruebas instrumentadas en dispositivo. Mantener PR en borrador e Issue #56 abierta.
