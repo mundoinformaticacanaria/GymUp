@@ -207,3 +207,9 @@ Esta ADR es **propuesta técnica con infraestructura parcial sin conectar**, no 
 PR #57 incorpora dos pruebas JVM adicionales en `BackupStartupGateTest` (commit `f1ba4d9`): (1) si una recuperación activa falla mientras otra llamada espera, la segunda reintenta la recuperación antes de ejecutar el seeder, sin habilitar el acceso prematuramente; (2) cancelar una llamada que espera no cancela la recuperación activa ni duplica el seeding. Son pruebas de coordinación de la primitiva aislada, **no pruebas de integración con AppContainer/MainActivity ni de muerte real del proceso**. La CI del nuevo HEAD debe verificarse por separado.
 
 Persisten como gates: barrera global para todos los escritores Room/imágenes/DataStore, conexión de recuperación obligatoria antes del seeder y la UI, durabilidad de directorios y pruebas instrumentadas en dispositivo. Mantener PR en borrador e Issue #56 abierta.
+
+## Prueba de composición journal + startup gate — 2026-10-26
+
+La prueba JVM `BackupStartupRecoveryIntegrationTest` (PR #57) utiliza conjuntamente el journal persistido en disco temporal, `BackupRecoveryCoordinator` y `BackupStartupGate`. Comprueba que una preimagen PREPARED se restaura antes del seeder y que el gate no repite la secuencia al estar listo. Comprueba además que un checksum corrupto impide ejecutar el seeder y conserva el journal, y que un reintento posterior a una reparación explícita debe completar recuperación antes de inicializar datos.
+
+Esta es **integración de componentes aislada**, no conexión de producción a `AppContainer`, no barrera global de escrituras y no prueba de muerte real del proceso. El arreglo manual del archivo en el test es solo una simulación controlada: no se ofrece como procedimiento de reparación de usuario. Se mantienen todos los gates anteriores y la PR en draft hasta su resolución.
