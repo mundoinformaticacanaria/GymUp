@@ -80,6 +80,21 @@ la durabilidad del renombrado del directorio tras un corte eléctrico ni
 protección frente a procesos/escrituras concurrentes; sigue faltando barrera
 global y conexión al arranque/flujo real. CI del nuevo HEAD pendiente.
 
+## Corrección incremental — 2026-10-26 02:08 UTC
+
+Se identificó una ventana adicional en `markCommitted()`: si el proceso muere
+después de escribir `state.tmp` y antes de sustituir el marcador `PREPARED`,
+el reinicio encuentra correctamente `PREPARED` y restaura la preimagen, pero
+el marcador temporal abandonado impedía volver a confirmar, bloqueando la
+recuperación de manera persistente.
+
+La corrección descarta **solo** `state.tmp` tras validar el `PREPARED` vigente,
+antes de reintentar `COMMITTED`. Un temporal no eliminable provoca fallo
+cerrado y conserva la copia anterior. Dos pruebas JVM cubren el reinicio
+simulado con temporal abandonado y el caso de fallo cerrado. La CI del nuevo
+HEAD requiere comprobación; esto no prueba durabilidad ante corte eléctrico,
+exclusión global ni recuperación integrada al arranque.
+
 ## Protocolo técnico propuesto (pendiente de integración y pruebas completas)
 
 1. **Exclusión mutua**: impedir dos importaciones simultáneas y escrituras de dominio concurrentes durante la ventana de reemplazo. Exportar una instantánea consistente del estado previo (Room + imágenes de usuario + tema) y validar sus referencias. Si no puede obtenerse, abortar antes de modificar datos.
