@@ -266,3 +266,41 @@ Siguientes pasos: inventariar y envolver rutas mutadoras, conectar el
 `BackupStartupGate` antes del seeder y de la UI, probar recuperación
 instrumentada tras terminación real y verificar las garantías de fsync de
 directorios en Android. Mantener #56 abierta y PR #57 draft.
+
+## Composición de barrera y journal — 2026-10-26, 13:xx UTC
+
+La PR #57 añade `BarrierProtectedJournaledBackupDataSource` como envoltorio **aislado**
+del adaptador journaled. Mantiene la sección exclusiva de
+`BackupDomainWriteBarrier` durante la exportación completa, la importación
+(captura anterior, publicación de PREPARED, reemplazo, COMMITTED y limpieza)
+y la recuperación previa al acceso a datos. El adaptador interno accede a
+almacenes **sin envolver**, para no readquirir un mutex no reentrante.
+
+Tres pruebas JVM comprueban: (1) una exportación espera a un escritor de dominio
+y lee su estado terminado; (2) un escritor espera a que finalice una importación
+journaled; (3) cancelar una importación que espera al escritor no modifica los
+datos ni publica un journal. La CI del nuevo HEAD debe comprobarse.
+
+**Inventario inicial de escritores que deberán adoptar la MISMA barrera antes
+de habilitarla en producción (no exhaustivo):**
+
+- `RoomSessionRepository`: creación/edición/borrado de sesiones, ejercicios y
+  series, cambios de estado y reordenación.
+- `RoomRoutineRepository`: guardar y borrar rutinas.
+- `RoomCatalogMaintenanceRepository`: mutación de maestros y ejercicios,
+  incluida la eliminación de archivos de imágenes.
+- `ExerciseImageManager`: alta y baja de imágenes privadas, con operaciones
+  de archivo y DAO que deben quedar en una misma sección.
+- `UserPreferencesRepository.setThemeMode`: escritura DataStore, incluida
+  la vía desde `AppViewModel`.
+- `RoomHistoricalCleanupStore` y `DatabaseSeeder.seedIfNeeded`: limpieza
+  histórica y seeding; este último solo debe ejecutarse tras recuperación.
+- `RoomBackupDataSource.replaceAll`: escritor especial que deberá ejecutarse
+  por la ruta exclusiva, **sin** envoltorios de escritura anidados.
+
+**Gates no satisfechos:** aún no se ha auditado exhaustivamente cada ruta
+mutadora ni conectado una única instancia a `AppContainer` y a los repositorios;
+el seeder actual arranca asíncronamente y la UI no espera al gate. La barrera
+sigue sin ser global ni multiproceso, y la durabilidad de directorios y la
+muerte real del proceso continúan sin verificarse. No conectar el wrapper a
+producción, fusionar la PR ni cerrar #56 por estas pruebas.
