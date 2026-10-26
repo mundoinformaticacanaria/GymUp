@@ -310,3 +310,27 @@ producción, fusionar la PR ni cerrar #56 por estas pruebas.
 La PR #57 incorpora `BarrierProtectedRoutineRepository` como adaptador de composición para `RoutineRepository`. Mantiene `saveRoutine` y `deleteRoutine` bajo la misma `BackupDomainWriteBarrier` durante toda la operación del repositorio (incluida la transacción Room cuando corresponda), y delega las consultas sin modificar su comportamiento. Tres pruebas JVM comprueban que guardar y borrar esperan a un backup exclusivo, y que una excepción libera el mutex.
 
 **Estado: implementado solo en rama, NO instalado en `AppContainer`.** El backup deberá usar siempre el repositorio/almacén **sin envolver**, para evitar bloqueo por adquisición recursiva del mutex no reentrante. Este adaptador no protege las mutaciones directas del DAO, los demás repositorios, archivos ni DataStore. Antes de habilitar la composición productiva siguen siendo obligatorios: inventario completo de escritores, una única instancia de barrera compartida, gate de recuperación antes de seeding/UI, pruebas de integración con los almacenes reales y validación de corte abrupto. No modifica el candidato BF-02, ni satisface por sí solo la Issue #56.
+
+## Adaptador aislado de mantenimiento de catálogos — 2026-10-26
+
+PR #57 incorpora `BarrierProtectedCatalogMaintenanceRepository` (Issue #56) como
+otro bloque de composición **sin instalación productiva**. Coordina las seis
+mutaciones de `CatalogMaintenanceRepository`: crear/renombrar/desactivar
+maestros, crear/editar/eliminar ejercicios. La sección crítica cubre toda la
+operación delegada, incluida la posible eliminación de imágenes y referencias
+a rutinas al borrar un ejercicio. Las consultas y previsualizaciones siguen
+delegadas sin tomar la barrera.
+
+Cuatro pruebas JVM verifican que **cada una de las seis mutaciones** espera
+una operación exclusiva de backup, que las lecturas siguen disponibles, que
+un fallo del delegado libera el mutex y que cancelar una escritura en espera
+no ejecuta la mutación. La CI del HEAD actualizado debe verificarse.
+
+**Límites:** este wrapper no está conectado a `AppContainer`; tampoco cubre
+escrituras directas del DAO, `ExerciseImageManager`, favoritos,
+`RoomSessionRepository`, `UserPreferencesRepository`, seeding o limpieza.
+La ruta interna de backup debe seguir usando dependencias **sin envolver**
+para evitar deadlock por adquisición recursiva. Antes de integrar el backup
+journaled siguen siendo necesarios inventario completo, una sola barrera
+compartida, recuperación antes de seeding/UI, durabilidad de metadatos y
+prueba de terminación real. Mantener PR draft y #56 abierta.
