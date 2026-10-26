@@ -95,6 +95,21 @@ simulado con temporal abandonado y el caso de fallo cerrado. La CI del nuevo
 HEAD requiere comprobación; esto no prueba durabilidad ante corte eléctrico,
 exclusión global ni recuperación integrada al arranque.
 
+## Mejora incremental — 2026-10-26 03:13 UTC
+
+`JournaledBackupDataSource.exportSnapshot()` ya no accede al delegado directamente:
+usa `BackupRecoveryCoordinator.readSnapshotIfRecovered`, que comparte el mutex del
+reemplazo y rechaza la exportación cuando el journal no está `Absent`.
+Esto evita leer una instantánea intermedia durante un replace-all ejecutado **a través
+de la misma instancia del adaptador** y evita exportar tras una recuperación pendiente.
+Se añaden dos pruebas JVM: fallo cerrado ante `PREPARED` y espera de exportación
+mientras una importación mantiene el mutex. La CI del nuevo HEAD debe comprobarse.
+
+**Alcance limitado:** no serializa las escrituras realizadas mediante repositorios
+Room, gestor de imágenes o DataStore fuera del adaptador, ni distintas instancias
+o procesos. Tampoco constituye una barrera de arranque; por tanto no habilita aún
+su instalación productiva ni el cierre de #56.
+
 ## Protocolo técnico propuesto (pendiente de integración y pruebas completas)
 
 1. **Exclusión mutua**: impedir dos importaciones simultáneas y escrituras de dominio concurrentes durante la ventana de reemplazo. Exportar una instantánea consistente del estado previo (Room + imágenes de usuario + tema) y validar sus referencias. Si no puede obtenerse, abortar antes de modificar datos.
