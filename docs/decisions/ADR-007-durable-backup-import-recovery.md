@@ -230,3 +230,18 @@ HEAD actualizado debe verificarse. Siguen sin resolverse barrera global
 Room/imágenes/DataStore, integración con `AppContainer`/UI, persistencia
 de metadatos de directorio y prueba instrumentada. Mantener PR #57
 en borrador e Issue #56 abierta, sin integración productiva.
+
+
+## Endurecimiento de integridad — 2026-10-26 11:11 UTC
+
+El marcador `COMMITTED` ya no se acepta solo por tener un formato válido:
+`BackupRecoveryJournal.inspect()` verifica también que `previous.zip` exista y
+que su SHA-256 coincida con el digest registrado antes de permitir retirar el
+journal. Antes, un archivo previo ausente o corrupto podía descartarse
+silenciosamente durante la limpieza de un `COMMITTED`. Dos tests JVM comprueban
+fallo cerrado y preservación de evidencias para ambos casos. El marcador válido
+continúa permitiendo limpiar sin restaurar datos anteriores.
+
+**Alcance:** endurecimiento aislado de integridad; no demuestra durabilidad
+de directorios, barrera global, integración con `AppContainer` ni corte real
+del proceso. La PR #57 permanece draft y la Issue #56 abierta.
