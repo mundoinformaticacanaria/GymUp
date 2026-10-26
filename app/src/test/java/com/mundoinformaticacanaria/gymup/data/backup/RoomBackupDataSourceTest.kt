@@ -242,7 +242,9 @@ class RoomBackupDataSourceTest {
         val exporting = async(Dispatchers.Default) { source.exportSnapshot() }
         imageCaptureReached.await()
         val sessionId = UUID.randomUUID().toString()
+        val writerStarted = CompletableDeferred<Unit>()
         val inserting = async(Dispatchers.Default) {
+            writerStarted.complete(Unit)
             dao.insertSessions(
                 listOf(
                     SessionEntity(
@@ -260,9 +262,13 @@ class RoomBackupDataSourceTest {
                 ),
             )
         }
+        writerStarted.await()
         yield()
-        assertTrue("Room writer must wait until the snapshot captures image bytes", !inserting.isCompleted)
-        allowImageCapture.complete(Unit)
+        try {
+            assertTrue("Room writer must wait until the snapshot captures image bytes", !inserting.isCompleted)
+        } finally {
+            allowImageCapture.complete(Unit)
+        }
 
         val snapshot = exporting.await()
         inserting.await()
