@@ -334,3 +334,23 @@ para evitar deadlock por adquisición recursiva. Antes de integrar el backup
 journaled siguen siendo necesarios inventario completo, una sola barrera
 compartida, recuperación antes de seeding/UI, durabilidad de metadatos y
 prueba de terminación real. Mantener PR draft y #56 abierta.
+
+## Cobertura incremental de escrituras de sesión — 2026-10-26 16:17 UTC
+
+Se incorpora en PR #57 `BarrierProtectedSessionRepository` (commit `4169d07`),
+un adaptador **aislado, todavía no instalado en AppContainer**, que protege con
+la misma instancia de `BackupDomainWriteBarrier` las 19 operaciones de mutación
+de `SessionRepository`, desde crear/borrar sesiones y editar ejercicios hasta
+guardar series y finalizar. Los tres accesos de lectura/observación siguen
+delegados sin bloqueo. La prueba JVM (commit `d3ef4c3`) verifica las 19
+mutaciones frente a un backup exclusivo, las lecturas, la liberación del mutex
+ante excepción y la cancelación de un escritor en espera.
+
+**Esta cobertura no constituye una barrera global de producción**: faltan
+escritores de favoritos/catálogos auxiliares, imágenes, preferencias, seeding y
+limpieza, así como conectar todos los adaptadores a `AppContainer` con un
+único mutex y ejecutar recuperación obligatoria antes de seeding/UI. No debe
+pasarse un repositorio protegido a un backup que ya tenga el mutex: no es
+reentrante. Tampoco se ha demostrado durabilidad de directorios ni terminación
+real del proceso. La CI de estos commits debe verificarse antes de declarar
+validación; mantener PR draft e Issue #56 abiertas, sin merge ni APK.
