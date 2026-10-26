@@ -205,4 +205,21 @@ class BackupRecoveryCoordinatorTest {
         assertFalse(invoked)
         assertTrue(BackupRecoveryJournal(dir).inspect() is BackupRecoveryJournal.State.Prepared)
     }
+    @Test
+    fun `startup recovery removes interrupted unpublished preparation before data access`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val preparing = File(temp.root, "recovery.preparing")
+        assertTrue(preparing.mkdir())
+        File(preparing, "previous.zip").writeBytes(byteArrayOf(1))
+        var restored = false
+
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+            restored = true
+        }
+
+        assertFalse(restored)
+        assertFalse(preparing.exists())
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
+    }
+
 }
