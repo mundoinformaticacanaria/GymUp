@@ -110,7 +110,7 @@ Room, gestor de imágenes o DataStore fuera del adaptador, ni distintas instanci
 o procesos. Tampoco constituye una barrera de arranque; por tanto no habilita aún
 su instalación productiva ni el cierre de #56.
 
-## Protección adicional entre coordinadores — 2026-10-26 04:12 UTC
+## Protección adicional entre coordinadores — 2026-10-26 04:11 UTC
 
 Los coordinadores que apuntan al mismo directorio canónico de journal ahora comparten
 un mutex **dentro del mismo proceso**. Antes, crear dos instancias independientes de
