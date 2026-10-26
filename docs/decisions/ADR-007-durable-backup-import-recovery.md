@@ -95,7 +95,7 @@ simulado con temporal abandonado y el caso de fallo cerrado. La CI del nuevo
 HEAD requiere comprobación; esto no prueba durabilidad ante corte eléctrico,
 exclusión global ni recuperación integrada al arranque.
 
-## Mejora incremental — 2026-10-26 03:13 UTC
+## Mejora incremental — 2026-10-26 03:11 UTC
 
 `JournaledBackupDataSource.exportSnapshot()` ya no accede al delegado directamente:
 usa `BackupRecoveryCoordinator.readSnapshotIfRecovered`, que comparte el mutex del
