@@ -396,3 +396,22 @@ conectar producción son obligatorias una barrera compartida única, recuperaci�
 previa a seeding/UI, pruebas de integración reales y validación de interrupción
 abrupta/durabilidad de metadatos. Este avance no autoriza merge, APK ni cierre
 de #56. La CI del nuevo HEAD debe verificarse antes de declararlo validado.
+
+## Adaptador aislado de seeding — 2026-10-26 19:09 UTC
+
+La PR #57 incorpora `BarrierProtectedDatabaseSeeder` (Issue #56) para coordinar
+la ejecución completa de `DatabaseSeeder.seedIfNeeded()` con la misma
+`BackupDomainWriteBarrier` que la importación y las escrituras de dominio.
+Cuatro pruebas JVM verifican que el seeding espera a un backup exclusivo, que
+un backup espera a la finalización del seeding, que una cancelación en espera
+no ejecuta ninguna escritura y que una excepción libera el mutex.
+
+**No está conectado a `AppContainer` y no sustituye al gate de arranque.**
+En producción, `BackupStartupGate` debe terminar la recuperación *antes* de
+invocar este seeder protegido y antes de exponer la UI. Un mutex por sí solo
+no impone ese orden: si el seeder adquiere primero la barrera podría escribir
+antes de detectar un journal PREPARED. Además siguen pendientes las rutas
+mutadoras de imágenes, DataStore y DAO directas, el cableado de una única
+instancia compartida, durabilidad de directorios y corte real de proceso.
+La CI de este nuevo HEAD debe verificarse; mantener #56 abierta y PR draft,
+sin merge ni candidato APK.
