@@ -354,3 +354,26 @@ pasarse un repositorio protegido a un backup que ya tenga el mutex: no es
 reentrante. Tampoco se ha demostrado durabilidad de directorios ni terminación
 real del proceso. La CI de estos commits debe verificarse antes de declarar
 validación; mantener PR draft e Issue #56 abiertas, sin merge ni APK.
+
+## Cobertura incremental de limpieza histórica — 2026-10-26 17:16 UTC
+
+La PR #57 añade `BarrierProtectedHistoricalCleanupStore` (Issue #56) como
+adaptador **aislado y todavía no instalado en AppContainer**. Las operaciones
+`deleteTransactionalData` y `compact` toman individualmente la misma
+`BackupDomainWriteBarrier` que una operación exclusiva de backup; la
+previsualización sigue siendo una lectura no bloqueada. Cuatro tests JVM
+comprueban espera de borrado/compactación, lectura concurrente, liberación
+ante error y cancelación sin mutación.
+
+El borrado es una transacción Room; la compactación VACUUM posterior no cambia
+el contenido lógico. Por ello puede intercalarse una exportación entre ambas
+operaciones y reflejar el estado posterior al borrado. Este wrapper no protege
+otras llamadas directas a DAO ni convierte la secuencia completa del manager
+en una sola sección crítica. Si se revisa esta semántica deberá evaluarse
+explícitamente, sin suponer una transacción única entre borrado y VACUUM.
+
+**Gates pendientes:** faltan envolver favoritos, imágenes privadas, DataStore,
+seeding y escritores directos; conectar una sola instancia a AppContainer,
+instalar la recuperación antes de seeding/UI, demostrar durabilidad de
+metadatos y validar terminación real de proceso. La CI del HEAD actualizado
+requiere verificación. Mantener PR draft e Issue #56 abierta; sin merge ni APK.
