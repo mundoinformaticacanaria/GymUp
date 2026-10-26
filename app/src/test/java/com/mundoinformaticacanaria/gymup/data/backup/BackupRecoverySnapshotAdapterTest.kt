@@ -255,4 +255,80 @@ class BackupRecoverySnapshotAdapterTest {
             File(context.filesDir, "exercise-images").deleteRecursively()
         }
     }
+
+    @Test
+    fun `committed journal preserves new real stores after simulated restart`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GymUpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val journalDir = File(context.filesDir, "recovery-committed-${UUID.randomUUID()}")
+        try {
+            DatabaseSeeder(context, database).seedIfNeeded()
+            val preferences = UserPreferencesRepository(context)
+            preferences.setThemeMode(ThemeMode.DARK)
+            val dao = database.backupDao()
+            val type = dao.getSessionTypes().first()
+            val exercise = dao.getExercises().first()
+            val sessionId = UUID.randomUUID().toString()
+            dao.insertSessions(
+                listOf(
+                    SessionEntity(
+                        id = sessionId,
+                        sessionDateEpochDay = LocalDate.of(2026, 10, 26).toEpochDay(),
+                        orderInDay = 1,
+                        sessionTypeId = type.id,
+                        sessionTypeNameSnapshot = type.name,
+                        name = "Sesión previa confirmada",
+                        isAutoName = false,
+                        generalNote = null,
+                        operationalState = SessionOperationalState.PLANNED,
+                        executionResult = SessionExecutionResult.NOT_STARTED,
+                    ),
+                ),
+            )
+            val images = ExerciseImageManager(context, database.exerciseDao())
+            val oldBytes = byteArrayOf(1, 3, 5)
+            val newBytes = byteArrayOf(2, 4, 6)
+            val image = images.addUserImage(exercise.id, oldBytes)
+            val source = RoomBackupDataSource(context, database, preferences)
+            val before = BackupDataCodec.decode(source.exportSnapshot().data.decodeToString()).getOrThrow()
+            val journal = BackupRecoveryJournal(journalDir)
+
+            journal.prepare(BackupRecoverySnapshotAdapter(source, "1.0-test").capturePrevious())
+            source.replaceAll(
+                BackupSnapshot(
+                    data = BackupDataCodec.encode(
+                        before.copy(
+                            sessions = emptyList(),
+                            preferences = BackupPreferences(ThemeMode.LIGHT.name),
+                        ),
+                    ).encodeToByteArray(),
+                    images = mapOf(image.storageKey to newBytes),
+                ),
+            )
+            journal.markCommitted()
+
+            // Simulated death after the commit marker but before obsolete journal cleanup.
+            // Recovery must NOT replay the previous snapshot over the committed replacement.
+            BackupRecoveryCoordinator(BackupRecoveryJournal(journalDir))
+                .recoverBeforeDataAccess { error("COMMITTED must not restore the old state") }
+            assertEquals(0, dao.getSessions().size)
+            assertArrayEquals(newBytes, images.readBytes(image))
+            assertEquals(ThemeMode.LIGHT, preferences.currentThemeMode())
+            assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(journalDir).inspect())
+
+            // Subsequent startup also leaves the new state untouched.
+            BackupRecoveryCoordinator(BackupRecoveryJournal(journalDir))
+                .recoverBeforeDataAccess { error("Already cleaned journal must not replay") }
+            assertEquals(0, dao.getSessions().size)
+            assertArrayEquals(newBytes, images.readBytes(image))
+            assertEquals(ThemeMode.LIGHT, preferences.currentThemeMode())
+        } finally {
+            database.close()
+            journalDir.deleteRecursively()
+            File(context.filesDir, "exercise-images").deleteRecursively()
+        }
+    }
+
 }
