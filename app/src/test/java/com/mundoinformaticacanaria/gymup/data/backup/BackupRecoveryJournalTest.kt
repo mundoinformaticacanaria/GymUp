@@ -113,4 +113,31 @@ class BackupRecoveryJournalTest {
         )
     }
 
+
+    @Test
+    fun `committed journal with damaged archive fails closed and is not discarded`() {
+        val directory = File(temp.root, "recovery")
+        val journal = BackupRecoveryJournal(directory)
+        journal.prepare(byteArrayOf(1, 2, 3))
+        journal.markCommitted()
+        File(directory, "previous.zip").writeBytes(byteArrayOf(3, 2, 1))
+
+        assertTrue(runCatching { BackupRecoveryJournal(directory).inspect() }.isFailure)
+        assertTrue(runCatching { BackupRecoveryJournal(directory).cleanupCommitted() }.isFailure)
+        assertTrue(directory.exists())
+        assertTrue(File(directory, "previous.zip").exists())
+    }
+
+    @Test
+    fun `committed journal missing archive fails closed and preserves marker`() {
+        val directory = File(temp.root, "recovery")
+        val journal = BackupRecoveryJournal(directory)
+        journal.prepare(byteArrayOf(4, 5, 6))
+        journal.markCommitted()
+        assertTrue(File(directory, "previous.zip").delete())
+
+        assertTrue(runCatching { BackupRecoveryJournal(directory).inspect() }.isFailure)
+        assertTrue(runCatching { BackupRecoveryJournal(directory).cleanupCommitted() }.isFailure)
+        assertTrue(File(directory, "state").exists())
+    }
 }
