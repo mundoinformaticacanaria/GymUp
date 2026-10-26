@@ -1,6 +1,7 @@
 package com.mundoinformaticacanaria.gymup.app
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -88,4 +89,61 @@ class BackupStartupGateTest {
         second.join()
         assertEquals(listOf("recover", "seed"), events)
     }
+
+    @Test
+    fun `cancelled recovery leaves startup closed and retries before seeding`() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val neverReleased = CompletableDeferred<Unit>()
+        var recoveries = 0
+        var seeds = 0
+        val gate = BackupStartupGate(
+            recover = {
+                recoveries++
+                if (recoveries == 1) {
+                    entered.complete(Unit)
+                    neverReleased.await()
+                }
+            },
+            seed = { seeds++ },
+        )
+
+        val first = launch { gate.awaitReady() }
+        entered.await()
+        first.cancelAndJoin()
+
+        assertEquals(1, recoveries)
+        assertEquals(0, seeds)
+        gate.awaitReady()
+        assertEquals(2, recoveries)
+        assertEquals(1, seeds)
+    }
+
+    @Test
+    fun `cancelled seeding leaves startup closed and retries recovery`() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val neverReleased = CompletableDeferred<Unit>()
+        var recoveries = 0
+        var seeds = 0
+        val gate = BackupStartupGate(
+            recover = { recoveries++ },
+            seed = {
+                seeds++
+                if (seeds == 1) {
+                    entered.complete(Unit)
+                    neverReleased.await()
+                }
+            },
+        )
+
+        val first = launch { gate.awaitReady() }
+        entered.await()
+        first.cancelAndJoin()
+
+        assertEquals(1, recoveries)
+        assertEquals(1, seeds)
+        gate.awaitReady()
+        assertEquals(2, recoveries)
+        assertEquals(2, seeds)
+    }
+
 }
