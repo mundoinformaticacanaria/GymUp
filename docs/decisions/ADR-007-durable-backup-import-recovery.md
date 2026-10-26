@@ -140,6 +140,21 @@ ni garantía verificada de durabilidad tras corte eléctrico. El adaptador journ
 sin instalarse en `AppContainer`; PR draft y #56 abierta. La CI del nuevo HEAD debe
 verificarse antes de considerar validado este avance.
 
+
+## Secuenciación del arranque — 2026-10-26 06:13 UTC
+
+Se incorpora `BackupStartupGate` (PR #57) como primitiva aislada para ejecutar
+**recuperación antes de seeding** y marcar el arranque listo únicamente cuando
+ambas operaciones terminan. Serializa llamantes concurrentes y permite reintentar
+un fallo o cancelación sin abrir la puerta. Cuatro pruebas JVM comprueban el orden,
+la recuperación fallida, el fallo de seeding y los llamantes concurrentes.
+
+**No se conecta aún al arranque real ni a `AppContainer`/UI**: conectar la puerta
+sin proteger previamente todos los escritores de Room, imágenes y DataStore sería
+una falsa garantía de seguridad. Tampoco se ha demostrado todavía durabilidad del
+journal tras corte de energía ni interrupción real del proceso. CI del HEAD nuevo
+pendiente; no instalar el adaptador journaled ni fusionar/cerrar #56.
+
 ## Protocolo técnico propuesto (pendiente de integración y pruebas completas)
 
 1. **Exclusión mutua**: impedir dos importaciones simultáneas y escrituras de dominio concurrentes durante la ventana de reemplazo. Exportar una instantánea consistente del estado previo (Room + imágenes de usuario + tema) y validar sus referencias. Si no puede obtenerse, abortar antes de modificar datos.
