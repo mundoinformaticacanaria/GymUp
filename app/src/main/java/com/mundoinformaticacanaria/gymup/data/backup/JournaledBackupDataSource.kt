@@ -7,7 +7,9 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
  *
  * This adapter is not installed in AppContainer yet. Production wiring MUST first provide a
  * global write barrier, consistent pre-image capture and a startup gate before database seeding
- * or any repository/UI access. Using it for imports without startup recovery would be unsafe.
+ * or any repository/UI access. Coordinators sharing a journal path serialize only their own
+ * operations within one process; other repository writers remain unprotected. Using this adapter
+ * for imports without startup recovery would be unsafe.
  */
 internal class JournaledBackupDataSource(
     private val delegate: BackupDataSource,
