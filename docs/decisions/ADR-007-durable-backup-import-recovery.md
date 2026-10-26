@@ -267,7 +267,7 @@ Siguientes pasos: inventariar y envolver rutas mutadoras, conectar el
 instrumentada tras terminación real y verificar las garantías de fsync de
 directorios en Android. Mantener #56 abierta y PR #57 draft.
 
-## Composición de barrera y journal — 2026-10-26, 13:xx UTC
+## Composición de barrera y journal — 2026-10-26
 
 La PR #57 añade `BarrierProtectedJournaledBackupDataSource` como envoltorio **aislado**
 del adaptador journaled. Mantiene la sección exclusiva de
