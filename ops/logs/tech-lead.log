@@ -245,3 +245,4 @@
 2026-10-26T06:10:01Z | INICIO #56: revisar CI PR #57, recuperación de backups, gobernanza y cola TECH LEAD
 2026-10-26T06:11:37Z | FIN #56: PR #57 gate de startup aislado 51173e5 y 4 tests JVM 819aa08, ADR-007 d680ac0; CI anterior 40272943533 SUCCESS, CI HEAD 40278340811 PENDING; issue/PR comentadas; barrera global, wiring seeder/UI, durabilidad y crash real pendientes; automation.log c194525; PR draft, sin merge, APK, tag ni release; automatizacion intacta
 2026-10-26T07:19:11Z | INICIO #56: revisar CI PR #57, integración startup, gobernanza y cola TECH LEAD
+2026-10-26T07:21:15Z | FIN #56: PR #57 tests cancelacion startup a9d6ea5 (2 JVM), ADR-007 e08eabb; CI previa 40278340811 SUCCESS 0 artefactos, CI HEAD 40285220868 PENDING; issue #56 y PR comentadas; falta barrera global, wiring AppContainer/UI, durabilidad y crash real; automation.log c2c502f; PR draft, sin merge, APK, tag ni release; automatizacion intacta
