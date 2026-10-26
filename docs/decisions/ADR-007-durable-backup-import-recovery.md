@@ -155,6 +155,18 @@ una falsa garantía de seguridad. Tampoco se ha demostrado todavía durabilidad 
 journal tras corte de energía ni interrupción real del proceso. CI del HEAD nuevo
 pendiente; no instalar el adaptador journaled ni fusionar/cerrar #56.
 
+## Pruebas adicionales del gate — 2026-10-26 07:20 UTC
+
+La PR #57 añade dos regresiones JVM en `BackupStartupGateTest` para cancelación
+de corrutinas durante (a) la recuperación y (b) el seeding. Ambas comprueban que
+la secuencia interrumpida **no marca ready** y que el siguiente intento repite
+la recuperación antes de poder terminar el seeding. Esto verifica la semántica
+aislada de la puerta, **no** una recuperación real del proceso ni su integración
+en `AppContainer`. CI del nuevo HEAD pendiente de comprobación.
+
+La barrera de escrituras de Room, imágenes y DataStore, la secuenciación real
+antes de UI/seeder, durabilidad de metadatos y pruebas físicas siguen pendientes.
+
 ## Protocolo técnico propuesto (pendiente de integración y pruebas completas)
 
 1. **Exclusión mutua**: impedir dos importaciones simultáneas y escrituras de dominio concurrentes durante la ventana de reemplazo. Exportar una instantánea consistente del estado previo (Room + imágenes de usuario + tema) y validar sus referencias. Si no puede obtenerse, abortar antes de modificar datos.
