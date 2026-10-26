@@ -466,3 +466,20 @@ mientras se mantiene el mutex exclusivo produciría interbloqueo. Este gate sigu
 ignoren el gate accedan a los datos antes de la recuperación. Tampoco protege
 otros procesos, acredita durabilidad de directorios ni sustituye la prueba real
 de interrupción. Mantener #56 abierta y PR #57 draft hasta completar los gates.
+
+## Sincronización de bytes de imágenes en staging — 2026-10-26 23:15 UTC
+
+PR #57 incorpora en `RoomBackupDataSource` la escritura de cada imagen importada mediante
+`FileOutputStream` y `FileDescriptor.sync()` antes de activar el directorio staged
+(commit `c301f08`). Si la escritura o el `sync` falla, el staging se descarta y
+la importación no avanza al reemplazo de Room. Los tests Robolectric de round-trip
+y rollback existentes cubren el comportamiento lógico, pero **no simulan pérdida
+de energía ni demuestran persistencia del directorio**.
+
+**Límite importante:** sincronizar el contenido de cada archivo no hace duraderos
+los cambios de nombre de directorios, la creación/eliminación de entradas, la
+confirmación de Room o DataStore. Sigue pendiente verificar/implementar la
+persistencia de metadatos de directorio en Android 15/16, incluyendo publicación
+de PREPARED, transición COMMITTED y activación/retirada de imágenes. El riesgo de
+corte abrupto permanece abierto. La PR sigue draft y la Issue #56 abierta; no
+instalar en `AppContainer`, fusionar ni generar APK por este avance aislado.
