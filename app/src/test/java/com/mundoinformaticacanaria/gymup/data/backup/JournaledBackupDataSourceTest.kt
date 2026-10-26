@@ -108,6 +108,60 @@ class JournaledBackupDataSourceTest {
         assertArrayEquals(snapshot("after").data, exporting.await().data)
     }
 
+    @Test
+    fun `export on another coordinator waits for in-flight replacement at same journal path`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val source = object : BackupDataSource {
+            var current = snapshot("before")
+            override suspend fun exportSnapshot(): BackupSnapshot = current
+            override suspend fun replaceAll(snapshot: BackupSnapshot) {
+                entered.complete(Unit)
+                release.await()
+                current = snapshot
+            }
+        }
+        // Two distinct wrappers previously used independent mutexes over the same journal.
+        val importer = wrapper(source, dir)
+        val exporter = wrapper(source, File(temp.root, "./recovery"))
+        val importing = async { importer.replaceAll(snapshot("after")) }
+        entered.await()
+        val exporting = async { exporter.exportSnapshot() }
+        yield()
+        assertTrue("Another coordinator must not read a partial replacement", !exporting.isCompleted)
+        release.complete(Unit)
+        importing.await()
+        assertArrayEquals(snapshot("after").data, exporting.await().data)
+    }
+
+    @Test
+    fun `startup recovery on another coordinator waits for in-flight replacement`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val source = object : BackupDataSource {
+            var current = snapshot("before")
+            override suspend fun exportSnapshot(): BackupSnapshot = current
+            override suspend fun replaceAll(snapshot: BackupSnapshot) {
+                entered.complete(Unit)
+                release.await()
+                current = snapshot
+            }
+        }
+        val importer = wrapper(source, dir)
+        val recovering = wrapper(source, File(temp.root, "./recovery"))
+        val importing = async { importer.replaceAll(snapshot("after")) }
+        entered.await()
+        val recovery = async { recovering.recoverBeforeDataAccess() }
+        yield()
+        assertTrue("Recovery must not race a second coordinator's import", !recovery.isCompleted)
+        release.complete(Unit)
+        importing.await()
+        recovery.await()
+        assertArrayEquals(snapshot("after").data, source.current.data)
+    }
+
     private fun wrapper(source: BackupDataSource, directory: File): JournaledBackupDataSource =
         JournaledBackupDataSource(
             source,
