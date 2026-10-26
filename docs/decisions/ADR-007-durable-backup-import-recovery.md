@@ -110,6 +110,20 @@ Room, gestor de imágenes o DataStore fuera del adaptador, ni distintas instanci
 o procesos. Tampoco constituye una barrera de arranque; por tanto no habilita aún
 su instalación productiva ni el cierre de #56.
 
+## Protección adicional entre coordinadores — 2026-10-26 04:12 UTC
+
+Los coordinadores que apuntan al mismo directorio canónico de journal ahora comparten
+un mutex **dentro del mismo proceso**. Antes, crear dos instancias independientes de
+`JournaledBackupDataSource` sobre el mismo directorio permitía que una exportación
+o recuperación leyera un journal PREPARED mientras otra instancia estaba sustituyendo
+datos. Dos pruebas JVM verifican que la exportación y la recuperación de una segunda
+instancia esperan a que finalice la importación en curso.
+
+**Límite explícito:** esta exclusión no cubre escrituras directas desde repositorios
+Room, gestores de imágenes, DataStore ni otros procesos; tampoco asegura una captura
+coherente ni la recuperación previa a seeding/UI. No se instala todavía el adaptador
+en `AppContainer`. CI del nuevo HEAD pendiente de verificación.
+
 ## Protocolo técnico propuesto (pendiente de integración y pruebas completas)
 
 1. **Exclusión mutua**: impedir dos importaciones simultáneas y escrituras de dominio concurrentes durante la ventana de reemplazo. Exportar una instantánea consistente del estado previo (Room + imágenes de usuario + tema) y validar sus referencias. Si no puede obtenerse, abortar antes de modificar datos.
