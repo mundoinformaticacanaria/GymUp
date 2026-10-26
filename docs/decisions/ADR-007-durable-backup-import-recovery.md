@@ -415,3 +415,20 @@ mutadoras de imágenes, DataStore y DAO directas, el cableado de una única
 instancia compartida, durabilidad de directorios y corte real de proceso.
 La CI de este nuevo HEAD debe verificarse; mantener #56 abierta y PR draft,
 sin merge ni candidato APK.
+
+## Cobertura incremental de DataStore — 2026-10-26 20:12 UTC
+
+Se incorpora `BarrierProtectedThemeModeWriter` como adaptador **aislado**, todavía no
+instalado en `AppContainer`, para serializar la mutación de tema de DataStore
+(`UserPreferencesRepository.setThemeMode`) con la misma barrera de backup.
+Cuatro pruebas JVM cubren espera de la escritura ante backup exclusivo, espera
+del backup ante escritura, cancelación del escritor en espera y liberación de
+la barrera ante fallo del delegado. Las lecturas de tema no se bloquean.
+
+La conexión futura deberá pasar **todas** las escrituras de tema de UI por
+este adaptador, y dejar que backup/recovery invoque el delegado sin envolver
+mientras posea la barrera exclusiva: el mutex no es reentrante. La protección
+parcial no ofrece consistencia global; siguen pendientes escritores de imágenes,
+DAO directos y cableado de `AppContainer`, recuperación obligatoria antes de
+seeding/UI, durabilidad de metadatos y prueba de interrupción real. La CI del
+HEAD nuevo requiere verificación; PR #57 continúa draft e Issue #56 abierta.
