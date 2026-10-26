@@ -245,3 +245,24 @@ continúa permitiendo limpiar sin restaurar datos anteriores.
 **Alcance:** endurecimiento aislado de integridad; no demuestra durabilidad
 de directorios, barrera global, integración con `AppContainer` ni corte real
 del proceso. La PR #57 permanece draft y la Issue #56 abierta.
+
+## Primer componente de exclusión de escrituras — 2026-10-26 12:16 UTC
+
+Se incorpora `BackupDomainWriteBarrier` (PR #57) como **primitiva aislada**, basada
+en un único `Mutex` de corrutinas para serializar operaciones de escritura de
+dominio y operaciones exclusivas de backup. Cuatro pruebas JVM verifican espera
+de escritor/backup, cancelación del llamante en espera y liberación tras error.
+
+**No está conectada a AppContainer ni a los repositorios.** No garantiza aún
+exclusión global: para que sea efectiva, todos los escritores de Room, imágenes
+privadas y DataStore deben compartir la misma instancia, y la captura,
+publicación de PREPARED, sustitución y recuperación deben ejecutarse dentro
+de la sección exclusiva. El código de backup deberá invocar adaptadores de
+bajo nivel sin readquirir el mutex (no es reentrante). No protege procesos
+externos ni la durabilidad de metadatos. La prueba de CI del HEAD nuevo
+debe verificarse antes de atribuir éxito.
+
+Siguientes pasos: inventariar y envolver rutas mutadoras, conectar el
+`BackupStartupGate` antes del seeder y de la UI, probar recuperación
+instrumentada tras terminación real y verificar las garantías de fsync de
+directorios en Android. Mantener #56 abierta y PR #57 draft.
