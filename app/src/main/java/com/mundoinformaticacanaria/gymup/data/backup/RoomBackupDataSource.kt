@@ -35,6 +35,7 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupSessionSet
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSessionType
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -314,7 +315,13 @@ private class UserExerciseImageStore(context: Context) {
             images.forEach { (storageKey, bytes) ->
                 require(storageKey.matches(Regex("^user:[0-9a-fA-F-]{36}$"))) { "storage_key no válido" }
                 val target = fileFor(staging, storageKey)
-                target.writeBytes(bytes)
+                // Sync staged image bytes before the journal can later become COMMITTED.
+                // This is necessary but not sufficient for power-loss durability: directory
+                // rename metadata still needs an explicit durability strategy/validation.
+                FileOutputStream(target).use { output ->
+                    output.write(bytes)
+                    output.fd.sync()
+                }
                 check(target.length() == bytes.size.toLong()) { "No se pudo escribir $storageKey" }
             }
         } catch (error: Throwable) {
