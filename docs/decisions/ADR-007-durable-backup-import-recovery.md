@@ -124,6 +124,22 @@ Room, gestores de imágenes, DataStore ni otros procesos; tampoco asegura una ca
 coherente ni la recuperación previa a seeding/UI. No se instala todavía el adaptador
 en `AppContainer`. CI del nuevo HEAD pendiente de verificación.
 
+## Captura de preimagen — 2026-10-26 05:12 UTC
+
+En PR #57, `RoomBackupDataSource.exportSnapshot()` conserva la transacción de lectura
+de Room durante la obtención del tema y la lectura de bytes de imágenes privadas,
+en vez de cerrar la transacción antes de leer los archivos. Esto evita que un escritor
+de Room modifique las referencias de imágenes mientras se capturan sus bytes.
+Una regresión Robolectric con un escritor concurrente verifica que este espera hasta
+que termina la captura y que el ZIP refleja el estado anterior coherente de Room.
+
+**No constituye captura global atómica**: `ExerciseImageManager`, DataStore y otros
+escritores de archivos pueden cambiar su estado sin tomar la transacción Room.
+Tampoco existe recuperación obligatoria antes del seeder/UI, aislamiento entre procesos
+ni garantía verificada de durabilidad tras corte eléctrico. El adaptador journaled sigue
+sin instalarse en `AppContainer`; PR draft y #56 abierta. La CI del nuevo HEAD debe
+verificarse antes de considerar validado este avance.
+
 ## Protocolo técnico propuesto (pendiente de integración y pruebas completas)
 
 1. **Exclusión mutua**: impedir dos importaciones simultáneas y escrituras de dominio concurrentes durante la ventana de reemplazo. Exportar una instantánea consistente del estado previo (Room + imágenes de usuario + tema) y validar sus referencias. Si no puede obtenerse, abortar antes de modificar datos.
