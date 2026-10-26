@@ -13,6 +13,8 @@ import java.security.MessageDigest
  * of directory metadata still needs verification on the supported Android filesystems.
  */
 internal class BackupRecoveryJournal(private val directory: File) {
+    /** Stable in-process identity shared by coordinator instances for this journal path. */
+    internal val lockKey: String = directory.canonicalPath
     // Retire COMMITTED state before deleting files: a crash must not leave a partial active journal.
     private val retiredDirectory = File(directory.parentFile, "${directory.name}.retired")
     // PREPARED is published only after both files are synced; a crash during staging cannot
