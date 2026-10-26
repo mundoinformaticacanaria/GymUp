@@ -67,6 +67,44 @@ class BackupRecoveryCoordinatorTest {
     }
 
     @Test
+    fun `interruption after successful replay before commit retries idempotently on restart`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val previous = byteArrayOf(41, 42, 43)
+        BackupRecoveryJournal(dir).prepare(previous)
+        var current = byteArrayOf(99)
+        var replays = 0
+
+        val interrupted = runCatching {
+            BackupRecoveryCoordinator(
+                BackupRecoveryJournal(dir),
+                afterRestoreBeforeCommit = { error("Simulated process stop after replay") },
+            ).recoverBeforeDataAccess { archive ->
+                current = archive.copyOf()
+                replays++
+            }
+        }
+
+        assertTrue(interrupted.isFailure)
+        assertArrayEquals(previous, current)
+        assertArrayEquals(
+            previous,
+            (BackupRecoveryJournal(dir).inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
+        )
+
+        // A fresh coordinator cannot assume that a completed replay was committed.
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess { archive ->
+            current = archive.copyOf()
+            replays++
+        }
+        assertEquals(2, replays)
+        assertArrayEquals(previous, current)
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+            error("Committed recovery must not replay again")
+        }
+    }
+
+    @Test
     fun `committed journal only cleans up and never replays old state`() = runBlocking {
         val dir = File(temp.root, "recovery")
         val journal = BackupRecoveryJournal(dir)
