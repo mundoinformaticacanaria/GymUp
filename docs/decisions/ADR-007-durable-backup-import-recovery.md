@@ -66,6 +66,20 @@ Se incorpora en PR #57 el test Robolectric `committed journal preserves new real
 
 Se mantiene el estado de propuesta sin conexión productiva: siguen pendientes exclusión global de escrituras, recuperación obligatoria antes de seeding/UI, validación de persistencia de directorios y prueba instrumentada de interrupción real. No cerrar #56 ni fusionar PR #57.
 
+## Avance técnico — 2026-10-26 01:11 UTC
+
+PR #57 cambia la publicación de `PREPARED`: el archivo de preimagen y el marcador
+se escriben y sincronizan primero en un directorio privado `.preparing` y solo
+después se renombra el directorio completo al journal activo. Un corte antes de
+ese renombrado deja una preparación **no publicada**, que el coordinador elimina
+antes de recuperar o iniciar otra importación. Si ya existe un journal activo,
+la limpieza del directorio de preparación falla cerrada y no descarta la copia
+publicada. Se añaden pruebas JVM para ambos casos. Esta mejora resuelve el
+bloqueo permanente causado por una preparación incompleta, pero **no acredita**
+la durabilidad del renombrado del directorio tras un corte eléctrico ni
+protección frente a procesos/escrituras concurrentes; sigue faltando barrera
+global y conexión al arranque/flujo real. CI del nuevo HEAD pendiente.
+
 ## Protocolo técnico propuesto (pendiente de integración y pruebas completas)
 
 1. **Exclusión mutua**: impedir dos importaciones simultáneas y escrituras de dominio concurrentes durante la ventana de reemplazo. Exportar una instantánea consistente del estado previo (Room + imágenes de usuario + tema) y validar sus referencias. Si no puede obtenerse, abortar antes de modificar datos.
