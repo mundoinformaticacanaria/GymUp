@@ -377,3 +377,22 @@ seeding y escritores directos; conectar una sola instancia a AppContainer,
 instalar la recuperación antes de seeding/UI, demostrar durabilidad de
 metadatos y validar terminación real de proceso. La CI del HEAD actualizado
 requiere verificación. Mantener PR draft e Issue #56 abierta; sin merge ni APK.
+
+## Adaptador aislado de favoritos — 2026-10-26
+
+PR #57 incorpora `BarrierProtectedExerciseCatalogRepository` (Issue #56), que
+coordina la única mutación de `ExerciseCatalogRepository`, `setFavorite`,
+mediante `BackupDomainWriteBarrier.withDomainWrite`. Las consultas y los
+`Flow` se delegan sin bloquear. Cuatro pruebas JVM comprueban espera ante
+backup exclusivo, lecturas durante el bloqueo, liberación tras excepción y
+cancelación de un escritor en espera sin llegar al DAO.
+
+**Estado: solo implementado en la rama, NO instalado en `AppContainer`.**
+La ruta de importación debe continuar usando los almacenes sin envolver para
+evitar bloqueo por mutex no reentrante. Quedan sin proteger escrituras directas
+del DAO, `ExerciseImageManager`, `UserPreferencesRepository` (DataStore),
+`DatabaseSeeder` y cualquier otra ruta que no pase por adaptadores. Antes de
+conectar producción son obligatorias una barrera compartida única, recuperación
+previa a seeding/UI, pruebas de integración reales y validación de interrupción
+abrupta/durabilidad de metadatos. Este avance no autoriza merge, APK ni cierre
+de #56. La CI del nuevo HEAD debe verificarse antes de declararlo validado.
