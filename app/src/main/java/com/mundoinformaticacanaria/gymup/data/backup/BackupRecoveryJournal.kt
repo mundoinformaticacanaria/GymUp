@@ -35,15 +35,16 @@ internal class BackupRecoveryJournal(private val directory: File) {
         check(parts.size == 3 && parts[0] == VERSION && parts[2].matches(SHA256)) {
             "Journal de recuperación desconocido o corrupto"
         }
-        if (parts[1] == "COMMITTED") return State.Committed
-        check(parts[1] == "PREPARED") { "Estado de recuperación desconocido" }
+        check(parts[1] == "PREPARED" || parts[1] == "COMMITTED") {
+            "Estado de recuperación desconocido"
+        }
         val archiveFile = File(directory, ARCHIVE_FILE)
         check(archiveFile.isFile && archiveFile.length() in 1..MAX_ARCHIVE_BYTES) {
             "Falta la copia previa o su tamaño no es válido"
         }
         val archive = archiveFile.readBytes()
         check(sha256(archive) == parts[2]) { "Checksum de recuperación incorrecto" }
-        return State.Prepared(archive)
+        return if (parts[1] == "COMMITTED") State.Committed else State.Prepared(archive)
     }
 
     fun prepare(previousArchive: ByteArray) {
