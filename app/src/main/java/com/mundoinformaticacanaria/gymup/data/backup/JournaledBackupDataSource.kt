@@ -21,7 +21,8 @@ internal class JournaledBackupDataSource(
         coordinator.recoverBeforeDataAccess(snapshotAdapter::restorePrevious)
     }
 
-    override suspend fun exportSnapshot(): BackupSnapshot = delegate.exportSnapshot()
+    override suspend fun exportSnapshot(): BackupSnapshot =
+        coordinator.readSnapshotIfRecovered { delegate.exportSnapshot() }
 
     override suspend fun replaceAll(snapshot: BackupSnapshot) {
         coordinator.replaceWithRecovery(
