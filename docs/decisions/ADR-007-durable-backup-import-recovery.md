@@ -449,3 +449,20 @@ no debe hacerse parcialmente porque crearía una falsa garantía de exclusión.
 La recuperación antes de UI/seeding, la durabilidad de metadatos y la prueba de
 muerte real del proceso siguen pendientes. La CI del nuevo HEAD debe verificarse;
 no se fusiona PR #57 ni se cierra #56 por esta cobertura aislada.
+
+## Composición exclusiva del arranque — 2026-10-26 22:16 UTC
+
+`BackupStartupGate` admite ahora una instancia opcional de `BackupDomainWriteBarrier`
+(PR #57, commit `5f83b77`). Si se proporciona, ejecuta **recuperación y seeding
+bajo una única sección exclusiva**, evitando que un escritor cooperante se
+intercale entre ambas fases. Dos pruebas JVM en `BarrierProtectedBackupStartupGateTest`
+(commit `dad50ec`) verifican espera del escritor durante ambas fases y liberación
+de la barrera tras fallo de recuperación con reintento posterior.
+
+**Condición de composición:** los callbacks de recuperación y seeding deben usar
+los almacenes **sin wrappers de barrera**; llamar a adaptadores ya protegidos
+mientras se mantiene el mutex exclusivo produciría interbloqueo. Este gate sigue
+**sin instalarse en `AppContainer`** y no impide que lectores o escritores que
+ignoren el gate accedan a los datos antes de la recuperación. Tampoco protege
+otros procesos, acredita durabilidad de directorios ni sustituye la prueba real
+de interrupción. Mantener #56 abierta y PR #57 draft hasta completar los gates.
