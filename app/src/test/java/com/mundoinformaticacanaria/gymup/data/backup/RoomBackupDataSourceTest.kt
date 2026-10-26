@@ -22,7 +22,11 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataValidationResul
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -212,6 +216,60 @@ class RoomBackupDataSourceTest {
         assertEquals(0, dao.getSessions().size)
         assertArrayEquals(replacementBytes, imageManager.readBytes(image))
         assertEquals(ThemeMode.LIGHT, preferences.currentThemeMode())
+    }
+
+
+    @Test
+    fun `backup holds Room transaction until custom images are captured`() = runBlocking {
+        val dao = database.backupDao()
+        val type = dao.getSessionTypes().first()
+        val exercise = dao.getExercises().first()
+        val imageBytes = byteArrayOf(9, 8, 7, 6)
+        val image = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, imageBytes)
+        val imageCaptureReached = CompletableDeferred<Unit>()
+        val allowImageCapture = CompletableDeferred<Unit>()
+        val source = RoomBackupDataSource(
+            context,
+            database,
+            preferences,
+            exportAfterRoomRead = {
+                imageCaptureReached.complete(Unit)
+                allowImageCapture.await()
+            },
+        )
+
+        val exporting = async(Dispatchers.Default) { source.exportSnapshot() }
+        imageCaptureReached.await()
+        val sessionId = UUID.randomUUID().toString()
+        val inserting = async(Dispatchers.Default) {
+            dao.insertSessions(
+                listOf(
+                    SessionEntity(
+                        id = sessionId,
+                        sessionDateEpochDay = LocalDate.of(2026, 10, 26).toEpochDay(),
+                        orderInDay = 1,
+                        sessionTypeId = type.id,
+                        sessionTypeNameSnapshot = type.name,
+                        name = "Sesión concurrente",
+                        isAutoName = false,
+                        generalNote = null,
+                        operationalState = SessionOperationalState.PLANNED,
+                        executionResult = SessionExecutionResult.NOT_STARTED,
+                    ),
+                ),
+            )
+        }
+        yield()
+        assertTrue("Room writer must wait until the snapshot captures image bytes", !inserting.isCompleted)
+        allowImageCapture.complete(Unit)
+
+        val snapshot = exporting.await()
+        inserting.await()
+        val decoded = BackupDataCodec.decode(snapshot.data.decodeToString()).getOrThrow()
+        assertEquals(0, decoded.sessions.size)
+        assertEquals(1, dao.getSessions().size)
+        assertArrayEquals(imageBytes, snapshot.images.getValue(image.storageKey))
     }
 
 }
