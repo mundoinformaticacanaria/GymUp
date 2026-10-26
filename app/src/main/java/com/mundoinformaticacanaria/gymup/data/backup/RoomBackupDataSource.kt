@@ -43,14 +43,21 @@ class RoomBackupDataSource(
     context: Context,
     private val database: GymUpDatabase,
     private val preferences: UserPreferencesRepository,
+    // Test seam for proving Room's transaction stays open until image capture finishes.
+    private val exportAfterRoomRead: suspend () -> Unit = {},
     private val importFault: (BackupReplacePhase) -> Unit = {},
 ) : BackupDataSource {
     private val backupDao = database.backupDao()
     private val imageStore = UserExerciseImageStore(context.applicationContext)
 
-    override suspend fun exportSnapshot(): BackupSnapshot {
+    override suspend fun exportSnapshot(): BackupSnapshot = database.withTransaction {
+        // Keep Room's read transaction open through the image capture. Previously Room
+        // was released before reading files, allowing metadata and image bytes to diverge
+        // when a concurrent Room writer changed the image references.
+        // This does NOT serialize direct image-file or DataStore writes: a global domain
+        // barrier remains mandatory before enabling crash-recovery imports.
         val theme = preferences.currentThemeMode()
-        val data = database.withTransaction {
+        val data =
             BackupDataV1(
                 sessionTypes = backupDao.getSessionTypes().map { it.toBackup() },
                 muscleGroups = backupDao.getMuscleGroups().map { it.toBackup() },
@@ -64,14 +71,14 @@ class RoomBackupDataSource(
                 sessionSets = backupDao.getSessionSets().map { it.toBackup() },
                 preferences = BackupPreferences(theme.name),
             )
-        }
         check(BackupDataCodec.validate(data) == BackupDataValidationResult.Valid) {
             "El estado local no puede serializarse como backup v1"
         }
+        exportAfterRoomRead()
         val userImages = data.exerciseImages
             .filter { it.sourceType == USER_IMAGE_SOURCE }
             .associate { image -> image.storageKey to imageStore.readRequired(image.storageKey) }
-        return BackupSnapshot(
+        BackupSnapshot(
             data = BackupDataCodec.encode(data).encodeToByteArray(),
             images = userImages,
         )
