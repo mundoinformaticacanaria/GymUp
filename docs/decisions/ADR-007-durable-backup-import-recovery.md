@@ -213,3 +213,20 @@ Persisten como gates: barrera global para todos los escritores Room/imágenes/Da
 La prueba JVM `BackupStartupRecoveryIntegrationTest` (PR #57) utiliza conjuntamente el journal persistido en disco temporal, `BackupRecoveryCoordinator` y `BackupStartupGate`. Comprueba que una preimagen PREPARED se restaura antes del seeder y que el gate no repite la secuencia al estar listo. Comprueba además que un checksum corrupto impide ejecutar el seeder y conserva el journal, y que un reintento posterior a una reparación explícita debe completar recuperación antes de inicializar datos.
 
 Esta es **integración de componentes aislada**, no conexión de producción a `AppContainer`, no barrera global de escrituras y no prueba de muerte real del proceso. El arreglo manual del archivo en el test es solo una simulación controlada: no se ofrece como procedimiento de reparación de usuario. Se mantienen todos los gates anteriores y la PR en draft hasta su resolución.
+
+## Ventana de interrupción tras replay — 2026-10-26 10:10 UTC
+
+Se añade un punto de inyección determinista opcional en `BackupRecoveryCoordinator`
+**después** de restaurar la preimagen y **antes** de confirmar el marcador
+`COMMITTED` (commits `500d6f6` y `bf7531a`). Una regresión JVM simula
+una interrupción en esa ventana y reconstruye el coordinador: el marcador
+`PREPARED` debe permanecer íntegro, el siguiente arranque repite el replay
+idempotentemente y solo entonces retira el journal. Un arranque posterior
+no debe restaurar de nuevo.
+
+Este test cubre una ventana específica de la máquina de estados, **no**
+una muerte real de proceso ni una prueba física de durabilidad. La CI del
+HEAD actualizado debe verificarse. Siguen sin resolverse barrera global
+Room/imágenes/DataStore, integración con `AppContainer`/UI, persistencia
+de metadatos de directorio y prueba instrumentada. Mantener PR #57
+en borrador e Issue #56 abierta, sin integración productiva.
