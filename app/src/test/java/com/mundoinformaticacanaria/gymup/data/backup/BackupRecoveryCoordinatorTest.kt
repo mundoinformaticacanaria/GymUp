@@ -114,6 +114,50 @@ class BackupRecoveryCoordinatorTest {
     }
 
     @Test
+    fun `interrupted committed marker write can finish recovery after restart`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val bytes = byteArrayOf(21, 22, 23)
+        BackupRecoveryJournal(dir).prepare(bytes)
+        // Simulate process death after writing state.tmp but before publishing COMMITTED.
+        File(dir, "state.tmp").writeText("1 COMMITTED " + "0".repeat(64) + "\n")
+        var restored = 0
+
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+            assertArrayEquals(bytes, it)
+            restored++
+        }
+
+        assertEquals(1, restored)
+        assertFalse(File(dir, "state.tmp").exists())
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+            error("Recovery must not replay after successful commit")
+        }
+    }
+
+    @Test
+    fun `unremovable interrupted marker fails closed and preserves prepared archive`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val bytes = byteArrayOf(24, 25)
+        BackupRecoveryJournal(dir).prepare(bytes)
+        assertTrue(File(dir, "state.tmp").mkdir())
+        var restored = 0
+
+        val result = runCatching {
+            BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+                restored++
+            }
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals(1, restored)
+        assertArrayEquals(
+            bytes,
+            (BackupRecoveryJournal(dir).inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
+        )
+    }
+
+    @Test
     fun `retired cleanup blocks new journal until completed`() = runBlocking {
         val dir = File(temp.root, "recovery")
         val retired = File(temp.root, "recovery.retired")
