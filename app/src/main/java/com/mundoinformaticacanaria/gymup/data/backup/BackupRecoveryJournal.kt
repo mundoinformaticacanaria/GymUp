@@ -15,6 +15,9 @@ import java.security.MessageDigest
 internal class BackupRecoveryJournal(private val directory: File) {
     // Retire COMMITTED state before deleting files: a crash must not leave a partial active journal.
     private val retiredDirectory = File(directory.parentFile, "${directory.name}.retired")
+    // PREPARED is published only after both files are synced; a crash during staging cannot
+    // create an incomplete active journal that would permanently block the next startup.
+    private val preparingDirectory = File(directory.parentFile, "${directory.name}.preparing")
     sealed interface State {
         data object Absent : State
         data class Prepared(val previousArchive: ByteArray) : State
@@ -47,11 +50,14 @@ internal class BackupRecoveryJournal(private val directory: File) {
         }
         check(!directory.exists()) { "Ya existe un journal de recuperación: resolver antes de importar" }
         check(!retiredDirectory.exists()) { "Queda una limpieza anterior pendiente" }
-        check(directory.mkdirs()) { "No se pudo crear el journal de recuperación" }
-        // If writing fails, leave the directory in place to force explicit recovery/inspection.
-        writeSynced(File(directory, ARCHIVE_FILE), previousArchive)
+        check(!preparingDirectory.exists()) { "Queda una preparación incompleta pendiente" }
+        check(preparingDirectory.mkdirs()) { "No se pudo crear la preparación del journal" }
+        // An interrupted preparation is not an active journal: no domain mutation is allowed
+        // until this method publishes the complete PREPARED directory and returns.
+        writeSynced(File(preparingDirectory, ARCHIVE_FILE), previousArchive)
         val digest = sha256(previousArchive)
-        writeSynced(File(directory, STATE_FILE), "$VERSION PREPARED $digest\n".toByteArray(Charsets.US_ASCII))
+        writeSynced(File(preparingDirectory, STATE_FILE), "$VERSION PREPARED $digest\n".toByteArray(Charsets.US_ASCII))
+        check(preparingDirectory.renameTo(directory)) { "No se pudo publicar el journal preparado" }
     }
 
     fun markCommitted() {
@@ -72,6 +78,13 @@ internal class BackupRecoveryJournal(private val directory: File) {
         cleanupRetired()
     }
 
+    /** Discard only an unpublished pre-image: no data mutation can have started yet. */
+    fun cleanupAbandonedPreparation() {
+        if (!preparingDirectory.exists()) return
+        check(!directory.exists()) { "No se descarta preparación si existe un journal activo" }
+        check(preparingDirectory.deleteRecursively()) { "No se pudo limpiar la preparación incompleta" }
+    }
+
     /** Retry cleanup of a previously COMMITTED journal after an interrupted deletion. */
     fun cleanupRetired() {
         if (retiredDirectory.exists()) {
@@ -80,7 +93,7 @@ internal class BackupRecoveryJournal(private val directory: File) {
     }
 
     private fun writeSynced(target: File, bytes: ByteArray, replace: Boolean = false) {
-        val temp = File(directory, "${target.name}.tmp")
+        val temp = File(target.parentFile, "${target.name}.tmp")
         check(!temp.exists()) { "Existe una escritura incompleta del journal" }
         FileOutputStream(temp).use { output ->
             output.write(bytes)
