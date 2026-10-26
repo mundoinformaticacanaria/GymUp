@@ -1,6 +1,7 @@
 package com.mundoinformaticacanaria.gymup.app
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -144,6 +145,71 @@ class BackupStartupGateTest {
         gate.awaitReady()
         assertEquals(2, recoveries)
         assertEquals(2, seeds)
+    }
+
+    @Test
+    fun `waiting caller retries after first recovery fails without opening startup early`() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var recoveries = 0
+        var seeds = 0
+        val gate = BackupStartupGate(
+            recover = {
+                recoveries++
+                if (recoveries == 1) {
+                    entered.complete(Unit)
+                    release.await()
+                    error("First recovery attempt failed")
+                }
+            },
+            seed = { seeds++ },
+        )
+
+        val first = async { runCatching { gate.awaitReady() }.isFailure }
+        entered.await()
+        val waiting = async { gate.awaitReady() }
+        yield()
+        assertFalse(waiting.isCompleted)
+        assertEquals(0, seeds)
+
+        release.complete(Unit)
+        assertTrue(first.await())
+        waiting.await()
+        assertEquals(2, recoveries)
+        assertEquals(1, seeds)
+        gate.awaitReady()
+        assertEquals(2, recoveries)
+    }
+
+    @Test
+    fun `cancelled waiting caller does not cancel active recovery or seeding`() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var recoveries = 0
+        var seeds = 0
+        val gate = BackupStartupGate(
+            recover = {
+                recoveries++
+                entered.complete(Unit)
+                release.await()
+            },
+            seed = { seeds++ },
+        )
+
+        val active = launch { gate.awaitReady() }
+        entered.await()
+        val waiting = launch { gate.awaitReady() }
+        yield()
+        assertFalse(waiting.isCompleted)
+        waiting.cancelAndJoin()
+        assertFalse(active.isCompleted)
+        assertEquals(0, seeds)
+
+        release.complete(Unit)
+        active.join()
+        gate.awaitReady()
+        assertEquals(1, recoveries)
+        assertEquals(1, seeds)
     }
 
 }
