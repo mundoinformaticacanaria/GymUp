@@ -21,6 +21,7 @@ data class ExerciseImageItem(
 class ExerciseImageManager(
     context: Context,
     private val exerciseDao: ExerciseDao,
+    private val afterUserImageSync: (File) -> Unit = {},
 ) {
     private val imageDirectory = File(context.applicationContext.filesDir, DIRECTORY)
 
@@ -54,6 +55,8 @@ class ExerciseImageManager(
                 output.fd.sync()
             }
             check(temporaryFile.length() == bytes.size.toLong()) { "No se pudo guardar la imagen" }
+            // Deterministic test seam: failure here must leave neither a published file nor Room metadata.
+            afterUserImageSync(temporaryFile)
             check(temporaryFile.renameTo(finalFile)) { "No se pudo activar la imagen guardada" }
             val entity = ExerciseImageEntity(
                 id = id,
