@@ -5,7 +5,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.toMutablePreferences
 import androidx.test.core.app.ApplicationProvider
 import com.mundoinformaticacanaria.gymup.core.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
