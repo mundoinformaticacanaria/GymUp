@@ -422,4 +422,34 @@ class RoomBackupDataSourceTest {
         assertArrayEquals(byteArrayOf(4, 4), imageManager.readBytes(second))
         assertEquals(ThemeMode.LIGHT, preferences.currentThemeMode())
     }
+
+    @Test
+    fun `user image sync failure before rename leaves no Room metadata or orphan file`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val before = database.exerciseDao().getImages(exercise.id)
+        val directory = context.filesDir.resolve("exercise-images")
+        val bytes = byteArrayOf(11, 22, 33, 44)
+        var syncedFileSeen = false
+        val failing = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            afterUserImageSync = { temporary ->
+                assertTrue(temporary.isFile)
+                assertArrayEquals(bytes, temporary.readBytes())
+                syncedFileSeen = true
+                error("Fallo inyectado antes de activar imagen de usuario")
+            },
+        )
+
+        val failure = runCatching { failing.addUserImage(exercise.id, bytes) }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
+        assertTrue(syncedFileSeen)
+        assertEquals(before, database.exerciseDao().getImages(exercise.id))
+        assertTrue("No deben quedar temporales ni imágenes publicadas", directory.listFiles().orEmpty().isEmpty())
+
+        val successful = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, bytes)
+        assertArrayEquals(bytes, successful.localFile?.readBytes())
+        assertEquals(before.size + 1, database.exerciseDao().getImages(exercise.id).size)
+    }
 }
