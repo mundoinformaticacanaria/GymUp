@@ -36,6 +36,8 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupSessionType
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.channels.FileChannel
+import java.nio.file.StandardOpenOption
 import java.util.UUID
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -330,6 +332,10 @@ private class UserExerciseImageStore(
                 afterStagedImageSync(storageKey)
                 check(target.length() == bytes.size.toLong()) { "No se pudo escribir $storageKey" }
             }
+            // Persist the staging directory entries and its parent before activation.
+            // File byte fsync alone does not make newly created image names durable.
+            syncBackupImageDirectory(staging)
+            syncBackupImageDirectory(parentDir)
         } catch (error: Throwable) {
             staging.deleteRecursively()
             throw error
@@ -348,6 +354,11 @@ private class UserExerciseImageStore(
 /** Deterministic fault points for the non-atomic Room/files/DataStore import path. */
 enum class BackupReplacePhase { BEFORE_IMAGES_ACTIVATED, AFTER_IMAGES_ACTIVATED, AFTER_PREFERENCES_UPDATED }
 
+/** Sync metadata after image directory mutations; failures propagate before Room commits. */
+private fun syncBackupImageDirectory(directory: File) {
+    FileChannel.open(directory.toPath(), StandardOpenOption.READ).use { it.force(true) }
+}
+
 private class StagedImageReplacement(
     private val current: File,
     private val staged: File,
@@ -363,9 +374,14 @@ private class StagedImageReplacement(
         if (current.exists()) {
             check(current.renameTo(previous)) { "No se pudieron preservar las imágenes actuales" }
             oldMoved = true
+            // Preserve the old directory entry before publishing the replacement.
+            syncBackupImageDirectory(current.parentFile)
         }
         check(staged.renameTo(current)) { "No se pudieron activar las imágenes importadas" }
+        // Mark active BEFORE syncing: if fsync fails, rollback must remove the new
+        // directory and restore the preserved previous one.
         activated = true
+        syncBackupImageDirectory(current.parentFile)
     }
 
     fun rollback() {
@@ -377,6 +393,8 @@ private class StagedImageReplacement(
         if (oldMoved) {
             check(previous.renameTo(current)) { "No se pudieron recuperar las imágenes anteriores" }
         }
+        // Recovery is not complete until the restored directory entry is synced.
+        syncBackupImageDirectory(current.parentFile)
         staged.deleteRecursively()
         finished = true
     }
