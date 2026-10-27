@@ -349,4 +349,77 @@ class RoomBackupDataSourceTest {
     }
 
 
+
+    @Test
+    fun `second staged image failure leaves all active images and Room untouched`() = runBlocking {
+        val dao = database.backupDao()
+        val type = dao.getSessionTypes().first()
+        val exercise = dao.getExercises().first()
+        val sessionId = UUID.randomUUID().toString()
+        dao.insertSessions(
+            listOf(
+                SessionEntity(
+                    id = sessionId,
+                    sessionDateEpochDay = LocalDate.of(2026, 10, 27).toEpochDay(),
+                    orderInDay = 1,
+                    sessionTypeId = type.id,
+                    sessionTypeNameSnapshot = type.name,
+                    name = "Sesión anterior a staging múltiple",
+                    isAutoName = false,
+                    generalNote = null,
+                    operationalState = SessionOperationalState.PLANNED,
+                    executionResult = SessionExecutionResult.NOT_STARTED,
+                ),
+            ),
+        )
+        val imageManager = ExerciseImageManager(context, database.exerciseDao())
+        val first = imageManager.addUserImage(exercise.id, byteArrayOf(1, 1))
+        val second = imageManager.addUserImage(exercise.id, byteArrayOf(2, 2))
+        val source = RoomBackupDataSource(context, database, preferences)
+        val before = source.exportSnapshot()
+        val data = BackupDataCodec.decode(before.data.decodeToString()).getOrThrow()
+        val replacement = BackupSnapshot(
+            data = BackupDataCodec.encode(
+                data.copy(
+                    sessions = emptyList(),
+                    preferences = BackupPreferences(ThemeMode.LIGHT.name),
+                ),
+            ).encodeToByteArray(),
+            images = mapOf(
+                first.storageKey to byteArrayOf(3, 3),
+                second.storageKey to byteArrayOf(4, 4),
+            ),
+        )
+
+        var stagedCount = 0
+        val failing = RoomBackupDataSource(
+            context,
+            database,
+            preferences,
+            afterStagedImageSync = {
+                stagedCount++
+                if (stagedCount == 2) error("Fallo inyectado en segunda imagen staged")
+            },
+        )
+        val failure = runCatching { failing.replaceAll(replacement) }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
+        assertEquals(2, stagedCount)
+        assertNotNull(database.trainingDao().getSession(sessionId))
+        assertEquals(1, dao.getSessions().size)
+        assertArrayEquals(byteArrayOf(1, 1), imageManager.readBytes(first))
+        assertArrayEquals(byteArrayOf(2, 2), imageManager.readBytes(second))
+        assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+        assertTrue(
+            "El staging parcial no debe quedar en disco",
+            context.filesDir.listFiles().orEmpty().none {
+                it.name.startsWith("exercise-images-import-")
+            },
+        )
+
+        source.replaceAll(replacement)
+        assertEquals(0, dao.getSessions().size)
+        assertArrayEquals(byteArrayOf(3, 3), imageManager.readBytes(first))
+        assertArrayEquals(byteArrayOf(4, 4), imageManager.readBytes(second))
+        assertEquals(ThemeMode.LIGHT, preferences.currentThemeMode())
+    }
 }
