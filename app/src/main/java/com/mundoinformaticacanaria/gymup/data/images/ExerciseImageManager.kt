@@ -4,6 +4,7 @@ import android.content.Context
 import com.mundoinformaticacanaria.gymup.data.local.ExerciseDao
 import com.mundoinformaticacanaria.gymup.data.local.ExerciseImageEntity
 import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -46,7 +47,12 @@ class ExerciseImageManager(
         val finalFile = fileFor(storageKey)
         val temporaryFile = File(imageDirectory, ".$id.tmp")
         try {
-            temporaryFile.writeBytes(bytes)
+            // Persist the image bytes before publishing the filename and Room metadata.
+            // Directory rename durability still requires separate Android validation.
+            FileOutputStream(temporaryFile).use { output ->
+                output.write(bytes)
+                output.fd.sync()
+            }
             check(temporaryFile.length() == bytes.size.toLong()) { "No se pudo guardar la imagen" }
             check(temporaryFile.renameTo(finalFile)) { "No se pudo activar la imagen guardada" }
             val entity = ExerciseImageEntity(
