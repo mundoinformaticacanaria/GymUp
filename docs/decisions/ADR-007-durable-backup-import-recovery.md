@@ -654,3 +654,23 @@ semántica de producción ni resuelve la ambigüedad física de `fsync`.
 La barrera de escritores y el gate de recuperación aún no están conectados
 a `AppContainer`. Requiere CI del HEAD y pruebas Android 15/16 antes de
 cualquier integración; #56 y PR #57 siguen abiertas/draft.
+
+## Regresión de staging no publicado — 2026-10-27 09:09 UTC
+
+Se incorporan dos pruebas JVM en `BackupRecoveryJournalTest` (commit `7ebdbce`)
+para fallos deterministas de sincronización **antes** de publicar `PREPARED`:
+
+- fallo del `fsync` del directorio padre inmediatamente después de crear
+  `.preparing`;
+- fallo del `fsync` del directorio `.preparing` después de publicar
+  `previous.zip`, pero antes de escribir el marcador.
+
+En ambos casos se exige que el journal activo siga ausente, que el arranque
+limpie exclusivamente la preparación incompleta **sin restaurar ni tocar datos
+de dominio**, y que una preparación posterior pueda completarse. La CI del
+nuevo HEAD debe verificarse antes de atribuir cobertura superada.
+
+Estas regresiones no son muerte abrupta de proceso ni validación de
+durabilidad en Android 15/16. La barrera global, recuperación anterior al
+seeder/UI, sincronización física de directorios y pruebas de interrupción
+real continúan siendo puertas de integración; #56 abierta y PR #57 draft.
