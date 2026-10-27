@@ -863,3 +863,30 @@ entonces instalar `BarrierProtectedJournaledBackupDataSource`. Probar fallos de
 recuperación con UI bloqueada y reintento, validar CI del HEAD y ejecutar pruebas
 instrumentadas/cortes reales en Android 15/16. No fusionar #57 ni cerrar #56 hasta
 cumplir esas puertas. Sin APK, tag ni release.
+
+## Integración parcial de imágenes y corrección de CI — 2026-10-27 20:08 UTC
+
+La CI #40566359681 para el avance previo falló con **181 tests ejecutados, 1 fallo**:
+`AppContainerWriteBarrierWiringTest` no fijaba SDK de Robolectric y fallaba
+al resolver el SDK 36 del proyecto (`UnsupportedOperationException` en
+`DefaultSdkProvider`). El test se fija explícitamente a SDK 35, coherente
+con las demás pruebas Robolectric y con el mínimo Android soportado. Esto no
+sustituye las pruebas instrumentadas Android 15/16.
+
+`ExerciseImageManager` recibe ahora opcionalmente la instancia compartida
+de `BackupDomainWriteBarrier` desde `DefaultAppContainer` y la mantiene
+adquirida durante la operación **completa** de alta/baja de imagen, incluyendo
+bytes privados, metadatos Room y compensaciones. Las construcciones de tests
+sin barrera conservan su comportamiento anterior. Dos regresiones Robolectric
+comprueban que el alta y la baja esperan a que termine una operación exclusiva
+de backup, sin modificar filas ni archivos mientras esperan.
+
+**Límite de seguridad:** la protección es local al proceso y solo afecta a
+las mutaciones del gestor de imágenes que usa el contenedor. No protege aún
+`UserPreferencesRepository.setThemeMode`, escrituras directas de DAO,
+lecturas expuestas ni el arranque de UI/seeding frente a recuperación pendiente.
+Por ello `BackupManager` sigue utilizando `RoomBackupDataSource` sin journal;
+no se activa `JournaledBackupDataSource`, ni se declara atomicidad/durabilidad
+física, ni se habilita merge, APK, etiqueta o release. La CI de los commits
+nuevos debe verificarse; los cortes reales y fsync en Android 15/16 quedan
+pendientes. Issue #56 abierta, PR #57 draft.
