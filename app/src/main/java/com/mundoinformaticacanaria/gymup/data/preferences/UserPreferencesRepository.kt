@@ -35,8 +35,16 @@ class UserPreferencesRepository(
 
     suspend fun currentThemeMode(): ThemeMode = themeMode.first()
 
-    /** Backups must fail closed on DataStore I/O errors instead of exporting a false SYSTEM default. */
-    suspend fun currentThemeModeForBackup(): ThemeMode = decodeThemeMode(dataStore.data.first())
+    /**
+     * Backup/recovery must not silently turn a corrupt persisted value into SYSTEM.
+     * An absent key is a legitimate first-run default; an unknown value is not.
+     * The UI keeps its tolerant fallback, but an archive must reflect actual stored state.
+     */
+    suspend fun currentThemeModeForBackup(): ThemeMode {
+        val stored = dataStore.data.first()[THEME_MODE_KEY] ?: return ThemeMode.SYSTEM
+        return ThemeMode.entries.firstOrNull { it.name == stored }
+            ?: throw IllegalStateException("El modo de tema guardado no es válido para el backup")
+    }
 
     private fun decodeThemeMode(preferences: Preferences): ThemeMode {
         val stored = preferences[THEME_MODE_KEY]
