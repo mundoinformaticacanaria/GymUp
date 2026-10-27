@@ -50,10 +50,12 @@ class RoomBackupDataSource(
     private val exportAfterRoomRead: suspend () -> Unit = {},
     // Test seam: simulate a staging failure after syncing image bytes, before Room mutation.
     private val afterStagedImageSync: (String) -> Unit = {},
+    // Deterministic seam for directory fsync failures at the rename boundaries.
+    private val imageDirectorySync: (File) -> Unit = ::syncBackupImageDirectory,
     private val importFault: (BackupReplacePhase) -> Unit = {},
 ) : BackupDataSource {
     private val backupDao = database.backupDao()
-    private val imageStore = UserExerciseImageStore(context.applicationContext, afterStagedImageSync)
+    private val imageStore = UserExerciseImageStore(context.applicationContext, afterStagedImageSync, imageDirectorySync)
 
     override suspend fun exportSnapshot(): BackupSnapshot = database.withTransaction {
         // Keep Room's read transaction open through the image capture. Previously Room
@@ -306,6 +308,7 @@ class RoomBackupDataSource(
 private class UserExerciseImageStore(
     context: Context,
     private val afterStagedImageSync: (String) -> Unit,
+    private val syncDirectory: (File) -> Unit,
 ) {
     private val parentDir = context.filesDir
     private val rootDir = File(parentDir, DIRECTORY)
@@ -334,13 +337,13 @@ private class UserExerciseImageStore(
             }
             // Persist the staging directory entries and its parent before activation.
             // File byte fsync alone does not make newly created image names durable.
-            syncBackupImageDirectory(staging)
-            syncBackupImageDirectory(parentDir)
+            syncDirectory(staging)
+            syncDirectory(parentDir)
         } catch (error: Throwable) {
             staging.deleteRecursively()
             throw error
         }
-        return StagedImageReplacement(rootDir, staging)
+        return StagedImageReplacement(rootDir, staging, syncDirectory)
     }
 
     private fun fileFor(directory: File, storageKey: String): File =
@@ -362,6 +365,7 @@ private fun syncBackupImageDirectory(directory: File) {
 private class StagedImageReplacement(
     private val current: File,
     private val staged: File,
+    private val syncDirectory: (File) -> Unit,
 ) {
     // Unique path: never delete another operation's preserved user images.
     private val previous = File(current.parentFile, "${current.name}-previous-${UUID.randomUUID()}")
@@ -375,13 +379,13 @@ private class StagedImageReplacement(
             check(current.renameTo(previous)) { "No se pudieron preservar las imágenes actuales" }
             oldMoved = true
             // Preserve the old directory entry before publishing the replacement.
-            syncBackupImageDirectory(current.parentFile)
+            syncDirectory(current.parentFile)
         }
         check(staged.renameTo(current)) { "No se pudieron activar las imágenes importadas" }
         // Mark active BEFORE syncing: if fsync fails, rollback must remove the new
         // directory and restore the preserved previous one.
         activated = true
-        syncBackupImageDirectory(current.parentFile)
+        syncDirectory(current.parentFile)
     }
 
     fun rollback() {
@@ -394,7 +398,7 @@ private class StagedImageReplacement(
             check(previous.renameTo(current)) { "No se pudieron recuperar las imágenes anteriores" }
         }
         // Recovery is not complete until the restored directory entry is synced.
-        syncBackupImageDirectory(current.parentFile)
+        syncDirectory(current.parentFile)
         staged.deleteRecursively()
         finished = true
     }
