@@ -18,6 +18,9 @@ import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogKind
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterMaintenanceItem
 import com.mundoinformaticacanaria.gymup.domain.repository.RoutineRemovalConfirmationRequired
 import java.io.File
+import java.io.IOException
+import java.nio.channels.FileChannel
+import java.nio.file.StandardOpenOption
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -25,6 +28,9 @@ import kotlinx.coroutines.flow.map
 class RoomCatalogMaintenanceRepository(
     context: Context,
     private val database: GymUpDatabase,
+    // Deterministic seams for failure testing; production uses filesystem operations.
+    private val removeImageFile: (File) -> Boolean = File::delete,
+    private val syncImageDirectory: (File) -> Unit = ::syncDirectoryMetadata,
 ) : CatalogMaintenanceRepository {
     private val dao: CatalogMaintenanceDao = database.catalogMaintenanceDao()
     private val imageDirectory = File(context.applicationContext.filesDir, "exercise-images")
@@ -156,8 +162,17 @@ class RoomCatalogMaintenanceRepository(
                 imageStorageKeys,
             )
         }
+        // Room has already committed. Never report success when private image cleanup fails:
+        // this would silently leave orphan files. A durable journal is still required to
+        // recover an interrupted delete and to handle multi-image partial cleanup.
         execution.userImageStorageKeys.forEach { storageKey ->
-            File(imageDirectory, storageKey.removePrefix("user:")).delete()
+            val file = File(imageDirectory, storageKey.removePrefix("user:"))
+            if (file.exists()) {
+                if (!removeImageFile(file) || file.exists()) {
+                    throw IOException("No se pudo eliminar el archivo de imagen del ejercicio; la baja en Room ya se confirmó")
+                }
+                syncImageDirectory(imageDirectory)
+            }
         }
         return execution.result
     }
@@ -247,6 +262,12 @@ class RoomCatalogMaintenanceRepository(
             isFavorite = favorite,
             isActive = active,
         )
+    }
+
+    private companion object {
+        fun syncDirectoryMetadata(directory: File) {
+            FileChannel.open(directory.toPath(), StandardOpenOption.READ).use { it.force(true) }
+        }
     }
 
     private data class DeletionExecution(
