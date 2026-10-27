@@ -2,6 +2,8 @@ package com.mundoinformaticacanaria.gymup.data.backup
 
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.channels.FileChannel
+import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 
 /**
@@ -12,7 +14,11 @@ import java.security.MessageDigest
  * on PREPARED data. The state file is replaced via a same-directory rename; power-loss durability
  * of directory metadata still needs verification on the supported Android filesystems.
  */
-internal class BackupRecoveryJournal(private val directory: File) {
+internal class BackupRecoveryJournal(
+    private val directory: File,
+    // Injected by tests to verify ordering/fail-closed behavior; production syncs metadata.
+    private val syncDirectory: (File) -> Unit = ::syncDirectoryMetadata,
+) {
     /** Stable in-process identity shared by coordinator instances for this journal path. */
     internal val lockKey: String = directory.canonicalPath
     // Retire COMMITTED state before deleting files: a crash must not leave a partial active journal.
@@ -55,12 +61,15 @@ internal class BackupRecoveryJournal(private val directory: File) {
         check(!retiredDirectory.exists()) { "Queda una limpieza anterior pendiente" }
         check(!preparingDirectory.exists()) { "Queda una preparación incompleta pendiente" }
         check(preparingDirectory.mkdirs()) { "No se pudo crear la preparación del journal" }
+        syncDirectory(preparingDirectory.parentFile)
         // An interrupted preparation is not an active journal: no domain mutation is allowed
         // until this method publishes the complete PREPARED directory and returns.
         writeSynced(File(preparingDirectory, ARCHIVE_FILE), previousArchive)
         val digest = sha256(previousArchive)
         writeSynced(File(preparingDirectory, STATE_FILE), "$VERSION PREPARED $digest\n".toByteArray(Charsets.US_ASCII))
         check(preparingDirectory.renameTo(directory)) { "No se pudo publicar el journal preparado" }
+        // Persist the PREPARED directory entry before any caller can mutate domain data.
+        syncDirectory(directory.parentFile)
     }
 
     fun markCommitted() {
@@ -87,6 +96,7 @@ internal class BackupRecoveryJournal(private val directory: File) {
         check(inspect() is State.Committed) { "No se puede eliminar un journal pendiente" }
         check(!retiredDirectory.exists()) { "Queda una limpieza anterior pendiente" }
         check(directory.renameTo(retiredDirectory)) { "No se pudo retirar el journal confirmado" }
+        syncDirectory(directory.parentFile)
         cleanupRetired()
     }
 
@@ -95,12 +105,14 @@ internal class BackupRecoveryJournal(private val directory: File) {
         if (!preparingDirectory.exists()) return
         check(!directory.exists()) { "No se descarta preparación si existe un journal activo" }
         check(preparingDirectory.deleteRecursively()) { "No se pudo limpiar la preparación incompleta" }
+        syncDirectory(preparingDirectory.parentFile)
     }
 
     /** Retry cleanup of a previously COMMITTED journal after an interrupted deletion. */
     fun cleanupRetired() {
         if (retiredDirectory.exists()) {
             check(retiredDirectory.deleteRecursively()) { "No se pudo limpiar el journal retirado" }
+            syncDirectory(retiredDirectory.parentFile)
         }
     }
 
@@ -117,6 +129,8 @@ internal class BackupRecoveryJournal(private val directory: File) {
         } else {
             check(!target.exists() && temp.renameTo(target)) { "No se pudo publicar el journal" }
         }
+        // fsync(file) alone does not persist the rename/creation of its directory entry.
+        syncDirectory(target.parentFile)
     }
 
     private fun sha256(bytes: ByteArray): String =
@@ -124,6 +138,13 @@ internal class BackupRecoveryJournal(private val directory: File) {
             .joinToString("") { "%02x".format(it) }
 
     private companion object {
+        /** Android 15+ supports NIO FileChannel; fail closed if directory fsync is unavailable. */
+        fun syncDirectoryMetadata(directory: File) {
+            FileChannel.open(directory.toPath(), StandardOpenOption.READ).use { channel ->
+                channel.force(true)
+            }
+        }
+
         const val VERSION = "1"
         const val ARCHIVE_FILE = "previous.zip"
         const val STATE_FILE = "state"
