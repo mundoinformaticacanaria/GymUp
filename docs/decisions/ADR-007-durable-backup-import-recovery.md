@@ -699,3 +699,11 @@ revisión de durabilidad y exclusión global. El `AppContainer` no instala
 la barrera compartida ni recuperación antes de seeding/UI; la PR continúa
 en borrador y la Issue #56 abierta. Comprobar CI del HEAD antes de dar por
 validadas estas pruebas. Sin autorización de candidato APK ni merge.
+
+## Lectura estricta de preferencias para backup — 2026-10-27
+
+El flujo de tema usado por la UI mantiene su fallback a `SYSTEM` ante `IOException` de DataStore para permitir una visualización degradada. Esa tolerancia **no es válida para capturar una preimagen de recuperación**: convertir silenciosamente un error de lectura en `SYSTEM` podría sobrescribir la preferencia original al restaurar un backup.
+
+La PR #57 introduce `UserPreferencesRepository.currentThemeModeForBackup()`, que lee DataStore sin capturar `IOException`. `RoomBackupDataSource.exportSnapshot()` y `replaceAll()` la utilizan para **abortar antes de publicar una instantánea incorrecta o de mutar Room/imágenes** si no puede leerse el tema. La regresión Robolectric `BackupPreferencesReadFailureTest` inyecta una lectura fallida, comprueba el fallback de UI, el rechazo de exportación/importación y la conservación del estado de Room.
+
+**Límites:** esto no aporta durabilidad física ni convierte Room, DataStore e imágenes en una transacción atómica. Siguen pendientes barrera global, conexión de recuperación al arranque, confirmación COMMITTED y pruebas de cortes reales en Android 15/16. La CI del HEAD con estos cambios debe comprobarse antes de atribuirles validación.
