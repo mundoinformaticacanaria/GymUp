@@ -127,4 +127,48 @@ class ExerciseImageDurabilityTest {
         assertEquals(image.id, database.exerciseDao().getImageById(image.id)?.id)
         assertArrayEquals(bytes, normalManager.readBytes(image))
     }
+
+    @Test
+    fun `failure after Room image insert compensates metadata before deleting bytes`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val bytes = byteArrayOf(10, 20, 30, 40)
+        val manager = ExerciseImageManager(
+            context = context,
+            exerciseDao = database.exerciseDao(),
+            afterImageRowInsert = { entity ->
+                assertEquals(entity.id, database.exerciseDao().getImageById(entity.id)?.id)
+                throw IOException("simulated failure after committed image row")
+            },
+        )
+
+        val failure = runCatching { manager.addUserImage(exercise.id, bytes) }.exceptionOrNull()
+        assertTrue(failure is IOException)
+        assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+        assertFalse(context.filesDir.resolve("exercise-images").listFiles().orEmpty().any { it.isFile })
+
+        val retry = ExerciseImageManager(context, database.exerciseDao())
+        val image = retry.addUserImage(exercise.id, bytes)
+        assertArrayEquals(bytes, retry.readBytes(image))
+        assertEquals(1, database.exerciseDao().getImages(exercise.id).size)
+    }
+
+    @Test
+    fun `cancellation after Room image insert compensates metadata and preserves retry`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val bytes = byteArrayOf(1, 3, 5, 7)
+        val manager = ExerciseImageManager(
+            context = context,
+            exerciseDao = database.exerciseDao(),
+            afterImageRowInsert = { throw CancellationException("cancelled after image row insert") },
+        )
+
+        val failure = runCatching { manager.addUserImage(exercise.id, bytes) }.exceptionOrNull()
+        assertTrue(failure is CancellationException)
+        assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+        assertFalse(context.filesDir.resolve("exercise-images").listFiles().orEmpty().any { it.isFile })
+
+        val retry = ExerciseImageManager(context, database.exerciseDao())
+        val image = retry.addUserImage(exercise.id, bytes)
+        assertArrayEquals(bytes, retry.readBytes(image))
+    }
 }
