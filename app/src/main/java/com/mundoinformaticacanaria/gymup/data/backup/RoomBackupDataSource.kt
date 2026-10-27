@@ -46,10 +46,12 @@ class RoomBackupDataSource(
     private val preferences: UserPreferencesRepository,
     // Test seam for proving Room's transaction stays open until image capture finishes.
     private val exportAfterRoomRead: suspend () -> Unit = {},
+    // Test seam: simulate a staging failure after syncing image bytes, before Room mutation.
+    private val afterStagedImageSync: (String) -> Unit = {},
     private val importFault: (BackupReplacePhase) -> Unit = {},
 ) : BackupDataSource {
     private val backupDao = database.backupDao()
-    private val imageStore = UserExerciseImageStore(context.applicationContext)
+    private val imageStore = UserExerciseImageStore(context.applicationContext, afterStagedImageSync)
 
     override suspend fun exportSnapshot(): BackupSnapshot = database.withTransaction {
         // Keep Room's read transaction open through the image capture. Previously Room
@@ -299,7 +301,10 @@ class RoomBackupDataSource(
     }
 }
 
-private class UserExerciseImageStore(context: Context) {
+private class UserExerciseImageStore(
+    context: Context,
+    private val afterStagedImageSync: (String) -> Unit,
+) {
     private val parentDir = context.filesDir
     private val rootDir = File(parentDir, DIRECTORY)
 
@@ -322,6 +327,7 @@ private class UserExerciseImageStore(context: Context) {
                     output.write(bytes)
                     output.fd.sync()
                 }
+                afterStagedImageSync(storageKey)
                 check(target.length() == bytes.size.toLong()) { "No se pudo escribir $storageKey" }
             }
         } catch (error: Throwable) {
