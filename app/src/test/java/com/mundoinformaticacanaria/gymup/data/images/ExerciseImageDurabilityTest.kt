@@ -213,4 +213,53 @@ class ExerciseImageDurabilityTest {
         assertTrue(database.exerciseDao().getImageById(image.id) == null)
         assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
     }
+
+    @Test
+    fun `failed directory sync after image deletion never recreates missing Room reference`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        var failDeletionSync = false
+        val manager = ExerciseImageManager(
+            context = context,
+            exerciseDao = database.exerciseDao(),
+            syncImageDirectory = { directory ->
+                if (failDeletionSync && directory.name == "exercise-images") {
+                    throw IOException("simulated directory sync failure after deletion")
+                }
+            },
+        )
+        val image = manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3, 4))
+        failDeletionSync = true
+
+        val failure = runCatching { manager.deleteUserImage(image.id) }.exceptionOrNull()
+        assertTrue(failure is IOException)
+        assertFalse(image.localFile!!.exists())
+        assertTrue(database.exerciseDao().getImageById(image.id) == null)
+
+        failDeletionSync = false
+        val retry = manager.addUserImage(exercise.id, byteArrayOf(5, 6, 7))
+        assertArrayEquals(byteArrayOf(5, 6, 7), manager.readBytes(retry))
+        assertEquals(1, database.exerciseDao().getImages(exercise.id).size)
+    }
+
+    @Test
+    fun `file deletion reporting success without removing bytes restores Room reference`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val normalManager = ExerciseImageManager(context, database.exerciseDao())
+        val image = normalManager.addUserImage(exercise.id, byteArrayOf(3, 1, 4))
+        val lyingManager = ExerciseImageManager(
+            context = context,
+            exerciseDao = database.exerciseDao(),
+            removeUserImageFile = { true },
+        )
+
+        val failure = runCatching { lyingManager.deleteUserImage(image.id) }.exceptionOrNull()
+        assertTrue(failure is IOException)
+        assertTrue(image.localFile!!.exists())
+        assertEquals(image.id, database.exerciseDao().getImageById(image.id)?.id)
+
+        normalManager.deleteUserImage(image.id)
+        assertFalse(image.localFile!!.exists())
+        assertTrue(database.exerciseDao().getImageById(image.id) == null)
+    }
+
 }
