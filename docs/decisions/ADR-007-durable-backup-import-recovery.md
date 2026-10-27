@@ -506,3 +506,18 @@ no simula muerte abrupta, pérdida de energía ni durabilidad de entradas de
 directorio. La recuperación obligatoria antes de UI/seeding, la barrera global
 conectada a todos los escritores y la verificación de metadatos de directorio
 siguen pendientes. Mantener Issue #56 abierta y PR #57 en borrador.
+
+## Persistencia de imágenes creadas por el usuario — 2026-10-27 02:12 UTC
+
+`ExerciseImageManager.addUserImage` sincroniza ahora los bytes del archivo temporal con
+`FileDescriptor.sync()` **antes** de renombrarlo al nombre definitivo y escribir sus
+metadatos en Room (commit `7df5532`). Si falla la escritura o sincronización,
+la operación aborta sin insertar los metadatos de la imagen; la limpieza del temporal
+sigue en `finally`. Esto armoniza la escritura ordinaria de imágenes con el staging
+de importación y reduce la ventana de pérdida de bytes frente a interrupciones.
+
+**No constituye durabilidad transaccional**: faltan sincronización/validación de
+entradas de directorio, exclusión global de escritores, recuperación productiva antes
+de seeding/UI y pruebas instrumentadas de muerte real de proceso en Android 15/16.
+La ruta de alta ordinaria continúa sin wrapper de barrera en `AppContainer`.
+El cambio debe superar Android CI en su HEAD; no autoriza integrar la PR ni cerrar #56.
