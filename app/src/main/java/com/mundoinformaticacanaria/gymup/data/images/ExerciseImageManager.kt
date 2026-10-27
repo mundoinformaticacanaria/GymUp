@@ -136,8 +136,17 @@ class ExerciseImageManager(
         // journal/startup protocol and a shared domain write barrier (Issue #56).
         exerciseDao.deleteImage(image)
         val failure = try {
-            if (file.exists() && !removeUserImageFile(file)) {
-                IOException("No se pudo eliminar el archivo de imagen")
+            if (file.exists()) {
+                when {
+                    !removeUserImageFile(file) -> IOException("No se pudo eliminar el archivo de imagen")
+                    file.exists() -> IOException("El archivo de imagen sigue presente tras el borrado")
+                    else -> {
+                        // Persist the directory removal before reporting a successful deletion.
+                        // If fsync fails, bytes may already be gone: never recreate a dangling Room row.
+                        syncImageDirectory(imageDirectory)
+                        null
+                    }
+                }
             } else {
                 null
             }
