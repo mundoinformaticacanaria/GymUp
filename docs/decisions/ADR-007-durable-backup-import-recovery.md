@@ -777,3 +777,23 @@ archivo; requiere reparación/recuperación posterior. Sigue pendiente conectar
 la barrera compartida y recuperación antes del seeder/UI, auditar la baja
 de imágenes y validar fsync/interrupción real en Android 15/16. Comprobar CI
 del nuevo HEAD; #56 permanece abierta y PR #57 en borrador.
+
+## Corrección incremental — 2026-10-27 15:10 Canarias
+
+La auditoría de `ExerciseImageManager.deleteUserImage` detectó una ventana adicional
+ante errores controlados: un hook de borrado podía eliminar los bytes y después
+lanzar una excepción o cancelación. La compensación anterior reinsertaba
+incondicionalmente la fila Room, creando una referencia a un archivo inexistente.
+
+La corrección `bac10e9` restaura la fila solo si el archivo sigue presente;
+`4bf2a64` añade dos regresiones Robolectric para excepción y cancelación
+**después** de eliminar los bytes. Si el archivo ya desapareció, se conserva
+la eliminación de metadatos y se propaga el error, sin inventar recuperación
+de bytes que ya no existen.
+
+**Límite:** esto protege la coherencia de referencias ante fallos controlados
+en esa ventana, no la atomicidad de Room + sistema de archivos ni la
+durabilidad del borrado tras corte de energía. Sigue faltando sincronizar
+metadatos de directorio de bajas, integrar barrera y recuperación en
+`AppContainer`, y validar cortes reales en Android 15/16. La Issue #56
+permanece abierta y la PR #57 en borrador; no habilita merge ni candidato APK.
