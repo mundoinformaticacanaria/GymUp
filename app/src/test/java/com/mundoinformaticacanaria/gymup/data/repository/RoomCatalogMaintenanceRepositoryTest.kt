@@ -6,18 +6,21 @@ import androidx.test.core.app.ApplicationProvider
 import com.mundoinformaticacanaria.gymup.core.model.LoadMode
 import com.mundoinformaticacanaria.gymup.core.model.MeasurementUnit
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
+import com.mundoinformaticacanaria.gymup.data.local.ExerciseImageEntity
 import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseDeletionResult
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseMaintenanceInput
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogKind
 import com.mundoinformaticacanaria.gymup.domain.repository.RoutineRemovalConfirmationRequired
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionSource
+import java.io.IOException
 import java.time.LocalDate
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
@@ -152,6 +155,56 @@ class RoomCatalogMaintenanceRepositoryTest {
         assertEquals(ExerciseDeletionResult.Deactivated, result)
         assertFalse(requireNotNull(maintenance.getExercise(exerciseId)).isActive)
         assertEquals(exerciseId, requireNotNull(training.getSessionDetail(sessionId)).exercises.single().exerciseId)
+    }
+
+    @Test
+    fun `exercise deletion reports failed image removal instead of silently succeeding`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Borrado fallido", "Failed deletion"))
+        val file = context.filesDir.resolve("exercise-images").apply { mkdirs() }.resolve("delete-failure")
+        file.writeText("image bytes")
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "delete-failure", exerciseId = exerciseId, position = 1,
+                sourceType = "USER", storageKey = "user:delete-failure",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+        val failing = RoomCatalogMaintenanceRepository(
+            context, database, removeImageFile = { false }, syncImageDirectory = {},
+        )
+
+        assertThrows(IOException::class.java) {
+            runBlocking { failing.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+        // This is NOT rollback: the Room transaction already committed. Preserve the
+        // orphan bytes for a future recovery/cleanup instead of reporting false success.
+        assertNull(maintenance.getExercise(exerciseId))
+        assertTrue(file.isFile)
+    }
+
+    @Test
+    fun `exercise deletion rejects false positive filesystem success`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Borrado simulado", "Simulated deletion"))
+        val file = context.filesDir.resolve("exercise-images").apply { mkdirs() }.resolve("false-success")
+        file.writeText("image bytes")
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "false-success", exerciseId = exerciseId, position = 1,
+                sourceType = "USER", storageKey = "user:false-success",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+        val failing = RoomCatalogMaintenanceRepository(
+            context, database, removeImageFile = { true }, syncImageDirectory = {},
+        )
+
+        assertThrows(IOException::class.java) {
+            runBlocking { failing.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+        assertNull(maintenance.getExercise(exerciseId))
+        assertTrue(file.isFile)
     }
 
     private fun customInput(
