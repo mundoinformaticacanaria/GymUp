@@ -428,6 +428,7 @@ class RoomBackupDataSourceTest {
         val exercise = database.backupDao().getExercises().first()
         val before = database.exerciseDao().getImages(exercise.id)
         val directory = context.filesDir.resolve("exercise-images")
+        val originalFiles = directory.listFiles().orEmpty().map { it.name }.toSet()
         val bytes = byteArrayOf(11, 22, 33, 44)
         var syncedFileSeen = false
         val failing = ExerciseImageManager(
@@ -445,7 +446,7 @@ class RoomBackupDataSourceTest {
         assertTrue(failure is IllegalStateException)
         assertTrue(syncedFileSeen)
         assertEquals(before, database.exerciseDao().getImages(exercise.id))
-        assertTrue("No deben quedar temporales ni imágenes publicadas", directory.listFiles().orEmpty().isEmpty())
+        assertEquals("No deben quedar temporales ni imágenes publicadas", originalFiles, directory.listFiles().orEmpty().map { it.name }.toSet())
 
         val successful = ExerciseImageManager(context, database.exerciseDao())
             .addUserImage(exercise.id, bytes)
