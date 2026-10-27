@@ -453,4 +453,83 @@ class RoomBackupDataSourceTest {
         assertArrayEquals(bytes, successful.localFile?.readBytes())
         assertEquals(before.size + 1, database.exerciseDao().getImages(exercise.id).size)
     }
+
+    @Test
+    fun `directory fsync failures around image activation restore Room images and theme`() = runBlocking {
+        val dao = database.backupDao()
+        val type = dao.getSessionTypes().first()
+        val exercise = dao.getExercises().first()
+        val sessionId = UUID.randomUUID().toString()
+        dao.insertSessions(
+            listOf(
+                SessionEntity(
+                    id = sessionId,
+                    sessionDateEpochDay = LocalDate.of(2026, 10, 27).toEpochDay(),
+                    orderInDay = 1,
+                    sessionTypeId = type.id,
+                    sessionTypeNameSnapshot = type.name,
+                    name = "Sesión anterior a fsync directorio",
+                    isAutoName = false,
+                    generalNote = null,
+                    operationalState = SessionOperationalState.PLANNED,
+                    executionResult = SessionExecutionResult.NOT_STARTED,
+                ),
+            ),
+        )
+        val imageManager = ExerciseImageManager(context, database.exerciseDao())
+        val previousBytes = byteArrayOf(1, 2, 3)
+        val image = imageManager.addUserImage(exercise.id, previousBytes)
+        val source = RoomBackupDataSource(context, database, preferences)
+        val before = source.exportSnapshot()
+        val data = BackupDataCodec.decode(before.data.decodeToString()).getOrThrow()
+        val replacement = BackupSnapshot(
+            data = BackupDataCodec.encode(
+                data.copy(
+                    sessions = emptyList(),
+                    preferences = BackupPreferences(ThemeMode.LIGHT.name),
+                ),
+            ).encodeToByteArray(),
+            images = mapOf(image.storageKey to byteArrayOf(9, 8, 7)),
+        )
+
+        // Parent sync #1: staging directory publication.
+        // Parent sync #2: old images moved aside; #3: new images activated.
+        // Both failures must restore the old image directory, including the case
+        // where rename succeeded but its directory fsync did not.
+        for (failAt in listOf(2, 3)) {
+            var parentSyncs = 0
+            val failing = RoomBackupDataSource(
+                context,
+                database,
+                preferences,
+                imageDirectorySync = { directory ->
+                    if (directory.canonicalPath == context.filesDir.canonicalPath) {
+                        parentSyncs++
+                        if (parentSyncs == failAt) {
+                            error("Simulated image directory fsync failure at $failAt")
+                        }
+                    }
+                },
+            )
+            val failure = runCatching { failing.replaceAll(replacement) }.exceptionOrNull()
+            assertTrue("Expected fsync failure at $failAt", failure is IllegalStateException)
+            assertNotNull(database.trainingDao().getSession(sessionId))
+            assertEquals(1, dao.getSessions().size)
+            assertArrayEquals(previousBytes, imageManager.readBytes(image))
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+            assertTrue(
+                "No stale staged or previous image directory after rollback",
+                context.filesDir.listFiles().orEmpty().none {
+                    it.name.startsWith("exercise-images-import-") ||
+                        it.name.startsWith("exercise-images-previous-")
+                },
+            )
+        }
+
+        source.replaceAll(replacement)
+        assertEquals(0, dao.getSessions().size)
+        assertArrayEquals(byteArrayOf(9, 8, 7), imageManager.readBytes(image))
+        assertEquals(ThemeMode.LIGHT, preferences.currentThemeMode())
+    }
+
 }
