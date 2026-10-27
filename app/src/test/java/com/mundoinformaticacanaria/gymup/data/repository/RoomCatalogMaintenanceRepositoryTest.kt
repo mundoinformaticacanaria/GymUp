@@ -207,6 +207,52 @@ class RoomCatalogMaintenanceRepositoryTest {
         assertTrue(file.isFile)
     }
 
+    @Test
+    fun `exercise deletion rejects traversal image key before committing Room`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Imagen insegura", "Unsafe image"))
+        val outside = context.filesDir.resolve("outside-exercise-images").apply { writeText("keep me") }
+        try {
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = "traversal", exerciseId = exerciseId, position = 1,
+                    sourceType = "USER", storageKey = "user:../outside-exercise-images",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+            }
+
+            assertTrue(maintenance.getExercise(exerciseId) != null)
+            assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+            assertEquals("keep me", outside.readText())
+        } finally {
+            outside.delete()
+        }
+    }
+
+    @Test
+    fun `exercise deletion rejects malformed user image key without dropping references`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Imagen inválida", "Invalid image"))
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "missing-prefix", exerciseId = exerciseId, position = 1,
+                sourceType = "USER", storageKey = "legacy-image-key",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+
+        assertTrue(maintenance.getExercise(exerciseId) != null)
+        assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+    }
+
     private fun customInput(
         groupId: String,
         es: String,
