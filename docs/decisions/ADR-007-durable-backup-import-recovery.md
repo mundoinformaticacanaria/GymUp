@@ -489,3 +489,20 @@ instalar en `AppContainer`, fusionar ni generar APK por este avance aislado.
 PR #57 añade una inyección determinista **después de sincronizar los bytes de una imagen en staging, antes de comenzar la transacción Room** (`RoomBackupDataSource.afterStagedImageSync`). Una prueba Robolectric verifica que, al fallar en ese punto, la sesión anterior, los bytes de la imagen activa y la preferencia de tema permanecen intactos, el staging se retira y el mismo payload puede importarse después sin el fallo. Es una prueba de la frontera de preparación, no una simulación de muerte de proceso.
 
 **Límites:** el callback es únicamente un seam de prueba; no acredita que `fsync` haya persistido las entradas del directorio tras pérdida de energía. Tampoco sustituye la barrera global, la recuperación obligatoria antes de UI/seeder ni la validación física de cortes reales. Verificar CI del nuevo HEAD antes de considerar superada esta regresión. La Issue #56 sigue abierta y PR #57 en borrador.
+
+## Regresión de staging parcial con múltiples imágenes — 2026-10-27 01:12 UTC
+
+La PR #57 añade una prueba Robolectric en `RoomBackupDataSourceTest` que
+inyecta un error controlado **tras sincronizar la segunda imagen** de una
+importación. Verifica que se descarta el staging parcial (incluida la primera
+imagen ya escrita), permanecen intactas ambas imágenes activas, la sesión
+previa de Room y la preferencia de tema, y el mismo payload se puede importar
+posteriormente sin el fallo. Este caso complementa la prueba anterior de
+fallo tras la primera imagen y evita atribuir a un staging parcialmente
+completado la semántica de un reemplazo confirmado.
+
+**Alcance limitado:** prueba un fallo recuperable del proceso en ejecución;
+no simula muerte abrupta, pérdida de energía ni durabilidad de entradas de
+directorio. La recuperación obligatoria antes de UI/seeding, la barrera global
+conectada a todos los escritores y la verificación de metadatos de directorio
+siguen pendientes. Mantener Issue #56 abierta y PR #57 en borrador.
