@@ -521,3 +521,21 @@ entradas de directorio, exclusión global de escritores, recuperación productiv
 de seeding/UI y pruebas instrumentadas de muerte real de proceso en Android 15/16.
 La ruta de alta ordinaria continúa sin wrapper de barrera en `AppContainer`.
 El cambio debe superar Android CI en su HEAD; no autoriza integrar la PR ni cerrar #56.
+
+## Regresión de alta ordinaria de imágenes — 2026-10-27 03:10 UTC
+
+PR #57 incorpora un punto de fallo determinista opcional en
+`ExerciseImageManager.addUserImage`, **después** de escribir y sincronizar
+los bytes temporales y **antes** de renombrar el archivo y añadir la fila Room.
+Una prueba Robolectric comprueba que el error deja intactos los metadatos de
+imágenes del ejercicio, no publica ni abandona archivos nuevos y permite
+reintentar el alta con éxito. El callback no cambia el comportamiento de
+producción cuando no se inyecta.
+
+**Límites:** esta prueba simula una excepción controlada, no terminación
+abrupta ni pérdida de energía. La sincronización de bytes no garantiza
+durabilidad de renombres ni entradas de directorio. Tampoco conecta la
+barrera global de escrituras ni la recuperación obligatoria en
+`AppContainer`. Verificar Android CI del HEAD antes de considerar validado
+este caso; mantener Issue #56 abierta y PR #57 en borrador, sin merge,
+candidato APK, etiqueta ni release.
