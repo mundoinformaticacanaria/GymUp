@@ -5,11 +5,14 @@ import com.mundoinformaticacanaria.gymup.data.local.ExerciseDao
 import com.mundoinformaticacanaria.gymup.data.local.ExerciseImageEntity
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.StandardOpenOption
 import java.util.UUID
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 data class ExerciseImageItem(
     val id: String,
@@ -26,6 +29,8 @@ class ExerciseImageManager(
     private val afterUserImageSync: (File) -> Unit = {},
     // Test seam for metadata durability after publishing a user image.
     private val syncImageDirectory: (File) -> Unit = ::syncImageDirectoryMetadata,
+    // Test seam for controlled deletion failures after Room has removed the image row.
+    private val removeUserImageFile: (File) -> Boolean = File::delete,
 ) {
     private val imageDirectory = File(context.applicationContext.filesDir, DIRECTORY)
 
@@ -101,8 +106,27 @@ class ExerciseImageManager(
     suspend fun deleteUserImage(imageId: String) {
         val image = requireNotNull(exerciseDao.getImageById(imageId)) { "La imagen ya no existe" }
         require(image.sourceType == USER_SOURCE) { "Solo pueden eliminarse imágenes personalizadas" }
+        val file = fileFor(image.storageKey)
+        // Keep the file until Room confirms the deletion. If removing the file then
+        // fails, restore the original Room reference instead of silently orphaning it.
+        // This is only exception recovery; abrupt process death still needs the
+        // journal/startup protocol and a shared domain write barrier (Issue #56).
         exerciseDao.deleteImage(image)
-        fileFor(image.storageKey).delete()
+        val failure = try {
+            if (file.exists() && !removeUserImageFile(file)) {
+                IOException("No se pudo eliminar el archivo de imagen")
+            } else {
+                null
+            }
+        } catch (error: Throwable) {
+            error
+        }
+        if (failure != null) {
+            withContext(NonCancellable) {
+                runCatching { exerciseDao.insertImage(image) }.onFailure(failure::addSuppressed)
+            }
+            throw failure
+        }
     }
 
     fun readBytes(item: ExerciseImageItem): ByteArray? =
