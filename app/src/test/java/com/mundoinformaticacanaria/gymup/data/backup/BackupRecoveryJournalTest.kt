@@ -140,4 +140,70 @@ class BackupRecoveryJournalTest {
         assertTrue(runCatching { BackupRecoveryJournal(directory).cleanupCommitted() }.isFailure)
         assertTrue(File(directory, "state").exists())
     }
+
+    @Test
+    fun `journal syncs directory entries before reporting prepared and committed`() {
+        val directory = File(temp.root, "recovery")
+        val seen = mutableListOf<String>()
+        val journal = BackupRecoveryJournal(directory) { seen += it.canonicalPath }
+
+        journal.prepare(byteArrayOf(1, 2, 3))
+        assertEquals(
+            listOf(
+                temp.root.canonicalPath, // creation of .preparing
+                File(temp.root, "recovery.preparing").canonicalPath, // previous.zip rename
+                File(temp.root, "recovery.preparing").canonicalPath, // state rename
+                temp.root.canonicalPath, // publish PREPARED directory
+            ),
+            seen,
+        )
+        assertTrue(journal.inspect() is BackupRecoveryJournal.State.Prepared)
+
+        journal.markCommitted()
+        assertEquals(directory.canonicalPath, seen.last()) // state.tmp -> state
+        assertEquals(BackupRecoveryJournal.State.Committed, journal.inspect())
+
+        journal.cleanupCommitted()
+        assertEquals(temp.root.canonicalPath, seen.last()) // retired directory deletion
+        assertEquals(BackupRecoveryJournal.State.Absent, journal.inspect())
+    }
+
+    @Test
+    fun `failure to sync published prepared directory prevents mutation and retains preimage`() {
+        val directory = File(temp.root, "recovery")
+        val previous = byteArrayOf(4, 5, 6)
+        var parentSyncs = 0
+        val journal = BackupRecoveryJournal(directory) { parent ->
+            if (parent.canonicalPath == temp.root.canonicalPath && ++parentSyncs == 2) {
+                error("Simulated failure syncing published PREPARED directory")
+            }
+        }
+
+        assertTrue(runCatching { journal.prepare(previous) }.isFailure)
+        assertEquals(2, parentSyncs)
+        assertArrayEquals(
+            previous,
+            (BackupRecoveryJournal(directory).inspect() as BackupRecoveryJournal.State.Prepared)
+                .previousArchive,
+        )
+        // Caller must not apply replacement after prepare throws. Startup recovery can retry.
+    }
+
+    @Test
+    fun `failure to sync committed marker is reported and retains verifiable journal`() {
+        val directory = File(temp.root, "recovery")
+        var failOnCommit = false
+        val journal = BackupRecoveryJournal(directory) { parent ->
+            if (failOnCommit && parent.canonicalPath == directory.canonicalPath) {
+                error("Simulated directory metadata sync failure")
+            }
+        }
+        journal.prepare(byteArrayOf(7, 8, 9))
+        failOnCommit = true
+
+        assertTrue(runCatching { journal.markCommitted() }.isFailure)
+        // A rename may have succeeded before its fsync failed; never claim durable success.
+        assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(directory).inspect())
+    }
+
 }
