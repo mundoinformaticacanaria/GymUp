@@ -171,4 +171,46 @@ class ExerciseImageDurabilityTest {
         val image = retry.addUserImage(exercise.id, bytes)
         assertArrayEquals(bytes, retry.readBytes(image))
     }
+
+    @Test
+    fun `deletion error after bytes are removed never recreates a dangling Room row`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val image = manager.addUserImage(exercise.id, byteArrayOf(9, 8, 7))
+        val failingManager = ExerciseImageManager(
+            context = context,
+            exerciseDao = database.exerciseDao(),
+            removeUserImageFile = { target ->
+                assertTrue(target.delete())
+                throw IOException("failure after file deletion")
+            },
+        )
+
+        val failure = runCatching { failingManager.deleteUserImage(image.id) }.exceptionOrNull()
+        assertTrue(failure is IOException)
+        assertFalse(image.localFile!!.exists())
+        assertTrue(database.exerciseDao().getImageById(image.id) == null)
+        assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+    }
+
+    @Test
+    fun `cancellation after bytes are removed never recreates a dangling Room row`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val image = manager.addUserImage(exercise.id, byteArrayOf(6, 5, 4))
+        val failingManager = ExerciseImageManager(
+            context = context,
+            exerciseDao = database.exerciseDao(),
+            removeUserImageFile = { target ->
+                assertTrue(target.delete())
+                throw CancellationException("cancelled after file deletion")
+            },
+        )
+
+        val failure = runCatching { failingManager.deleteUserImage(image.id) }.exceptionOrNull()
+        assertTrue(failure is CancellationException)
+        assertFalse(image.localFile!!.exists())
+        assertTrue(database.exerciseDao().getImageById(image.id) == null)
+        assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+    }
 }
