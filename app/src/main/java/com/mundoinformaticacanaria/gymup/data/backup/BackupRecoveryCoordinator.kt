@@ -91,6 +91,14 @@ internal class BackupRecoveryCoordinator(
                 applyReplacement()
                 journal.markCommitted()
             } catch (failure: Throwable) {
+                // Only PREPARED authorizes rollback. A failure syncing the directory after
+                // publishing COMMITTED can leave that marker visible, even though fsync
+                // reported an error. Restoring the old data beneath COMMITTED would make
+                // startup skip recovery and could leave a partially restored domain.
+                // An unreadable marker is equally ambiguous: fail closed and preserve it.
+                if (runCatching { journal.inspect() }.getOrNull() !is BackupRecoveryJournal.State.Prepared) {
+                    throw failure
+                }
                 withContext(NonCancellable) {
                     try {
                         restorePrevious(previous)
