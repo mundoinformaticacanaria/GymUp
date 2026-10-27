@@ -946,3 +946,20 @@ dejar archivos huérfanos si falla la limpieza o el proceso muere después de la
 Room. Tampoco cubre otros lectores/escritores que construyan rutas directamente.
 Mantener #56 abierta, PR #57 draft, y pendientes journal, gate de arranque,
 auditoría integral y validación física Android 15/16.
+
+## Protección frente a objetos no regulares en la limpieza — 2026-10-27 23:15 UTC
+
+La auditoría de la baja de ejercicios detectó que una clave de imagen con sintaxis
+válida todavía podía apuntar a un **directorio** o enlace simbólico dentro de
+`exercise-images`. La prevalidación ahora rechaza objetos existentes que no sean
+archivos regulares o que sean enlaces simbólicos **antes** de confirmar la baja Room
+(commit `a15dcda`), y la limpieza repite la comprobación inmediatamente antes de
+borrar para limitar cambios de tipo entre validación y eliminación. El test
+Robolectric `84d44f0` verifica que una ruta correspondiente a un directorio
+conserva ejercicio y referencias Room y no elimina el directorio.
+
+**Limitaciones:** la comprobación no constituye una operación atómica de filesystem;
+no protege frente a cambios externos entre comprobación y borrado. Tampoco resuelve
+el riesgo principal de imágenes huérfanas por baja Room confirmada antes de limpiar
+archivos, ni sustituye journal, recuperación de arranque y pruebas reales Android 15/16.
+La PR permanece en borrador y #56 abierta.
