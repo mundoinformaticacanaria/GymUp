@@ -64,7 +64,11 @@ class DefaultAppContainer(context: Context) : AppContainer {
         BarrierProtectedExerciseCatalogRepository(RoomExerciseCatalogRepository(database.exerciseDao()), domainWriteBarrier)
     override val catalogMaintenanceRepository: CatalogMaintenanceRepository =
         BarrierProtectedCatalogMaintenanceRepository(RoomCatalogMaintenanceRepository(appContext, database), domainWriteBarrier)
-    override val exerciseImageManager = ExerciseImageManager(appContext, database.exerciseDao())
+    override val exerciseImageManager = ExerciseImageManager(
+        appContext,
+        database.exerciseDao(),
+        domainWriteBarrier = domainWriteBarrier,
+    )
     override val sessionRepository: SessionRepository =
         BarrierProtectedSessionRepository(RoomSessionRepository(database), domainWriteBarrier)
     override val routineRepository: RoutineRepository =
