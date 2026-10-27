@@ -152,9 +152,12 @@ class RoomCatalogMaintenanceRepository(
             if (routineReferences > 0 && !confirmRoutineRemoval) {
                 throw RoutineRemovalConfirmationRequired(routineReferences)
             }
+            // Validate all user-image references before committing the Room deletion.
+            // Corrupt or legacy keys must never resolve outside the private image directory
+            // or silently skip cleanup after the exercise and routine links are gone.
             val imageStorageKeys = dao.getExerciseImages(exerciseId)
-                .filter { it.sourceType == "USER" && it.storageKey.startsWith("user:") }
-                .map { it.storageKey }
+                .filter { it.sourceType == "USER" }
+                .map { validatedUserImageStorageKey(it.storageKey) }
             if (routineReferences > 0) dao.removeRoutineReferences(exerciseId)
             dao.deleteExercise(exerciseId)
             DeletionExecution(
@@ -175,6 +178,20 @@ class RoomCatalogMaintenanceRepository(
             }
         }
         return execution.result
+    }
+
+    private fun validatedUserImageStorageKey(storageKey: String): String {
+        require(storageKey.startsWith("user:")) {
+            "Referencia de imagen personalizada sin prefijo válido: baja cancelada"
+        }
+        val fileName = storageKey.removePrefix("user:")
+        require(
+            fileName.isNotBlank() && fileName != "." && fileName != ".." &&
+                fileName.none { it == '/' || it == '\\' || it == '\u0000' },
+        ) {
+            "Ruta de imagen personalizada no válida: baja cancelada"
+        }
+        return storageKey
     }
 
     private suspend fun validateExerciseInput(
