@@ -206,4 +206,69 @@ class BackupRecoveryJournalTest {
         assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(directory).inspect())
     }
 
+
+    @Test
+    fun `failed sync of staging directory creation leaves no active journal and can retry`() {
+        val directory = File(temp.root, "recovery")
+        val preparing = File(temp.root, "recovery.preparing")
+        val original = byteArrayOf(12, 13, 14)
+        val journal = BackupRecoveryJournal(directory) { synced ->
+            if (synced.canonicalPath == temp.root.canonicalPath) {
+                error("Simulated parent fsync failure immediately after mkdir")
+            }
+        }
+
+        assertTrue(runCatching { journal.prepare(original) }.isFailure)
+        assertFalse(directory.exists())
+        assertTrue(preparing.isDirectory)
+
+        // No PREPARED was published, so startup must discard only staging, not restore data.
+        var replayed = false
+        kotlinx.coroutines.runBlocking {
+            BackupRecoveryCoordinator(BackupRecoveryJournal(directory)).recoverBeforeDataAccess {
+                replayed = true
+            }
+        }
+        assertFalse(replayed)
+        assertFalse(preparing.exists())
+        BackupRecoveryJournal(directory).prepare(original)
+        assertArrayEquals(
+            original,
+            (BackupRecoveryJournal(directory).inspect() as BackupRecoveryJournal.State.Prepared)
+                .previousArchive,
+        )
+    }
+
+    @Test
+    fun `failed sync of staged archive entry never publishes prepared marker`() {
+        val directory = File(temp.root, "recovery")
+        val preparing = File(temp.root, "recovery.preparing")
+        val original = byteArrayOf(15, 16, 17)
+        val journal = BackupRecoveryJournal(directory) { synced ->
+            if (synced.canonicalPath == preparing.canonicalPath) {
+                error("Simulated fsync failure after staged archive rename")
+            }
+        }
+
+        assertTrue(runCatching { journal.prepare(original) }.isFailure)
+        assertFalse(directory.exists())
+        assertTrue(File(preparing, "previous.zip").isFile)
+        assertFalse(File(preparing, "state").exists())
+
+        var replayed = false
+        kotlinx.coroutines.runBlocking {
+            BackupRecoveryCoordinator(BackupRecoveryJournal(directory)).recoverBeforeDataAccess {
+                replayed = true
+            }
+        }
+        assertFalse(replayed)
+        assertFalse(preparing.exists())
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(directory).inspect())
+        BackupRecoveryJournal(directory).prepare(original)
+        assertArrayEquals(
+            original,
+            (BackupRecoveryJournal(directory).inspect() as BackupRecoveryJournal.State.Prepared)
+                .previousArchive,
+        )
+    }
 }
