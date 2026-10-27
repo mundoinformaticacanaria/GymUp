@@ -1,6 +1,10 @@
 package com.mundoinformaticacanaria.gymup.data.backup
 
 import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -301,6 +305,76 @@ class BackupRecoveryCoordinatorTest {
 
         assertFalse(restored)
         assertFalse(preparing.exists())
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
+    }
+
+    @Test
+    fun `cancellation during apply restores previous state before leaving the journal committed`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val before = byteArrayOf(31, 32, 33)
+        var current = before.copyOf()
+        var restored = false
+        val applying = CompletableDeferred<Unit>()
+        val interrupted = CompletableDeferred<Unit>()
+
+        val worker = launch {
+            BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).replaceWithRecovery(
+                capturePrevious = { before },
+                applyReplacement = {
+                    current = byteArrayOf(99)
+                    applying.complete(Unit)
+                    interrupted.await()
+                },
+                restorePrevious = { archive ->
+                    // Suspension must still complete even though the caller is cancelled.
+                    delay(1)
+                    current = archive.copyOf()
+                    restored = true
+                },
+            )
+        }
+
+        applying.await()
+        worker.cancelAndJoin()
+
+        assertTrue("Rollback must run in NonCancellable after cancellation", restored)
+        assertArrayEquals(before, current)
+        // A failed import is reported as cancelled, but its restored pre-image is committed.
+        assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(dir).inspect())
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+            error("COMMITTED rollback must not replay on restart")
+        }
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
+    }
+
+    @Test
+    fun `cancellation during startup replay preserves prepared archive for retry`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val before = byteArrayOf(41, 42)
+        BackupRecoveryJournal(dir).prepare(before)
+        val replayStarted = CompletableDeferred<Unit>()
+        val interrupted = CompletableDeferred<Unit>()
+
+        val worker = launch {
+            BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+                replayStarted.complete(Unit)
+                interrupted.await()
+            }
+        }
+
+        replayStarted.await()
+        worker.cancelAndJoin()
+        assertArrayEquals(
+            before,
+            (BackupRecoveryJournal(dir).inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
+        )
+
+        var replayed = 0
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+            assertArrayEquals(before, it)
+            replayed++
+        }
+        assertEquals(1, replayed)
         assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
     }
 
