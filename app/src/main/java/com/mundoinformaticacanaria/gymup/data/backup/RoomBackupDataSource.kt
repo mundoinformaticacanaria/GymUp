@@ -63,7 +63,7 @@ class RoomBackupDataSource(
         // when a concurrent Room writer changed the image references.
         // This does NOT serialize direct image-file or DataStore writes: a global domain
         // barrier remains mandatory before enabling crash-recovery imports.
-        val theme = preferences.currentThemeMode()
+        val theme = preferences.currentThemeModeForBackup()
         val data =
             BackupDataV1(
                 sessionTypes = backupDao.getSessionTypes().map { it.toBackup() },
@@ -109,7 +109,7 @@ class RoomBackupDataSource(
         require(snapshot.images.keys == expectedImageKeys) {
             "Las imágenes del ZIP no coinciden con exercise_images"
         }
-        val previousTheme = preferences.currentThemeMode()
+        val previousTheme = preferences.currentThemeModeForBackup()
         val stagedImages = imageStore.stageReplacement(snapshot.images)
 
         try {
