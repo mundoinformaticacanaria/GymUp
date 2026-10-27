@@ -20,6 +20,7 @@ import com.mundoinformaticacanaria.gymup.domain.repository.RoutineRemovalConfirm
 import java.io.File
 import java.io.IOException
 import java.nio.channels.FileChannel
+import java.nio.file.Files
 import java.nio.file.StandardOpenOption
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -171,6 +172,11 @@ class RoomCatalogMaintenanceRepository(
         execution.userImageStorageKeys.forEach { storageKey ->
             val file = File(imageDirectory, storageKey.removePrefix("user:"))
             if (file.exists()) {
+                // A corrupt on-disk entry must not turn image cleanup into directory removal
+                // or follow a symlink created after prevalidation.
+                if (!file.isFile || Files.isSymbolicLink(file.toPath())) {
+                    throw IOException("La ruta de imagen del ejercicio no es un archivo regular")
+                }
                 if (!removeImageFile(file) || file.exists()) {
                     throw IOException("No se pudo eliminar el archivo de imagen del ejercicio; la baja en Room ya se confirmó")
                 }
@@ -190,6 +196,13 @@ class RoomCatalogMaintenanceRepository(
                 fileName.none { it == '/' || it == '\\' || it == '\u0000' },
         ) {
             "Ruta de imagen personalizada no válida: baja cancelada"
+        }
+        // Validate filesystem object type before Room commits the exercise deletion.
+        // A missing image is tolerated (legacy/incomplete state), but an existing directory
+        // or symbolic link must not be deleted under the guise of an image.
+        val imageFile = File(imageDirectory, fileName)
+        require(!imageFile.exists() || (imageFile.isFile && !Files.isSymbolicLink(imageFile.toPath()))) {
+            "La ruta de imagen personalizada no es un archivo regular: baja cancelada"
         }
         return storageKey
     }
