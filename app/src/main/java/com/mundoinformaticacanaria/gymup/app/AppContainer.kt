@@ -58,7 +58,13 @@ class DefaultAppContainer(context: Context) : AppContainer {
     // Incremental #56 wiring: all interface-based domain writers share this barrier.
     // Backup remains UNJOURNALED until image, preferences and startup/UI paths are gated.
     private val domainWriteBarrier = BackupDomainWriteBarrier()
-    override val userPreferencesRepository = UserPreferencesRepository(appContext)
+    // Backup uses the raw delegate while UI writes take the shared barrier.
+    // Do not install the journal until startup recovery and all writers are gated.
+    private val backupPreferencesRepository = UserPreferencesRepository(appContext)
+    override val userPreferencesRepository = UserPreferencesRepository(
+        appContext,
+        domainWriteBarrier = domainWriteBarrier,
+    )
     override val masterCatalogRepository: MasterCatalogRepository = RoomMasterCatalogRepository(database.masterDataDao())
     override val exerciseCatalogRepository: ExerciseCatalogRepository =
         BarrierProtectedExerciseCatalogRepository(RoomExerciseCatalogRepository(database.exerciseDao()), domainWriteBarrier)
@@ -80,7 +86,7 @@ class DefaultAppContainer(context: Context) : AppContainer {
         BarrierProtectedHistoricalCleanupStore(RoomHistoricalCleanupStore(database), domainWriteBarrier),
     )
     override val backupManager = BackupManager(
-        dataSource = RoomBackupDataSource(appContext, database, userPreferencesRepository),
+        dataSource = RoomBackupDataSource(appContext, database, backupPreferencesRepository),
         appVersion = BuildConfig.VERSION_NAME,
     )
 
