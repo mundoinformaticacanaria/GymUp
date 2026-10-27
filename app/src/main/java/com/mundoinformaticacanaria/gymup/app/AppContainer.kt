@@ -3,6 +3,13 @@ package com.mundoinformaticacanaria.gymup.app
 import android.content.Context
 import com.mundoinformaticacanaria.gymup.BuildConfig
 import com.mundoinformaticacanaria.gymup.data.backup.BackupManager
+import com.mundoinformaticacanaria.gymup.data.backup.BackupDomainWriteBarrier
+import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedCatalogMaintenanceRepository
+import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedDatabaseSeeder
+import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedExerciseCatalogRepository
+import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedHistoricalCleanupStore
+import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedRoutineRepository
+import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedSessionRepository
 import com.mundoinformaticacanaria.gymup.data.backup.RoomBackupDataSource
 import com.mundoinformaticacanaria.gymup.data.cleanup.HistoricalCleanupManager
 import com.mundoinformaticacanaria.gymup.data.cleanup.RoomHistoricalCleanupStore
@@ -48,23 +55,37 @@ class DefaultAppContainer(context: Context) : AppContainer {
     private val appContext = context.applicationContext
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val database = GymUpDatabase.create(appContext)
+    // Incremental #56 wiring: all interface-based domain writers share this barrier.
+    // Backup remains UNJOURNALED until image, preferences and startup/UI paths are gated.
+    private val domainWriteBarrier = BackupDomainWriteBarrier()
     override val userPreferencesRepository = UserPreferencesRepository(appContext)
     override val masterCatalogRepository: MasterCatalogRepository = RoomMasterCatalogRepository(database.masterDataDao())
-    override val exerciseCatalogRepository: ExerciseCatalogRepository = RoomExerciseCatalogRepository(database.exerciseDao())
-    override val catalogMaintenanceRepository: CatalogMaintenanceRepository = RoomCatalogMaintenanceRepository(appContext, database)
+    override val exerciseCatalogRepository: ExerciseCatalogRepository =
+        BarrierProtectedExerciseCatalogRepository(RoomExerciseCatalogRepository(database.exerciseDao()), domainWriteBarrier)
+    override val catalogMaintenanceRepository: CatalogMaintenanceRepository =
+        BarrierProtectedCatalogMaintenanceRepository(RoomCatalogMaintenanceRepository(appContext, database), domainWriteBarrier)
     override val exerciseImageManager = ExerciseImageManager(appContext, database.exerciseDao())
-    override val sessionRepository: SessionRepository = RoomSessionRepository(database)
-    override val routineRepository: RoutineRepository = RoomRoutineRepository(database)
+    override val sessionRepository: SessionRepository =
+        BarrierProtectedSessionRepository(RoomSessionRepository(database), domainWriteBarrier)
+    override val routineRepository: RoutineRepository =
+        BarrierProtectedRoutineRepository(RoomRoutineRepository(database), domainWriteBarrier)
     override val saveRoutineUseCase = SaveRoutineUseCase(routineRepository)
     override val filterRoutineExercisesUseCase = FilterRoutineExercisesUseCase()
     override val historyRepository: HistoryRepository = RoomHistoryRepository(database)
-    override val historicalCleanupManager = HistoricalCleanupManager(RoomHistoricalCleanupStore(database))
+    override val historicalCleanupManager = HistoricalCleanupManager(
+        BarrierProtectedHistoricalCleanupStore(RoomHistoricalCleanupStore(database), domainWriteBarrier),
+    )
     override val backupManager = BackupManager(
         dataSource = RoomBackupDataSource(appContext, database, userPreferencesRepository),
         appVersion = BuildConfig.VERSION_NAME,
     )
 
     init {
-        applicationScope.launch { DatabaseSeeder(appContext, database).seedIfNeeded() }
+        applicationScope.launch {
+            BarrierProtectedDatabaseSeeder(
+                seedIfNeededUnprotected = { DatabaseSeeder(appContext, database).seedIfNeeded() },
+                barrier = domainWriteBarrier,
+            ).seedIfNeeded()
+        }
     }
 }
