@@ -927,3 +927,22 @@ también puede dejar huérfanos. No se reinsertan ejercicios ni rutinas sin un
 protocolo de recuperación que preserve sus relaciones. Falta diseñar una limpieza
 idempotente recuperable/journaled y probar fsync real en Android 15/16. Esta
 corrección parcial no autoriza integrar la PR #57 ni cerrar #56; mantenerla draft.
+
+## Prevalidación de rutas de imágenes en bajas de ejercicios — 2026-10-27 22:10 UTC
+
+La auditoría de `RoomCatalogMaintenanceRepository.deleteExercise` detectó que las claves
+`USER` se filtraban por prefijo y luego se convertían directamente en rutas locales.
+Una clave corrupta con `user:../` podía escapar de `exercise-images` y un registro
+`USER` sin prefijo se omitía silenciosamente de la limpieza. La baja ahora valida
+**todas** las claves de imágenes `USER` antes de confirmar la transacción Room:
+requiere prefijo `user:`, nombre no vacío y sin separadores, `.`, `..` ni NUL.
+Ante una clave no válida aborta sin eliminar el ejercicio, sus referencias de rutina
+ni sus metadatos de imagen. Dos regresiones Robolectric comprueban recorrido fuera
+del directorio y clave sin prefijo, con preservación de Room y bytes externos.
+
+**Límites:** es una protección preventiva de integridad y rutas, no recuperación
+journaled ni rollback del borrado ya confirmado. Las claves válidas todavía pueden
+dejar archivos huérfanos si falla la limpieza o el proceso muere después de la baja
+Room. Tampoco cubre otros lectores/escritores que construyan rutas directamente.
+Mantener #56 abierta, PR #57 draft, y pendientes journal, gate de arranque,
+auditoría integral y validación física Android 15/16.
