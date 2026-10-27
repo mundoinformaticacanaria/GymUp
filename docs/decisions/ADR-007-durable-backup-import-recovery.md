@@ -557,3 +557,29 @@ Estas pruebas no simulan muerte de proceso ni pérdida de energía y no prueban
 durabilidad de directorios. Tampoco instalan recuperación/barrera en
 `AppContainer`. Debe verificarse Android CI para el HEAD que las incluye;
 mantener #56 abierta y PR #57 draft, sin merge ni APK.
+
+## Sincronización de metadatos del journal — 2026-10-27 05:09 UTC
+
+PR #57 añade sincronización explícita de **directorios** alrededor de las
+operaciones críticas de `BackupRecoveryJournal` (commit `00cb2cd`).
+Tras crear `.preparing`, publicar `previous.zip` y `state`, renombrar el
+directorio a `PREPARED`, publicar el marcador `COMMITTED` y retirar el
+journal confirmado, se fuerza la persistencia de las entradas de directorio
+mediante `FileChannel.force(true)` sobre el directorio correspondiente.
+También se sincroniza el padre tras limpiar directorios retirados o
+preparaciones abandonadas. Si una sincronización falla, se **propaga el
+error**: no se declara preparación o confirmación duradera por defecto.
+
+Tres pruebas JVM (commit `41f2612`) comprueban el orden de sincronización,
+la conservación de la preimagen cuando falla el sync del directorio PREPARED
+y el error explícito al fallar el sync tras el rename de COMMITTED.
+
+**Límite crítico:** esto es una mitigación técnica, **no una prueba de
+durabilidad real en Android 15/16**. Debe verificarse en dispositivo que el
+proveedor NIO permite abrir y sincronizar directorios privados, y comprobar
+cortes reales, persistencia de Room/DataStore y activación de imágenes.
+Un fallo después de renombrar COMMITTED pero antes de sincronizar el
+directorio puede dejar COMMITTED observable durante la ejecución, aunque
+su persistencia tras pérdida de energía siga siendo incierta. El código
+debe superar Android CI del HEAD; la PR permanece draft y #56 abierta.
+La barrera global y el gate productivo en AppContainer siguen pendientes.
