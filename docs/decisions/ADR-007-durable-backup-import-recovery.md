@@ -837,3 +837,29 @@ No demuestra una transacción entre Room, imágenes y preferencias ni resuelve
 la recuperación productiva: siguen pendientes barrera global, conexión a
 `AppContainer` y bloqueo de UI/seeding hasta recuperar, durabilidad física y
 cortes reales de proceso Android 15/16. PR #57 continúa en borrador; #56 abierta.
+
+## Integración incremental de escritores — 2026-10-27 19:08 UTC
+
+La PR #57 incorpora en `DefaultAppContainer` un **único** `BackupDomainWriteBarrier`
+para las mutaciones expuestas por `SessionRepository`, `RoutineRepository`,
+`ExerciseCatalogRepository`, `CatalogMaintenanceRepository`, el almacén de limpieza
+histórica y el seeder. Los delegados Room siguen siendo los originales; se utilizan
+los adaptadores protegidos ya probados de manera aislada. La prueba
+`AppContainerWriteBarrierWiringTest` protege la composición de los cuatro repositorios
+de interfaz frente a regresiones que vuelvan a exponer implementaciones crudas.
+
+**Este cambio no activa el journal ni la recuperación productiva.** El `BackupManager`
+continúa utilizando `RoomBackupDataSource` directamente para evitar prometer aislamiento
+incompleto. Las rutas de `ExerciseImageManager` (clase concreta expuesta a UI),
+`UserPreferencesRepository.setThemeMode` (llamada desde `AppViewModel`),
+lecturas/flows y cualquier acceso directo a DAO siguen fuera de la barrera.
+`GymUpApp` tampoco espera una recuperación antes de construir pantallas y el seeder
+aún no está detrás de un gate de recuperación (aunque su escritura ya comparte mutex).
+
+**Siguiente integración obligatoria:** sustituir las exposiciones de imagen/tema por
+interfaces o adaptadores protegidos compatibles con sus consumidores, auditar todos
+los escritores y rutas DAO, conectar el gate de arranque antes de seeding y UI y solo
+entonces instalar `BarrierProtectedJournaledBackupDataSource`. Probar fallos de
+recuperación con UI bloqueada y reintento, validar CI del HEAD y ejecutar pruebas
+instrumentadas/cortes reales en Android 15/16. No fusionar #57 ni cerrar #56 hasta
+cumplir esas puertas. Sin APK, tag ni release.
