@@ -1,6 +1,7 @@
 package com.mundoinformaticacanaria.gymup.data.images
 
 import android.content.Context
+import com.mundoinformaticacanaria.gymup.data.backup.BackupDomainWriteBarrier
 import com.mundoinformaticacanaria.gymup.data.local.ExerciseDao
 import com.mundoinformaticacanaria.gymup.data.local.ExerciseImageEntity
 import java.io.File
@@ -23,7 +24,7 @@ data class ExerciseImageItem(
     val localFile: File?,
 )
 
-class ExerciseImageManager(
+class ExerciseImageManager internal constructor(
     context: Context,
     private val exerciseDao: ExerciseDao,
     private val afterUserImageSync: (File) -> Unit = {},
@@ -33,13 +34,19 @@ class ExerciseImageManager(
     private val removeUserImageFile: (File) -> Boolean = File::delete,
     // Deterministic seam: an error/cancellation can happen after Room accepted the new row.
     private val afterImageRowInsert: suspend (ExerciseImageEntity) -> Unit = {},
+    // Production supplies the AppContainer-wide barrier; tests may omit it.
+    private val domainWriteBarrier: BackupDomainWriteBarrier? = null,
 ) {
     private val imageDirectory = File(context.applicationContext.filesDir, DIRECTORY)
 
     fun observeImages(exerciseId: String): Flow<List<ExerciseImageItem>> =
         exerciseDao.observeImages(exerciseId).map { images -> images.map(::toItem) }
 
-    suspend fun addUserImage(exerciseId: String, bytes: ByteArray): ExerciseImageItem {
+    suspend fun addUserImage(exerciseId: String, bytes: ByteArray): ExerciseImageItem =
+        domainWriteBarrier?.withDomainWrite { addUserImageUnprotected(exerciseId, bytes) }
+            ?: addUserImageUnprotected(exerciseId, bytes)
+
+    private suspend fun addUserImageUnprotected(exerciseId: String, bytes: ByteArray): ExerciseImageItem {
         require(bytes.isNotEmpty()) { "La imagen está vacía" }
         require(bytes.size <= MAX_IMAGE_BYTES) { "La imagen supera el límite de 10 MiB" }
 
@@ -127,6 +134,14 @@ class ExerciseImageManager(
     }
 
     suspend fun deleteUserImage(imageId: String) {
+        if (domainWriteBarrier == null) {
+            deleteUserImageUnprotected(imageId)
+        } else {
+            domainWriteBarrier.withDomainWrite { deleteUserImageUnprotected(imageId) }
+        }
+    }
+
+    private suspend fun deleteUserImageUnprotected(imageId: String) {
         val image = requireNotNull(exerciseDao.getImageById(imageId)) { "La imagen ya no existe" }
         require(image.sourceType == USER_SOURCE) { "Solo pueden eliminarse imágenes personalizadas" }
         val file = fileFor(image.storageKey)
