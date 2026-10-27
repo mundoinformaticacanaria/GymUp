@@ -378,4 +378,40 @@ class BackupRecoveryCoordinatorTest {
         assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
     }
 
+
+    @Test
+    fun `failed directory sync after prepared publication never starts replacement`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val previous = byteArrayOf(50, 51, 52)
+        var parentSyncs = 0
+        val journal = BackupRecoveryJournal(dir) { parent ->
+            if (parent.canonicalPath == temp.root.canonicalPath && ++parentSyncs == 2) {
+                error("Simulated PREPARED directory fsync failure")
+            }
+        }
+        var applied = false
+        val result = runCatching {
+            BackupRecoveryCoordinator(journal).replaceWithRecovery(
+                capturePrevious = { previous },
+                applyReplacement = { applied = true },
+                restorePrevious = { error("No domain mutation occurred") },
+            )
+        }
+        assertTrue(result.isFailure)
+        assertFalse(applied)
+        assertArrayEquals(
+            previous,
+            (BackupRecoveryJournal(dir).inspect() as BackupRecoveryJournal.State.Prepared)
+                .previousArchive,
+        )
+
+        var recovered = false
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess { archive ->
+            assertArrayEquals(previous, archive)
+            recovered = true
+        }
+        assertTrue(recovered)
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
+    }
+
 }
