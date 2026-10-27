@@ -483,3 +483,9 @@ persistencia de metadatos de directorio en Android 15/16, incluyendo publicació
 de PREPARED, transición COMMITTED y activación/retirada de imágenes. El riesgo de
 corte abrupto permanece abierto. La PR sigue draft y la Issue #56 abierta; no
 instalar en `AppContainer`, fusionar ni generar APK por este avance aislado.
+
+## Cobertura incremental — 2026-10-27 00:12 UTC
+
+PR #57 añade una inyección determinista **después de sincronizar los bytes de una imagen en staging, antes de comenzar la transacción Room** (`RoomBackupDataSource.afterStagedImageSync`). Una prueba Robolectric verifica que, al fallar en ese punto, la sesión anterior, los bytes de la imagen activa y la preferencia de tema permanecen intactos, el staging se retira y el mismo payload puede importarse después sin el fallo. Es una prueba de la frontera de preparación, no una simulación de muerte de proceso.
+
+**Límites:** el callback es únicamente un seam de prueba; no acredita que `fsync` haya persistido las entradas del directorio tras pérdida de energía. Tampoco sustituye la barrera global, la recuperación obligatoria antes de UI/seeder ni la validación física de cortes reales. Verificar CI del nuevo HEAD antes de considerar superada esta regresión. La Issue #56 sigue abierta y PR #57 en borrador.
