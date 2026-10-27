@@ -539,3 +539,21 @@ barrera global de escrituras ni la recuperación obligatoria en
 `AppContainer`. Verificar Android CI del HEAD antes de considerar validado
 este caso; mantener Issue #56 abierta y PR #57 en borrador, sin merge,
 candidato APK, etiqueta ni release.
+
+## Regresiones de cancelación en coordinator — 2026-10-27 04:14 UTC
+
+La PR #57 añade dos pruebas JVM en `BackupRecoveryCoordinatorTest` para cubrir ventanas
+de cancelación que no estaban verificadas directamente en la máquina de estados:
+
+- Cancelación del llamante mientras `applyReplacement` está suspendido, después
+  de modificar datos: el rollback debe completarse bajo `NonCancellable`,
+  restaurar la preimagen y dejar `COMMITTED` para que un arranque posterior
+  limpie el journal sin reproducir el estado antiguo.
+- Cancelación durante el replay de `PREPARED` en arranque: el journal y la
+  preimagen permanecen intactos; un nuevo coordinador puede repetir el replay
+  y confirmar la recuperación sin aceptar el arranque interrumpido.
+
+Estas pruebas no simulan muerte de proceso ni pérdida de energía y no prueban
+durabilidad de directorios. Tampoco instalan recuperación/barrera en
+`AppContainer`. Debe verificarse Android CI para el HEAD que las incluye;
+mantener #56 abierta y PR #57 draft, sin merge ni APK.
