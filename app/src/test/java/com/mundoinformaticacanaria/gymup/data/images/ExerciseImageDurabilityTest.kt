@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
 import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -85,5 +86,45 @@ class ExerciseImageDurabilityTest {
         assertTrue(failure is IOException)
         assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
         assertFalse(context.filesDir.resolve("exercise-images").listFiles().orEmpty().any { it.isFile })
+    }
+
+    @Test
+    fun `failed file deletion restores Room image reference and permits retry`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val bytes = byteArrayOf(5, 7, 11, 13)
+        val normalManager = ExerciseImageManager(context, database.exerciseDao())
+        val image = normalManager.addUserImage(exercise.id, bytes)
+        val failingManager = ExerciseImageManager(
+            context = context,
+            exerciseDao = database.exerciseDao(),
+            removeUserImageFile = { false },
+        )
+
+        val failure = runCatching { failingManager.deleteUserImage(image.id) }.exceptionOrNull()
+        assertTrue(failure is IOException)
+        assertEquals(image.id, database.exerciseDao().getImageById(image.id)?.id)
+        assertArrayEquals(bytes, normalManager.readBytes(image))
+
+        normalManager.deleteUserImage(image.id)
+        assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+        assertFalse(image.localFile!!.exists())
+    }
+
+    @Test
+    fun `cancelled file deletion still restores Room image reference`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val bytes = byteArrayOf(2, 4, 6, 8)
+        val normalManager = ExerciseImageManager(context, database.exerciseDao())
+        val image = normalManager.addUserImage(exercise.id, bytes)
+        val failingManager = ExerciseImageManager(
+            context = context,
+            exerciseDao = database.exerciseDao(),
+            removeUserImageFile = { throw CancellationException("simulated cancellation") },
+        )
+
+        val failure = runCatching { failingManager.deleteUserImage(image.id) }.exceptionOrNull()
+        assertTrue(failure is CancellationException)
+        assertEquals(image.id, database.exerciseDao().getImageById(image.id)?.id)
+        assertArrayEquals(bytes, normalManager.readBytes(image))
     }
 }
