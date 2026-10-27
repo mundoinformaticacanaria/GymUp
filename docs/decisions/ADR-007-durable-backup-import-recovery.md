@@ -908,3 +908,22 @@ los accesos DAO ni se ha implementado el gate de recuperación previo a UI y
 seeding. El hecho de que los escritores conocidos estén protegidos no permite
 activar importación journaled hasta cerrar esos puntos y validar durabilidad
 física e interrupciones reales en Android 15/16. #56 abierta, PR #57 draft.
+
+## Auditoría del borrado de ejercicios con imágenes — 2026-10-27 21:08 UTC
+
+`RoomCatalogMaintenanceRepository.deleteExercise` confirmaba la baja en Room y después
+intentaba retirar cada imagen de usuario mediante `File.delete()` sin comprobar el
+resultado. Un fallo de E/S o un falso positivo dejaba bytes privados huérfanos mientras
+la operación comunicaba éxito. La corrección `c0656de` verifica la desaparición
+real de cada archivo y sincroniza el directorio tras el borrado; si la eliminación
+falla, propaga `IOException` en lugar de comunicar un éxito falso. Las regresiones
+`2ad16d3` simulan `delete=false` y `delete=true` sin retirar el archivo.
+
+**Limitación importante:** la transacción Room ya se ha confirmado cuando comienza
+la limpieza de archivos. Por tanto, un error puede dejar el ejercicio eliminado de
+Room y los bytes huérfanos; el error comunicado **no significa rollback**. Una
+interrupción entre Room y la limpieza, o tras borrar solo parte de varias imágenes,
+también puede dejar huérfanos. No se reinsertan ejercicios ni rutinas sin un
+protocolo de recuperación que preserve sus relaciones. Falta diseñar una limpieza
+idempotente recuperable/journaled y probar fsync real en Android 15/16. Esta
+corrección parcial no autoriza integrar la PR #57 ni cerrar #56; mantenerla draft.
