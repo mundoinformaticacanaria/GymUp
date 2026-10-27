@@ -638,3 +638,19 @@ integración productiva. La semántica final de éxito/error requiere diseñar
 y verificar un protocolo de confirmación duradero. Verificar CI del nuevo
 HEAD antes de atribuir cobertura. Mantener Issue #56 abierta y PR #57 draft,
 sin merge, APK, etiqueta ni release.
+
+## Regresión de confirmación ambigua durante recuperación — 2026-10-27 08:06 UTC
+
+La prueba JVM `startup replay with ambiguous committed sync never replays old data twice`
+(commit `db20188`) cubre una ventana diferente a la importación: el replay de
+un journal `PREPARED` termina de restaurar la preimagen, publica `COMMITTED`,
+pero falla la sincronización de la entrada del directorio. La primera recuperación
+propaga el error y no permite considerar listo el arranque; una instancia nueva
+observa `COMMITTED`, limpia el journal y **no vuelve a aplicar la preimagen**.
+
+Es una simulación de fallo de sincronización sobre el sistema de archivos de la
+JVM, no una prueba de persistencia tras pérdida de energía. No modifica la
+semántica de producción ni resuelve la ambigüedad física de `fsync`.
+La barrera de escritores y el gate de recuperación aún no están conectados
+a `AppContainer`. Requiere CI del HEAD y pruebas Android 15/16 antes de
+cualquier integración; #56 y PR #57 siguen abiertas/draft.
