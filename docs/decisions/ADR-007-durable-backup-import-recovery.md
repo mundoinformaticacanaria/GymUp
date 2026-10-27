@@ -890,3 +890,21 @@ no se activa `JournaledBackupDataSource`, ni se declara atomicidad/durabilidad
 física, ni se habilita merge, APK, etiqueta o release. La CI de los commits
 nuevos debe verificarse; los cortes reales y fsync en Android 15/16 quedan
 pendientes. Issue #56 abierta, PR #57 draft.
+
+### Extensión de la barrera a preferencias de UI — 2026-10-27
+
+`UserPreferencesRepository.setThemeMode` utiliza ahora el mismo mutex del
+contenedor que las mutaciones Room e imágenes. `DefaultAppContainer` crea
+un delegado separado **sin barrera** para `RoomBackupDataSource` (evita
+anidamiento no reentrante cuando se instale el backup exclusivo) y expone
+el repositorio protegido a `AppViewModel`. Ambos delegados usan el mismo
+DataStore de contexto. Una prueba Robolectric comprueba que el cambio de tema
+espera a que termine una operación exclusiva y no modifica preferencias
+mientras espera.
+
+**Pendiente:** la exportación/importación productiva sigue sin journal y no
+adquiere todavía la barrera global. No se ha comprobado cobertura de todos
+los accesos DAO ni se ha implementado el gate de recuperación previo a UI y
+seeding. El hecho de que los escritores conocidos estén protegidos no permite
+activar importación journaled hasta cerrar esos puntos y validar durabilidad
+física e interrupciones reales en Android 15/16. #56 abierta, PR #57 draft.
