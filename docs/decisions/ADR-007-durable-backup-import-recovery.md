@@ -730,3 +730,27 @@ en Android 15/16: los tests Robolectric no prueban resistencia a un corte
 eléctrico. No se ha conectado la barrera global ni la recuperación previa a
 seeding/UI en `AppContainer`. Esta mejora no autoriza merge, candidato ni
 cierre de #56; requiere CI del HEAD.
+
+## Borrado ordinario de imágenes: recuperación de errores controlados — 2026-10-27
+
+La auditoría de escritores detectó que `ExerciseImageManager.deleteUserImage`
+borraba primero la fila Room y luego llamaba a `File.delete()` **sin comprobar
+su resultado**. Si el borrado físico fallaba, el usuario recibía éxito mientras
+el archivo permanecía huérfano. La PR #57 incorpora el commit `4289b1b`:
+conserva el archivo hasta que Room confirme la baja; si el borrado físico
+devuelve `false` o lanza una excepción, intenta reinsertar la fila original
+en contexto no cancelable y propaga el error, incluyendo como suprimido
+cualquier fallo adicional de restauración. Si el archivo ya faltaba, permite
+retirar el metadato obsoleto. Dos pruebas Robolectric (`f9dd848`) cubren
+fallo de eliminación, reintento y cancelación simulada con preservación de
+bytes y referencia Room.
+
+**Alcance estricto:** esto recupera errores *controlados*, no ofrece
+atomicidad Room/archivos. Una muerte de proceso después de borrar la fila y
+antes de retirar el archivo puede dejar un huérfano; la baja tampoco sincroniza
+todavía los metadatos del directorio. Si falla la reinserción, la referencia
+puede quedar ausente aunque se conserva el archivo, y el error se comunica.
+Se requieren barrera global, recuperación de arranque, auditoría de limpieza
+de catálogos y pruebas físicas Android 15/16. La CI del nuevo HEAD debe
+comprobarse; no equivale a una prueba física. #56 permanece abierta, PR #57
+en borrador; sin merge, APK, etiqueta ni release.
