@@ -253,6 +253,29 @@ class RoomCatalogMaintenanceRepositoryTest {
         assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
     }
 
+    @Test
+    fun `exercise deletion refuses a directory masquerading as a user image before Room commit`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Imagen directorio", "Directory image"))
+        val imageDirectory = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val unexpectedDirectory = imageDirectory.resolve("not-an-image").apply { mkdir() }
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "not-an-image", exerciseId = exerciseId, position = 1,
+                sourceType = "USER", storageKey = "user:not-an-image",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+
+        assertTrue(maintenance.getExercise(exerciseId) != null)
+        assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+        assertTrue(unexpectedDirectory.isDirectory)
+    }
+
     private fun customInput(
         groupId: String,
         es: String,
