@@ -572,7 +572,10 @@ error**: no se declara preparación o confirmación duradera por defecto.
 
 Tres pruebas JVM (commit `41f2612`) comprueban el orden de sincronización,
 la conservación de la preimagen cuando falla el sync del directorio PREPARED
-y el error explícito al fallar el sync tras el rename de COMMITTED.
+y el error explícito al fallar el sync tras el rename de COMMITTED. Una cuarta
+regresión (commit `4fb9ed9`) verifica que, si falla la sincronización del
+PREPARED publicado, el coordinador **no inicia la mutación** y una nueva
+instancia puede recuperar la preimagen antes de continuar.
 
 **Límite crítico:** esto es una mitigación técnica, **no una prueba de
 durabilidad real en Android 15/16**. Debe verificarse en dispositivo que el
