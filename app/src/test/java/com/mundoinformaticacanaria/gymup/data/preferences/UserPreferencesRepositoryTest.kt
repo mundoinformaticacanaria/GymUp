@@ -7,11 +7,16 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import com.mundoinformaticacanaria.gymup.core.model.ThemeMode
+import com.mundoinformaticacanaria.gymup.data.backup.BackupDomainWriteBarrier
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,6 +50,31 @@ class UserPreferencesRepositoryTest {
     fun `valid theme is exported without normalization`() = runBlocking {
         val repository = UserPreferencesRepository(context, storeWithTheme("DARK"))
         assertEquals(ThemeMode.DARK, repository.currentThemeModeForBackup())
+    }
+
+    @Test
+    fun `theme write waits for exclusive backup and does not mutate DataStore early`() = runBlocking {
+        val store = storeWithTheme("LIGHT")
+        val barrier = BackupDomainWriteBarrier()
+        val repository = UserPreferencesRepository(context, store, barrier)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val backup = launch {
+            barrier.withExclusiveBackup {
+                entered.complete(Unit)
+                release.await()
+            }
+        }
+        entered.await()
+        val writer = launch { repository.setThemeMode(ThemeMode.DARK) }
+        yield()
+        assertFalse(writer.isCompleted)
+        assertEquals("LIGHT", store.data.first()[themeKey])
+
+        release.complete(Unit)
+        backup.join()
+        writer.join()
+        assertEquals("DARK", store.data.first()[themeKey])
     }
 
     private fun storeWithTheme(raw: String?): DataStore<Preferences> {
