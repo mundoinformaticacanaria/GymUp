@@ -414,4 +414,81 @@ class BackupRecoveryCoordinatorTest {
         assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
     }
 
+
+    @Test
+    fun `failed sync after committed rename must not roll back underneath committed marker`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val previous = byteArrayOf(61, 62)
+        val replacement = byteArrayOf(91, 92)
+        var current = previous.copyOf()
+        var failCommitSync = false
+        var rollbackCalls = 0
+        val journal = BackupRecoveryJournal(dir) { syncedDirectory ->
+            if (failCommitSync && syncedDirectory.canonicalPath == dir.canonicalPath) {
+                error("Simulated COMMITTED directory fsync failure after rename")
+            }
+        }
+
+        val result = runCatching {
+            BackupRecoveryCoordinator(journal).replaceWithRecovery(
+                capturePrevious = { previous },
+                applyReplacement = {
+                    current = replacement.copyOf()
+                    failCommitSync = true
+                },
+                restorePrevious = {
+                    rollbackCalls++
+                    current = it.copyOf()
+                },
+            )
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals(0, rollbackCalls)
+        assertArrayEquals(replacement, current)
+        assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(dir).inspect())
+        // A new coordinator must never replay the old snapshot under a visible COMMITTED.
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+            error("COMMITTED must not restore the old snapshot")
+        }
+        assertArrayEquals(replacement, current)
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
+    }
+
+    @Test
+    fun `unreadable marker after replacement fails closed without destructive rollback`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val previous = byteArrayOf(71)
+        val replacement = byteArrayOf(99)
+        var current = previous.copyOf()
+        var rollbackCalls = 0
+
+        val result = runCatching {
+            BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).replaceWithRecovery(
+                capturePrevious = { previous },
+                applyReplacement = {
+                    current = replacement.copyOf()
+                    File(dir, "state").writeText("corrupt marker")
+                    error("Simulated storage failure with unknown journal state")
+                },
+                restorePrevious = {
+                    rollbackCalls++
+                    current = it.copyOf()
+                },
+            )
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals(0, rollbackCalls)
+        assertArrayEquals(replacement, current)
+        assertTrue(runCatching { BackupRecoveryJournal(dir).inspect() }.isFailure)
+        val restart = runCatching {
+            BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+                error("Corrupt journal must block recovery")
+            }
+        }
+        assertTrue(restart.isFailure)
+        assertTrue(dir.exists())
+    }
+
 }
