@@ -707,3 +707,26 @@ El flujo de tema usado por la UI mantiene su fallback a `SYSTEM` ante `IOExcepti
 La PR #57 introduce `UserPreferencesRepository.currentThemeModeForBackup()`, que lee DataStore sin capturar `IOException`. `RoomBackupDataSource.exportSnapshot()` y `replaceAll()` la utilizan para **abortar antes de publicar una instantánea incorrecta o de mutar Room/imágenes** si no puede leerse el tema. La regresión Robolectric `BackupPreferencesReadFailureTest` inyecta una lectura fallida, comprueba el fallback de UI, el rechazo de exportación/importación y la conservación del estado de Room.
 
 **Límites:** esto no aporta durabilidad física ni convierte Room, DataStore e imágenes en una transacción atómica. Siguen pendientes barrera global, conexión de recuperación al arranque, confirmación COMMITTED y pruebas de cortes reales en Android 15/16. La CI del HEAD con estos cambios debe comprobarse antes de atribuirles validación.
+
+## Durabilidad del alta ordinaria de imágenes — 2026-10-27
+
+El alta de imágenes del usuario (`ExerciseImageManager.addUserImage`) sincronizaba
+los bytes del archivo temporal, pero publicaba el nombre definitivo y el
+registro Room **sin sincronizar la entrada de directorio**. Un corte abrupto
+podría dejar metadatos que referencian un archivo cuyo renombrado no sobrevivió.
+
+En PR #57, el commit `7fd5b21` sincroniza el directorio padre al crearlo y el
+directorio de imágenes **después del rename y antes del insert Room**. Si falla
+la sincronización, aborta el alta, retira el archivo no registrado e intenta
+sincronizar la limpieza, conservando los errores de limpieza como suprimidos.
+Las regresiones Robolectric `00d5c54`/`a4e06f3` comprueban fallo de fsync
+tras el rename y antes de cualquier metadato Room, limpieza y reintento, y
+fallo de fsync del directorio padre antes de escribir la imagen.
+
+**Límites:** el borrado ordinario de imágenes y las operaciones de limpieza
+de catálogos aún requieren una auditoría específica de durabilidad y
+consistencia entre archivos y Room. El fsync de directorios debe verificarse
+en Android 15/16: los tests Robolectric no prueban resistencia a un corte
+eléctrico. No se ha conectado la barrera global ni la recuperación previa a
+seeding/UI en `AppContainer`. Esta mejora no autoriza merge, candidato ni
+cierre de #56; requiere CI del HEAD.
