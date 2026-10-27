@@ -610,3 +610,31 @@ ensayado: no prueban supervivencia a corte eléctrico, recuperación tras
 muerte real de proceso, persistencia de Room/DataStore, barrera global
 ni conexión de recuperación previa a UI/seeding. Issue #56 y PR #57
 siguen abiertas/draft, sin merge ni candidato.
+
+## Protección ante confirmación de journal ambigua — 2026-10-27 07:12 UTC
+
+En PR #57 se detectó una ventana de integridad en `BackupRecoveryCoordinator.replaceWithRecovery`:
+`markCommitted()` puede publicar el marcador `COMMITTED` y fallar al sincronizar
+el directorio. El `catch` anterior intentaba restaurar el estado previo y
+confirmarlo de nuevo; como el marcador ya era `COMMITTED`, esa segunda
+confirmación fallaba. Una interrupción durante la restauración podía dejar
+un dominio parcialmente antiguo con `COMMITTED`, que al arrancar **no**
+reproduce la preimagen.
+
+La corrección `d6ece26` solo permite rollback si el journal todavía puede
+inspeccionarse inequívocamente como `PREPARED`. Si el marcador ya es
+`COMMITTED` o no se puede verificar, conserva los almacenes sin intentar una
+restauración destructiva y **propaga el error original**. Dos regresiones JVM
+(`50ad783`) cubren el fallo de sincronización después del rename de
+`COMMITTED` y un marcador corrupto después de modificar el dominio.
+En el segundo caso el arranque sigue bloqueado hasta recuperar el journal.
+
+**Limitación importante:** ante un fallo de sincronización con `COMMITTED`
+visible, la importación puede comunicar error aunque los datos nuevos ya
+estén aplicados. La durabilidad del marcador y de los almacenes ante pérdida
+de energía continúa sin demostrarse; este guard evita una restauración
+peligrosa, pero **no resuelve la ambigüedad de confirmación** ni habilita
+integración productiva. La semántica final de éxito/error requiere diseñar
+y verificar un protocolo de confirmación duradero. Verificar CI del nuevo
+HEAD antes de atribuir cobertura. Mantener Issue #56 abierta y PR #57 draft,
+sin merge, APK, etiqueta ni release.
