@@ -822,3 +822,18 @@ demostrada. Es obligatorio validar `FileChannel.force(true)` en Android 15/16
 y cortes reales. La barrera compartida y el recovery previo a seeding/UI aún
 no están instalados en `AppContainer`. La CI del HEAD debe comprobarse;
 Issue #56 abierta y PR #57 draft, sin merge, candidato, tag ni release.
+
+## Validación estricta de preferencia persistida — 2026-10-27 17:11 UTC
+
+La lectura estricta de DataStore para backups rechaza ahora también un valor persistido
+de tema desconocido, en lugar de exportar silenciosamente `SYSTEM`. Una clave ausente
+sigue significando el valor por defecto de primera instalación. El flujo de lectura
+tolerante para mostrar la UI permanece sin cambios. Tres pruebas Robolectric
+comprueban el rechazo sin mutar la preferencia, la clave ausente y el valor válido
+(commits `5a3963d` y `4f901fc`). La CI del HEAD nuevo está pendiente de verificación.
+
+**Esto solo evita capturar una preimagen incorrecta por corrupción lógica de DataStore.**
+No demuestra una transacción entre Room, imágenes y preferencias ni resuelve
+la recuperación productiva: siguen pendientes barrera global, conexión a
+`AppContainer` y bloqueo de UI/seeding hasta recuperar, durabilidad física y
+cortes reales de proceso Android 15/16. PR #57 continúa en borrador; #56 abierta.
