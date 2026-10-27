@@ -50,7 +50,7 @@ class ExerciseImageDurabilityTest {
             exerciseDao = database.exerciseDao(),
             syncImageDirectory = { directory ->
                 if (directory.name == "exercise-images") {
-                    observedPublishedFile = directory.listFiles().orEmpty().any { it.name.endsWith(".tmp").not() }
+                    observedPublishedFile = observedPublishedFile || directory.listFiles().orEmpty().any { !it.name.endsWith(".tmp") }
                     throw IOException("simulated directory fsync failure")
                 }
             },
