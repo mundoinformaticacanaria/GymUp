@@ -674,3 +674,28 @@ Estas regresiones no son muerte abrupta de proceso ni validación de
 durabilidad en Android 15/16. La barrera global, recuperación anterior al
 seeder/UI, sincronización física de directorios y pruebas de interrupción
 real continúan siendo puertas de integración; #56 abierta y PR #57 draft.
+
+## Sincronización de directorios de imágenes durante importación — 2026-10-27 10:06 UTC
+
+PR #57 añade persistencia explícita de metadatos de directorio en
+`RoomBackupDataSource`: después de escribir y sincronizar cada imagen staged,
+sincroniza el directorio staged y su padre; al preservar el directorio anterior,
+sincroniza el padre antes de activar el nuevo; tras activar el nuevo, vuelve a
+sincronizar el padre antes de permitir el commit de Room. Si falla este último
+`fsync`, el estado `activated` ya está marcado para que el rollback retire
+las imágenes nuevas y restaure el directorio anterior, sincronizando su entrada.
+
+Commits `3b80ad9`, `92fbbd2` y `db91bcc` incorporan el código, una
+inyección determinista de fallos de `fsync` de directorio y una regresión
+Robolectric que exige conservar sesión Room, imágenes anteriores y tema tanto
+si falla la sincronización después de preservar el directorio anterior como
+después de activar el nuevo; también exige reintento posterior exitoso.
+
+**Límites y gates:** los fallos son simulados en Robolectric; no demuestran
+persistencia real tras corte de alimentación ni compatibilidad de
+`FileChannel.force(true)` con directorios en Android 15/16. Las escrituras
+ordinarias de imágenes, las transacciones Room y DataStore requieren todavía
+revisión de durabilidad y exclusión global. El `AppContainer` no instala
+la barrera compartida ni recuperación antes de seeding/UI; la PR continúa
+en borrador y la Issue #56 abierta. Comprobar CI del HEAD antes de dar por
+validadas estas pruebas. Sin autorización de candidato APK ni merge.
