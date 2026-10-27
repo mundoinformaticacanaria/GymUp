@@ -754,3 +754,26 @@ Se requieren barrera global, recuperación de arranque, auditoría de limpieza
 de catálogos y pruebas físicas Android 15/16. La CI del nuevo HEAD debe
 comprobarse; no equivale a una prueba física. #56 permanece abierta, PR #57
 en borrador; sin merge, APK, etiqueta ni release.
+
+## Alta ordinaria: compensación tras publicación Room — 2026-10-27
+
+La recuperación anterior del alta de imágenes asumía que cualquier excepción
+alrededor de `exerciseDao.insertImage` implicaba que Room no había publicado la
+fila. Esa premisa no cubre una excepción o cancelación **posterior** al insert:
+el `catch` podía eliminar el archivo mientras Room seguía referenciándolo.
+
+En la PR #57, `a65bc85` introduce una compensación no cancelable: ante un
+error, consulta si la fila existe; si existe, intenta eliminarla y verifica
+su ausencia **antes** de retirar el archivo. Si la consulta, la compensación
+o la verificación fallan, conserva el archivo para no crear deliberadamente
+una referencia Room colgante y añade el error como suprimido. Un punto de
+inyección tras el insert permite probar esta ventana; `163c94c` añade dos
+regresiones Robolectric para excepción y cancelación, con limpieza y reintento.
+
+**Límites:** la compensación no sustituye una transacción Room/archivos ni
+protege frente a muerte abrupta del proceso o escritores concurrentes. Si
+falla la compensación, el alta comunica error pero puede conservar fila y
+archivo; requiere reparación/recuperación posterior. Sigue pendiente conectar
+la barrera compartida y recuperación antes del seeder/UI, auditar la baja
+de imágenes y validar fsync/interrupción real en Android 15/16. Comprobar CI
+del nuevo HEAD; #56 permanece abierta y PR #57 en borrador.
