@@ -2,6 +2,7 @@ package com.mundoinformaticacanaria.gymup.data.preferences
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import com.mundoinformaticacanaria.gymup.data.backup.BackupDomainWriteBarrier
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
@@ -18,9 +19,10 @@ private val Context.gymUpPreferences: DataStore<Preferences> by preferencesDataS
     name = "user_preferences",
 )
 
-class UserPreferencesRepository(
+class UserPreferencesRepository internal constructor(
     context: Context,
     private val dataStore: DataStore<Preferences> = context.gymUpPreferences,
+    private val domainWriteBarrier: BackupDomainWriteBarrier? = null,
 ) {
 
     val themeMode: Flow<ThemeMode> = dataStore.data
@@ -52,6 +54,14 @@ class UserPreferencesRepository(
     }
 
     suspend fun setThemeMode(themeMode: ThemeMode) {
+        if (domainWriteBarrier == null) {
+            setThemeModeUnprotected(themeMode)
+        } else {
+            domainWriteBarrier.withDomainWrite { setThemeModeUnprotected(themeMode) }
+        }
+    }
+
+    private suspend fun setThemeModeUnprotected(themeMode: ThemeMode) {
         dataStore.edit { preferences ->
             preferences[THEME_MODE_KEY] = themeMode.name
         }
