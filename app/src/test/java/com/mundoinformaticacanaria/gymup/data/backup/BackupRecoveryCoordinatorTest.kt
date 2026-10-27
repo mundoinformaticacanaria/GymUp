@@ -491,4 +491,39 @@ class BackupRecoveryCoordinatorTest {
         assertTrue(dir.exists())
     }
 
+
+    @Test
+    fun `startup replay with ambiguous committed sync never replays old data twice`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val before = byteArrayOf(81, 82)
+        BackupRecoveryJournal(dir).prepare(before)
+        var current = byteArrayOf(99)
+        var replayCount = 0
+
+        // The restore has already completed when COMMITTED is renamed. A failed directory
+        // fsync must not make a later startup restore the pre-image a second time.
+        val failingJournal = BackupRecoveryJournal(dir) { syncedDirectory ->
+            if (syncedDirectory.canonicalPath == dir.canonicalPath) {
+                error("Simulated COMMITTED fsync failure during startup recovery")
+            }
+        }
+        val firstAttempt = runCatching {
+            BackupRecoveryCoordinator(failingJournal).recoverBeforeDataAccess { archive ->
+                current = archive.copyOf()
+                replayCount++
+            }
+        }
+        assertTrue(firstAttempt.isFailure)
+        assertEquals(1, replayCount)
+        assertArrayEquals(before, current)
+        assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(dir).inspect())
+
+        BackupRecoveryCoordinator(BackupRecoveryJournal(dir)).recoverBeforeDataAccess {
+            error("COMMITTED recovery must only clean up, not replay")
+        }
+        assertEquals(1, replayCount)
+        assertArrayEquals(before, current)
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
+    }
+
 }
