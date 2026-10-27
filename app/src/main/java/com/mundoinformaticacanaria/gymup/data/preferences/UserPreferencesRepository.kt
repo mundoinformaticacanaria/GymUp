@@ -18,8 +18,10 @@ private val Context.gymUpPreferences: DataStore<Preferences> by preferencesDataS
     name = "user_preferences",
 )
 
-class UserPreferencesRepository(context: Context) {
-    private val dataStore = context.gymUpPreferences
+class UserPreferencesRepository(
+    context: Context,
+    private val dataStore: DataStore<Preferences> = context.gymUpPreferences,
+) {
 
     val themeMode: Flow<ThemeMode> = dataStore.data
         .catch { throwable ->
@@ -29,12 +31,17 @@ class UserPreferencesRepository(context: Context) {
                 throw throwable
             }
         }
-        .map { preferences ->
-            val stored = preferences[THEME_MODE_KEY]
-            ThemeMode.entries.firstOrNull { it.name == stored } ?: ThemeMode.SYSTEM
-        }
+        .map(::decodeThemeMode)
 
     suspend fun currentThemeMode(): ThemeMode = themeMode.first()
+
+    /** Backups must fail closed on DataStore I/O errors instead of exporting a false SYSTEM default. */
+    suspend fun currentThemeModeForBackup(): ThemeMode = decodeThemeMode(dataStore.data.first())
+
+    private fun decodeThemeMode(preferences: Preferences): ThemeMode {
+        val stored = preferences[THEME_MODE_KEY]
+        return ThemeMode.entries.firstOrNull { it.name == stored } ?: ThemeMode.SYSTEM
+    }
 
     suspend fun setThemeMode(themeMode: ThemeMode) {
         dataStore.edit { preferences ->
