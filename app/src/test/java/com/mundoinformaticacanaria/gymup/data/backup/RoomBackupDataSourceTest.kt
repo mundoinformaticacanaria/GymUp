@@ -278,4 +278,75 @@ class RoomBackupDataSourceTest {
         assertArrayEquals(imageBytes, snapshot.images.getValue(image.storageKey))
     }
 
+
+    @Test
+    fun `staging sync failure aborts before Room and preserves images and preferences`() = runBlocking {
+        val dao = database.backupDao()
+        val type = dao.getSessionTypes().first()
+        val exercise = dao.getExercises().first()
+        val sessionId = UUID.randomUUID().toString()
+        dao.insertSessions(
+            listOf(
+                SessionEntity(
+                    id = sessionId,
+                    sessionDateEpochDay = LocalDate.of(2026, 10, 27).toEpochDay(),
+                    orderInDay = 1,
+                    sessionTypeId = type.id,
+                    sessionTypeNameSnapshot = type.name,
+                    name = "Sesión previa a sync",
+                    isAutoName = false,
+                    generalNote = null,
+                    operationalState = SessionOperationalState.PLANNED,
+                    executionResult = SessionExecutionResult.NOT_STARTED,
+                ),
+            ),
+        )
+        val imageManager = ExerciseImageManager(context, database.exerciseDao())
+        val previousBytes = byteArrayOf(7, 7, 7)
+        val image = imageManager.addUserImage(exercise.id, previousBytes)
+        val source = RoomBackupDataSource(context, database, preferences)
+        val before = source.exportSnapshot()
+        val data = BackupDataCodec.decode(before.data.decodeToString()).getOrThrow()
+        val replacement = BackupSnapshot(
+            data = BackupDataCodec.encode(
+                data.copy(
+                    sessions = emptyList(),
+                    preferences = BackupPreferences(ThemeMode.LIGHT.name),
+                ),
+            ).encodeToByteArray(),
+            images = mapOf(image.storageKey to byteArrayOf(8, 8, 8)),
+        )
+
+        var syncCompleted = 0
+        val failing = RoomBackupDataSource(
+            context,
+            database,
+            preferences,
+            afterStagedImageSync = {
+                assertEquals(image.storageKey, it)
+                syncCompleted++
+                error("Fallo inyectado tras fsync de staging")
+            },
+        )
+        val failure = runCatching { failing.replaceAll(replacement) }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
+        assertEquals(1, syncCompleted)
+        assertNotNull(database.trainingDao().getSession(sessionId))
+        assertEquals(1, dao.getSessions().size)
+        assertArrayEquals(previousBytes, imageManager.readBytes(image))
+        assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+        assertTrue(
+            "El staging fallido debe eliminarse sin tocar las imágenes activas",
+            context.filesDir.listFiles().orEmpty().none {
+                it.name.startsWith("exercise-images-import-")
+            },
+        )
+
+        source.replaceAll(replacement)
+        assertEquals(0, dao.getSessions().size)
+        assertArrayEquals(byteArrayOf(8, 8, 8), imageManager.readBytes(image))
+        assertEquals(ThemeMode.LIGHT, preferences.currentThemeMode())
+    }
+
+
 }
