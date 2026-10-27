@@ -146,7 +146,12 @@ class ExerciseImageManager(
         }
         if (failure != null) {
             withContext(NonCancellable) {
-                runCatching { exerciseDao.insertImage(image) }.onFailure(failure::addSuppressed)
+                // A deletion hook can remove the bytes and then throw (for example, after
+                // an I/O side effect). Never recreate a Room reference to a missing file.
+                // If the bytes still exist, compensate the metadata as before.
+                if (file.isFile) {
+                    runCatching { exerciseDao.insertImage(image) }.onFailure(failure::addSuppressed)
+                }
             }
             throw failure
         }
