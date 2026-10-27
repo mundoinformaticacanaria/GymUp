@@ -797,3 +797,28 @@ durabilidad del borrado tras corte de energía. Sigue faltando sincronizar
 metadatos de directorio de bajas, integrar barrera y recuperación en
 `AppContainer`, y validar cortes reales en Android 15/16. La Issue #56
 permanece abierta y la PR #57 en borrador; no habilita merge ni candidato APK.
+
+## Borrado ordinario: sincronización de directorio y comprobación de eliminación — 2026-10-27 16:10 Canarias
+
+La revisión de `ExerciseImageManager.deleteUserImage` detectó que el camino
+de éxito no sincronizaba la entrada del directorio después de retirar un archivo
+de imagen. Además, una implementación de borrado que devolviese `true` sin
+retirar realmente los bytes se consideraba exitosa y dejaba el archivo huérfano.
+
+El commit `06dff7a` exige comprobar que el archivo desapareció tras
+`removeUserImageFile` y sincronizar el directorio antes de comunicar éxito.
+Si el borrado no se realizó, restaura la fila Room cuando el archivo sigue
+presente. Si el archivo ya se eliminó pero falla el `fsync`, propaga el
+error **sin reinsertar** una referencia a bytes inexistentes. El commit
+`bc2bfd0` añade dos regresiones Robolectric: fallo de sincronización
+posterior al borrado con reintento de alta y borrado que informa éxito sin
+eliminar los bytes, con restauración de la referencia.
+
+**Límites:** ni la sincronización de directorio ni la compensación controlada
+son una transacción atómica entre Room y el sistema de archivos. Si se produce
+una caída abrupta entre la baja de Room y el borrado, pueden quedar archivos
+huérfanos; si falla la sincronización, la durabilidad del borrado no queda
+demostrada. Es obligatorio validar `FileChannel.force(true)` en Android 15/16
+y cortes reales. La barrera compartida y el recovery previo a seeding/UI aún
+no están instalados en `AppContainer`. La CI del HEAD debe comprobarse;
+Issue #56 abierta y PR #57 draft, sin merge, candidato, tag ni release.
