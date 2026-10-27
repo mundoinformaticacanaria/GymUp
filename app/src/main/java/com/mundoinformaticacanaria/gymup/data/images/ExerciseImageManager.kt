@@ -31,6 +31,8 @@ class ExerciseImageManager(
     private val syncImageDirectory: (File) -> Unit = ::syncImageDirectoryMetadata,
     // Test seam for controlled deletion failures after Room has removed the image row.
     private val removeUserImageFile: (File) -> Boolean = File::delete,
+    // Deterministic seam: an error/cancellation can happen after Room accepted the new row.
+    private val afterImageRowInsert: suspend (ExerciseImageEntity) -> Unit = {},
 ) {
     private val imageDirectory = File(context.applicationContext.filesDir, DIRECTORY)
 
@@ -85,14 +87,35 @@ class ExerciseImageManager(
                 // alone cannot guarantee the new directory entry survives a crash.
                 syncImageDirectory(imageDirectory)
                 exerciseDao.insertImage(entity)
+                afterImageRowInsert(entity)
             } catch (error: Throwable) {
-                // The DB reference was not published if directory sync failed; remove
-                // the unreferenced file and try to persist that cleanup as well.
-                if (finalFile.exists()) {
-                    if (!finalFile.delete()) {
-                        error.addSuppressed(IllegalStateException("No se pudo retirar la imagen sin registrar"))
-                    } else {
-                        runCatching { syncImageDirectory(imageDirectory) }.onFailure(error::addSuppressed)
+                // A suspended insert can fail/cancel after Room has published its row.
+                // Never remove the file while a Room reference might still exist.
+                // Compensate in NonCancellable, including errors thrown after insertion.
+                withContext(NonCancellable) {
+                    var safeToRemoveFile = false
+                    val rowLookup = runCatching { exerciseDao.getImageById(id) }
+                        .onFailure(error::addSuppressed)
+                    if (rowLookup.isSuccess) {
+                        val insertedRow = rowLookup.getOrNull()
+                        if (insertedRow == null) {
+                            safeToRemoveFile = true
+                        } else {
+                            val removal = runCatching { exerciseDao.deleteImage(insertedRow) }
+                                .onFailure(error::addSuppressed)
+                            if (removal.isSuccess) {
+                                val verification = runCatching { exerciseDao.getImageById(id) == null }
+                                    .onFailure(error::addSuppressed)
+                                safeToRemoveFile = verification.getOrDefault(false)
+                            }
+                        }
+                    }
+                    if (safeToRemoveFile && finalFile.exists()) {
+                        if (!finalFile.delete()) {
+                            error.addSuppressed(IllegalStateException("No se pudo retirar la imagen sin registrar"))
+                        } else {
+                            runCatching { syncImageDirectory(imageDirectory) }.onFailure(error::addSuppressed)
+                        }
                     }
                 }
                 throw error
