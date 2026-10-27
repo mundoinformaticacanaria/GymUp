@@ -586,3 +586,27 @@ directorio puede dejar COMMITTED observable durante la ejecución, aunque
 su persistencia tras pérdida de energía siga siendo incierta. El código
 debe superar Android CI del HEAD; la PR permanece draft y #56 abierta.
 La barrera global y el gate productivo en AppContainer siguen pendientes.
+
+## Prueba instrumentada de compatibilidad de fsync — 2026-10-27 06:15 UTC
+
+Se añade `BackupRecoveryJournalDeviceTest` en `app/src/androidTest` para
+comprobar en un **dispositivo/emulador Android real**, con el almacenamiento
+privado de la aplicación, las llamadas a `FileChannel.force(true)` que
+sincronizan el directorio padre y las entradas de PREPARED, COMMITTED y
+retirada del journal. Una segunda prueba cubre la limpieza de una
+preparación abandonada y su posterior reutilización.
+
+La prueba tiene dependencias de instrumentación separadas del conjunto
+JVM/Robolectric. **No se ha ejecutado en dispositivo** en esta pasada;
+el workflow ordinario de Android CI no ejecuta `connectedDebugAndroidTest`.
+La validación pendiente debe realizarse en Android 15 y 16, con
+evidencias de dispositivo, API, sistema de archivos, resultado y commit.
+No se inicia ejecución que requiera generar o instalar APK sin la
+autorización aplicable del propietario.
+
+Incluso si ambas pruebas pasan, solo acreditan que la API y el sistema
+de archivos **aceptan** el protocolo de sincronización en el entorno
+ensayado: no prueban supervivencia a corte eléctrico, recuperación tras
+muerte real de proceso, persistencia de Room/DataStore, barrera global
+ni conexión de recuperación previa a UI/seeding. Issue #56 y PR #57
+siguen abiertas/draft, sin merge ni candidato.
