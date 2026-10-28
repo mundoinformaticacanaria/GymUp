@@ -171,10 +171,14 @@ class RoomCatalogMaintenanceRepository(
         // recover an interrupted delete and to handle multi-image partial cleanup.
         execution.userImageStorageKeys.forEach { storageKey ->
             val file = File(imageDirectory, storageKey.removePrefix("user:"))
+            // File.exists() follows symlinks: a dangling link reports false and must
+            // not be silently skipped after Room has already committed the deletion.
+            if (Files.isSymbolicLink(file.toPath())) {
+                throw IOException("La ruta de imagen del ejercicio es un enlace simbólico")
+            }
             if (file.exists()) {
-                // A corrupt on-disk entry must not turn image cleanup into directory removal
-                // or follow a symlink created after prevalidation.
-                if (!file.isFile || Files.isSymbolicLink(file.toPath())) {
+                // A corrupt on-disk entry must not turn image cleanup into directory removal.
+                if (!file.isFile) {
                     throw IOException("La ruta de imagen del ejercicio no es un archivo regular")
                 }
                 if (!removeImageFile(file) || file.exists()) {
@@ -201,7 +205,8 @@ class RoomCatalogMaintenanceRepository(
         // A missing image is tolerated (legacy/incomplete state), but an existing directory
         // or symbolic link must not be deleted under the guise of an image.
         val imageFile = File(imageDirectory, fileName)
-        require(!imageFile.exists() || (imageFile.isFile && !Files.isSymbolicLink(imageFile.toPath()))) {
+        // Check the link itself before exists(): a dangling symlink has exists() == false.
+        require(!Files.isSymbolicLink(imageFile.toPath()) && (!imageFile.exists() || imageFile.isFile)) {
             "La ruta de imagen personalizada no es un archivo regular: baja cancelada"
         }
         return storageKey
