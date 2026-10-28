@@ -233,7 +233,7 @@ class ExerciseImageManager internal constructor(
         if (!storageKey.startsWith("user:")) return null
         val name = storageKey.removePrefix("user:")
         if (name.isBlank() || name == "." || name == ".." ||
-            name.any { it == '/' || it == '\\\\' || it == '\\u0000' }) return null
+            name.any { it == '/' || it == '\\' || it == '\u0000' }) return null
         if (Files.isSymbolicLink(imageDirectory.toPath()) || !imageDirectory.isDirectory) return null
         val file = File(imageDirectory, name)
         return file.takeIf { !Files.isSymbolicLink(it.toPath()) && it.isFile }
