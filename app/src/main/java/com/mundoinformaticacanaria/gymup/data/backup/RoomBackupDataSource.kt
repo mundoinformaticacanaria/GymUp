@@ -402,8 +402,15 @@ private class UserExerciseImageStore(
                     StandardOpenOption.READ,
                     LinkOption.NOFOLLOW_LINKS,
                 ).use { channel ->
+                    // Size alone cannot detect a same-length substitution after fsync.
+                    // Verify the bytes actually reachable through the NOFOLLOW descriptor
+                    // before publishing staging or changing Room and DataStore.
                     check(channel.size() == bytes.size.toLong()) {
                         "No se pudo escribir $storageKey"
+                    }
+                    val verified = Channels.newInputStream(channel).readNBytes(bytes.size + 1)
+                    check(verified.contentEquals(bytes) && channel.size() == bytes.size.toLong()) {
+                        "La imagen staged cambió después de sincronizarse: $storageKey"
                     }
                 }
             }
