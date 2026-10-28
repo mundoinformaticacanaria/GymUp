@@ -5,6 +5,23 @@ Fecha: 2026-10-25
 Issue: #56 · PR: #57  
 Relacionado: ADR-005 y contrato funcional v1 §17
 
+## Verificación de contenido del staging tras fsync — 2026-10-28 18:13 UTC
+
+La comprobación anterior del staging validaba únicamente que cada imagen seguía siendo
+un fichero regular y tenía la longitud esperada. Un archivo regular sustituido por
+otro de **igual tamaño pero contenido distinto** podía superar esa validación.
+Ahora se abre el descriptor con `NOFOLLOW_LINKS`, se comprueba su tamaño y se
+compara el contenido leído con los bytes originales del ZIP antes de publicar
+el directorio o modificar Room y DataStore. Una prueba Robolectric inyecta
+corrupción de igual longitud después del fsync y exige fallo cerrado, preservación
+de imagen activa, referencias Room y tema, y limpieza del staging.
+
+**Límites:** verificar bytes no evita modificaciones concurrentes posteriores a
+la lectura ni carreras en directorios antecesores. No sustituye un journal
+conectado a producción, el gate de recuperación previo a UI/seeding, la auditoría
+de escritores/DAO ni las pruebas físicas de corte Android 15/16. CI del nuevo
+HEAD pendiente de comprobación; #56 abierta y PR #57 draft.
+
 ## Revalidación del staging tras fsync y limpieza sin seguir enlaces — 2026-10-28 17:08 UTC
 
 `UserExerciseImageStore.stageReplacement` vuelve a abrir cada imagen staged con
