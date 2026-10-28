@@ -35,9 +35,11 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupSessionSet
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSessionType
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import java.io.File
+import java.io.IOException
 import java.io.FileOutputStream
 import java.nio.channels.FileChannel
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.StandardOpenOption
 import java.util.UUID
 import kotlinx.coroutines.NonCancellable
@@ -54,9 +56,13 @@ class RoomBackupDataSource(
     // Deterministic seam for directory fsync failures at the rename boundaries.
     private val imageDirectorySync: (File) -> Unit = ::syncBackupImageDirectory,
     private val importFault: (BackupReplacePhase) -> Unit = {},
+    // Test seam: replace the file after preflight but before opening its descriptor.
+    private val beforeRequiredImageRead: (File) -> Unit = {},
 ) : BackupDataSource {
     private val backupDao = database.backupDao()
-    private val imageStore = UserExerciseImageStore(context.applicationContext, afterStagedImageSync, imageDirectorySync)
+    private val imageStore = UserExerciseImageStore(
+        context.applicationContext, afterStagedImageSync, imageDirectorySync, beforeRequiredImageRead,
+    )
 
     override suspend fun exportSnapshot(): BackupSnapshot = database.withTransaction {
         // Keep Room's read transaction open through the image capture. Previously Room
@@ -310,6 +316,7 @@ private class UserExerciseImageStore(
     context: Context,
     private val afterStagedImageSync: (String) -> Unit,
     private val syncDirectory: (File) -> Unit,
+    private val beforeRequiredImageRead: (File) -> Unit,
 ) {
     private val parentDir = context.filesDir
     private val rootDir = File(parentDir, DIRECTORY)
@@ -328,7 +335,14 @@ private class UserExerciseImageStore(
         check(!Files.isSymbolicLink(file.toPath()) && file.isFile) {
             "Imagen personalizada ausente o insegura: $storageKey"
         }
-        return file.readBytes()
+        // Preflight alone has a TOCTOU window. Open the final component without
+        // following symlinks so a replacement after validation cannot leak other bytes.
+        beforeRequiredImageRead(file)
+        return try {
+            Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS).use { it.readBytes() }
+        } catch (error: IOException) {
+            throw IllegalStateException("No se pudo leer la imagen personalizada de forma segura: $storageKey", error)
+        }
     }
 
     fun stageReplacement(images: Map<String, ByteArray>): StagedImageReplacement {
