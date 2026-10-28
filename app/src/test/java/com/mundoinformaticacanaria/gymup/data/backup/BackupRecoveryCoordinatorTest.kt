@@ -1,6 +1,7 @@
 package com.mundoinformaticacanaria.gymup.data.backup
 
 import java.io.File
+import java.nio.file.Files
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
@@ -524,6 +525,26 @@ class BackupRecoveryCoordinatorTest {
         assertEquals(1, replayCount)
         assertArrayEquals(before, current)
         assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(dir).inspect())
+    }
+
+
+    @Test
+    fun `startup fails closed when retired journal is a symlink even if cleanup errors are normally ignored`() = runBlocking {
+        val outside = File(temp.root, "outside-retired")
+        assertTrue(outside.mkdir())
+        val sentinel = File(outside, "keep.txt")
+        sentinel.writeText("preserve")
+        Files.createSymbolicLink(File(temp.root, "recovery.retired").toPath(), outside.toPath())
+        var restored = false
+
+        val result = runCatching {
+            BackupRecoveryCoordinator(BackupRecoveryJournal(File(temp.root, "recovery")))
+                .recoverBeforeDataAccess { restored = true }
+        }
+
+        assertTrue(result.isFailure)
+        assertFalse(restored)
+        assertEquals("preserve", sentinel.readText())
     }
 
 }
