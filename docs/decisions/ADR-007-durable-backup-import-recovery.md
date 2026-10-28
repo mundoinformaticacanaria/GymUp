@@ -1012,3 +1012,22 @@ PREPARED. La cobertura JVM requiere CI del HEAD nuevo; no se han realizado
 pruebas instrumentadas ni físicas. Continúan pendientes integración productiva
 del journal, recuperación obligatoria antes de UI/seeding, auditoría de
 escritores/DAO, limpieza recuperable de imágenes y cortes reales Android 15/16.
+
+## Exportación fail-closed de imágenes USER — 2026-10-28 04:12 UTC
+
+La auditoría de la preimagen usada por `RoomBackupDataSource.exportSnapshot` detectó que
+`UserExerciseImageStore.readRequired` comprobaba únicamente `File.isFile`, que sigue
+enlaces simbólicos. Una referencia `USER` a un symlink dentro de `exercise-images`
+podía hacer que una exportación ordinaria o la captura de preimagen para el journal
+leyera bytes de otro archivo privado. Se valida explícitamente el formato de clave
+`user:UUID`, se rechaza el directorio raíz enlazado y se comprueba el archivo con
+`Files.isSymbolicLink` **antes** de leerlo, incluyendo enlaces colgantes (commit
+`585f8ca`). Dos pruebas Robolectric cubren symlink válido y colgante, con conservación
+de metadatos Room y del archivo externo (`fb9164f`, ajuste de import `44fd94f`).
+
+**Límites:** la protección es una comprobación preventiva, no una apertura atómica
+con `O_NOFOLLOW` ni una defensa frente a sustituciones TOCTOU por otro proceso.
+No demuestra una instantánea consistente ante escritores DAO directos ni activa
+el journal productivo. Se debe verificar la CI del HEAD con estas pruebas;
+continúan pendientes recuperación antes de UI/seeding, limpieza recuperable,
+auditoría de escritores y cortes reales en Android 15/16. #56 abierta y PR #57 draft.
