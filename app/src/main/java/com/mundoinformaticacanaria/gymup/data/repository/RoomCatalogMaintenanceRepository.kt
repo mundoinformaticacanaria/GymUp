@@ -170,6 +170,9 @@ class RoomCatalogMaintenanceRepository(
         // this would silently leave orphan files. A durable journal is still required to
         // recover an interrupted delete and to handle multi-image partial cleanup.
         execution.userImageStorageKeys.forEach { storageKey ->
+            // Recheck the directory itself before touching image bytes. A symlink
+            // at the root could otherwise redirect cleanup outside app-private storage.
+            requireSafeImageDirectory()
             val file = File(imageDirectory, storageKey.removePrefix("user:"))
             // File.exists() follows symlinks: a dangling link reports false and must
             // not be silently skipped after Room has already committed the deletion.
@@ -201,6 +204,9 @@ class RoomCatalogMaintenanceRepository(
         ) {
             "Ruta de imagen personalizada no válida: baja cancelada"
         }
+        // The directory root must also be safe; checking only the final image entry
+        // would follow a symlinked exercise-images root into an unrelated directory.
+        requireSafeImageDirectory()
         // Validate filesystem object type before Room commits the exercise deletion.
         // A missing image is tolerated (legacy/incomplete state), but an existing directory
         // or symbolic link must not be deleted under the guise of an image.
@@ -210,6 +216,15 @@ class RoomCatalogMaintenanceRepository(
             "La ruta de imagen personalizada no es un archivo regular: baja cancelada"
         }
         return storageKey
+    }
+
+    private fun requireSafeImageDirectory() {
+        require(!Files.isSymbolicLink(imageDirectory.toPath())) {
+            "El directorio de imágenes es un enlace simbólico: baja cancelada"
+        }
+        require(!imageDirectory.exists() || imageDirectory.isDirectory) {
+            "La ruta de imágenes no es un directorio: baja cancelada"
+        }
     }
 
     private suspend fun validateExerciseInput(
