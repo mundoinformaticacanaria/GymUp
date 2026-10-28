@@ -4,11 +4,15 @@ import android.content.Context
 import com.mundoinformaticacanaria.gymup.data.backup.BackupDomainWriteBarrier
 import com.mundoinformaticacanaria.gymup.data.local.ExerciseDao
 import com.mundoinformaticacanaria.gymup.data.local.ExerciseImageEntity
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.channels.Channels
 import java.nio.channels.FileChannel
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.OpenOption
 import java.nio.file.StandardOpenOption
 import java.util.UUID
 import kotlinx.coroutines.NonCancellable
@@ -37,6 +41,8 @@ class ExerciseImageManager internal constructor(
     private val afterImageRowInsert: suspend (ExerciseImageEntity) -> Unit = {},
     // Production supplies the AppContainer-wide barrier; tests may omit it.
     private val domainWriteBarrier: BackupDomainWriteBarrier? = null,
+    // Deterministic seam for a file replaced between validation and descriptor open.
+    private val beforeUserImageRead: (File) -> Unit = {},
 ) {
     private val imageDirectory = File(context.applicationContext.filesDir, DIRECTORY)
 
@@ -213,7 +219,33 @@ class ExerciseImageManager internal constructor(
         val file = safeReadableUserImageFile(item.storageKey) ?: return null
         // Never trust a caller-supplied File, even when the storage key is valid.
         if (item.localFile?.absolutePath != file.absolutePath) return null
-        return file.readBytes()
+        // Open without following the final symlink: the earlier File.isFile check
+        // cannot protect against replacement between validation and opening.
+        // Bound reads even if a persisted file was corrupted or replaced.
+        return try {
+            beforeUserImageRead(file)
+            Files.newByteChannel(
+                file.toPath(),
+                setOf<OpenOption>(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
+            ).use { channel ->
+                Channels.newInputStream(channel).use { input ->
+                    val output = ByteArrayOutputStream()
+                    val chunk = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val count = input.read(chunk)
+                        if (count < 0) break
+                        if (count == 0) continue
+                        if (output.size() > MAX_IMAGE_BYTES - count) return null
+                        output.write(chunk, 0, count)
+                    }
+                    output.toByteArray()
+                }
+            }
+        } catch (_: IOException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        }
     }
 
     private fun toItem(entity: ExerciseImageEntity): ExerciseImageItem =
