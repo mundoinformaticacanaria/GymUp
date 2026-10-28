@@ -1358,3 +1358,21 @@ La auditoría de `ExerciseImageManager.addUserImage` identificó que, después d
 El commit `723bc82` reabre el temporal con `NOFOLLOW_LINKS` después del punto de inyección y compara los bytes completos y el tamaño del descriptor con la imagen original **antes** del rename y del alta Room. La regresión Robolectric `a788020` sustituye los bytes por otros de idéntica longitud, exige fallo cerrado sin fila Room ni archivo publicado y verifica que un reintento normal funciona.
 
 **Límites:** esta comprobación no hace atómico el rename frente a otro proceso ni resuelve la durabilidad de metadatos, los escritores directos no auditados, la limpieza recuperable ni los cortes físicos de proceso. El resultado de CI del HEAD actualizado debe verificarse antes de atribuir validación. Mantener #56 abierta y PR #57 en borrador, sin merge ni candidato APK.
+
+## Exportación con journal COMMITTED pendiente de limpieza — 2026-10-28 23:14 UTC
+
+Un journal `COMMITTED` con checksum válido significa que la operación ya eligió
+el estado de dominio autoritativo. Si la limpieza de artefactos antiguos falla,
+no debe impedir una **exportación de solo lectura**: la exportación no modifica
+el journal ni restaura la preimagen. `BackupRecoveryCoordinator.readSnapshotIfRecovered`
+acepta ahora `Absent` o `Committed` verificado, y sigue rechazando
+`PREPARED`, marcadores desconocidos y archivos corruptos. El cambio no
+permite iniciar una nueva importación sobre un journal aún presente; esa
+operación mantiene su puerta de limpieza previa.
+
+Regresiones JVM comprueban la exportación en `COMMITTED` sin retirar el
+journal y el rechazo de `PREPARED` y `COMMITTED` corrupto antes de invocar
+la lectura de dominio. Esta corrección no elimina las ventanas de lectura de
+UI durante importación en caliente, ni aporta durabilidad ante muerte real de
+proceso, limpieza recuperable de imágenes o validación física Android 15/16.
+La Issue #56 y la PR #57 siguen abiertas/en borrador.
