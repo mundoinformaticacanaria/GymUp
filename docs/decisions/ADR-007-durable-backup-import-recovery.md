@@ -963,3 +963,21 @@ no protege frente a cambios externos entre comprobación y borrado. Tampoco resu
 el riesgo principal de imágenes huérfanas por baja Room confirmada antes de limpiar
 archivos, ni sustituye journal, recuperación de arranque y pruebas reales Android 15/16.
 La PR permanece en borrador y #56 abierta.
+
+## Enlaces simbólicos colgantes en la baja de ejercicios — 2026-10-28 00:09 UTC
+
+La comprobación previa de tipo de archivo de `RoomCatalogMaintenanceRepository.deleteExercise`
+usaba `File.exists()` antes de `Files.isSymbolicLink`. Como `exists()` sigue el
+enlace, un **symlink colgante** devolvía `false` y pasaba como imagen ausente;
+la baja Room se confirmaba sin advertir que la entrada de filesystem seguía allí.
+El commit `28649f0` comprueba el enlace **antes** de `exists()`, tanto en
+prevalidación como en la limpieza posterior a la transacción. La regresión
+`33bc4f0` crea un enlace simbólico colgante y exige conservar el ejercicio,
+sus metadatos Room y el enlace al rechazar la baja.
+
+**Alcance y límite:** se impide el éxito silencioso ante un enlace colgante
+detectable, pero no se garantiza ausencia de carreras TOCTOU entre las
+comprobaciones y el borrado. No se ha integrado journal de limpieza ni
+recuperación productiva de importaciones; siguen pendientes recuperación antes
+de UI/seeding, auditoría de escritores/DAO y cortes reales Android 15/16.
+La PR #57 permanece en borrador y la Issue #56 abierta.
