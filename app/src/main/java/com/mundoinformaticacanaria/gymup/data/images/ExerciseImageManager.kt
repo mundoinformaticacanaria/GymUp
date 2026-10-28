@@ -103,6 +103,20 @@ class ExerciseImageManager internal constructor(
             check(Files.isRegularFile(temporaryFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                 "El temporal de imagen dejó de ser un archivo regular"
             }
+            // A same-length replacement after fsync is not detected by File.length().
+            // Reopen the final component without following links and compare the actual
+            // bytes before publishing the filename or its Room reference.
+            FileChannel.open(
+                temporaryFile.toPath(),
+                StandardOpenOption.READ,
+                LinkOption.NOFOLLOW_LINKS,
+            ).use { channel ->
+                check(channel.size() == bytes.size.toLong()) { "La imagen temporal cambió de tamaño" }
+                val verified = Channels.newInputStream(channel).readNBytes(bytes.size + 1)
+                check(verified.contentEquals(bytes) && channel.size() == bytes.size.toLong()) {
+                    "La imagen temporal cambió después de sincronizarse"
+                }
+            }
             check(temporaryFile.renameTo(finalFile)) { "No se pudo activar la imagen guardada" }
             val entity = ExerciseImageEntity(
                 id = id,
