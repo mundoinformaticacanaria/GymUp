@@ -1069,3 +1069,22 @@ la comprobación (TOCTOU); la galería usa `BitmapFactory.decodeFile`, no apertu
 atómica sin seguimiento de enlaces. No hay journal productivo, gate de arranque
 ni garantía de durabilidad ante corte. Esta mitigación no autoriza fusionar PR #57,
 cerrar #56 o generar un APK; las pruebas físicas Android 15/16 siguen pendientes.
+
+## Lectura de imágenes USER con descriptor sin seguimiento — 2026-10-28 07:11 UTC
+
+La validación de `safeReadableUserImageFile` no impide que el archivo final
+sea sustituido por un enlace simbólico entre la comprobación y
+`readBytes`. Se cambia la lectura a `Files.newByteChannel` con
+`LinkOption.NOFOLLOW_LINKS` sobre el componente final, devolviendo
+`null` si falla la apertura. La lectura queda limitada a 10 MiB
+también cuando la fila persistida apunta a un archivo alterado.
+Dos regresiones Robolectric cubren sustitución determinista por symlink
+justo antes de abrir y archivo persistido sobredimensionado.
+
+**Límite:** `NOFOLLOW_LINKS` protege el componente final al abrir,
+pero no garantiza protección contra sustitución concurrente de
+directorios antecesores ni cubre la ruta de `BitmapFactory.decodeFile`
+utilizada por Compose. Esta mejora aislada no activa el journal en
+producción ni elimina la necesidad de gate previo a UI/seeding,
+auditoría DAO, limpieza recuperable y pruebas reales de interrupción
+en Android 15/16. #56 sigue abierta y PR #57 en borrador.
