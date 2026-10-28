@@ -364,6 +364,32 @@ class ExerciseImageDurabilityTest {
     }
 
     @Test
+    fun `same length image corruption after sync cannot publish Room reference`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val original = byteArrayOf(1, 2, 3, 4)
+        val corrupted = byteArrayOf(9, 8, 7, 6)
+        val manager = ExerciseImageManager(
+            context = context,
+            exerciseDao = database.exerciseDao(),
+            afterUserImageSync = { temporary ->
+                // Same size: a length-only check would incorrectly publish these bytes.
+                temporary.writeBytes(corrupted)
+            },
+        )
+
+        val failure = runCatching { manager.addUserImage(exercise.id, original) }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+        assertTrue(context.filesDir.resolve("exercise-images").listFiles().orEmpty().isEmpty())
+
+        // A later legitimate write must still succeed without inheriting corrupt data.
+        val retry = ExerciseImageManager(context, database.exerciseDao())
+        val image = retry.addUserImage(exercise.id, original)
+        assertArrayEquals(original, retry.readBytes(image))
+    }
+
+    @Test
     fun `temporary symlink swapped after sync cannot become a Room image`() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val outside = context.filesDir.resolve("outside-image-after-sync").apply {
