@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
+import com.mundoinformaticacanaria.gymup.data.local.ExerciseImageEntity
 import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
 import java.io.IOException
+import java.nio.file.Files
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -260,6 +262,76 @@ class ExerciseImageDurabilityTest {
         normalManager.deleteUserImage(image.id)
         assertFalse(image.localFile!!.exists())
         assertTrue(database.exerciseDao().getImageById(image.id) == null)
+    }
+
+
+    @Test
+    fun `single image deletion rejects traversal before dropping Room row`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val outside = context.filesDir.resolve("outside-image-delete").apply { writeText("preserve") }
+        try {
+            val row = ExerciseImageEntity(
+                id = "unsafe-traversal", exerciseId = exercise.id, position = 1,
+                sourceType = "USER", storageKey = "user:../outside-image-delete",
+                originalSourceUrl = null, author = null, license = null,
+            )
+            database.exerciseDao().insertImage(row)
+
+            val failure = runCatching {
+                ExerciseImageManager(context, database.exerciseDao()).deleteUserImage(row.id)
+            }.exceptionOrNull()
+
+            assertTrue(failure is IllegalArgumentException)
+            assertEquals(row.id, database.exerciseDao().getImageById(row.id)?.id)
+            assertEquals("preserve", outside.readText())
+        } finally {
+            outside.delete()
+        }
+    }
+
+    @Test
+    fun `single image deletion rejects dangling symlink before dropping Room row`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val directory = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val missing = directory.resolve("missing-target")
+        val link = directory.resolve("dangling-single-image")
+        Files.createSymbolicLink(link.toPath(), missing.toPath())
+        val row = ExerciseImageEntity(
+            id = "dangling-single-image", exerciseId = exercise.id, position = 1,
+            sourceType = "USER", storageKey = "user:dangling-single-image",
+            originalSourceUrl = null, author = null, license = null,
+        )
+        database.exerciseDao().insertImage(row)
+
+        val failure = runCatching {
+            ExerciseImageManager(context, database.exerciseDao()).deleteUserImage(row.id)
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals(row.id, database.exerciseDao().getImageById(row.id)?.id)
+        assertTrue(Files.isSymbolicLink(link.toPath()))
+        assertFalse(missing.exists())
+    }
+
+    @Test
+    fun `single image deletion refuses directory before dropping Room row`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val directory = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val unexpected = directory.resolve("directory-as-image").apply { mkdir() }
+        val row = ExerciseImageEntity(
+            id = "directory-as-image", exerciseId = exercise.id, position = 1,
+            sourceType = "USER", storageKey = "user:directory-as-image",
+            originalSourceUrl = null, author = null, license = null,
+        )
+        database.exerciseDao().insertImage(row)
+
+        val failure = runCatching {
+            ExerciseImageManager(context, database.exerciseDao()).deleteUserImage(row.id)
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals(row.id, database.exerciseDao().getImageById(row.id)?.id)
+        assertTrue(unexpected.isDirectory)
     }
 
 }
