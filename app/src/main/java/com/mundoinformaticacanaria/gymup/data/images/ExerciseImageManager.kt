@@ -58,6 +58,12 @@ class ExerciseImageManager internal constructor(
         val position = (1..MAX_IMAGES_PER_EXERCISE).first { candidate ->
             existing.none { it.position == candidate }
         }
+        // A linked image root (including a dangling link) must never redirect writes
+        // outside the app's private image directory.
+        check(!Files.isSymbolicLink(imageDirectory.toPath()) &&
+            (!imageDirectory.exists() || imageDirectory.isDirectory)) {
+            "El directorio de imágenes no es seguro"
+        }
         val createdDirectory = !imageDirectory.exists()
         check(imageDirectory.exists() || imageDirectory.mkdirs()) {
             "No se pudo preparar el almacenamiento de imágenes"
@@ -186,6 +192,9 @@ class ExerciseImageManager internal constructor(
     }
 
     private fun validatedUserImageFile(storageKey: String): File {
+        require(!Files.isSymbolicLink(imageDirectory.toPath())) {
+            "El directorio de imágenes es un enlace simbólico"
+        }
         require(storageKey.startsWith("user:")) { "Referencia de imagen personalizada no válida" }
         val name = storageKey.removePrefix("user:")
         require(
@@ -199,19 +208,35 @@ class ExerciseImageManager internal constructor(
         return file
     }
 
-    fun readBytes(item: ExerciseImageItem): ByteArray? =
-        item.localFile?.takeIf(File::isFile)?.readBytes()
+    fun readBytes(item: ExerciseImageItem): ByteArray? {
+        if (item.sourceType != USER_SOURCE) return null
+        val file = safeReadableUserImageFile(item.storageKey) ?: return null
+        // Never trust a caller-supplied File, even when the storage key is valid.
+        if (item.localFile?.absolutePath != file.absolutePath) return null
+        return file.readBytes()
+    }
 
-    private fun toItem(entity: ExerciseImageEntity): ExerciseImageItem {
-        val file = if (entity.sourceType == USER_SOURCE) fileFor(entity.storageKey) else null
-        return ExerciseImageItem(
+    private fun toItem(entity: ExerciseImageEntity): ExerciseImageItem =
+        ExerciseImageItem(
             id = entity.id,
             exerciseId = entity.exerciseId,
             position = entity.position,
             sourceType = entity.sourceType,
             storageKey = entity.storageKey,
-            localFile = file?.takeIf(File::isFile),
+            localFile = if (entity.sourceType == USER_SOURCE) {
+                safeReadableUserImageFile(entity.storageKey)
+            } else null,
         )
+
+    /** Malformed Room references must not expose paths or linked files to the gallery. */
+    private fun safeReadableUserImageFile(storageKey: String): File? {
+        if (!storageKey.startsWith("user:")) return null
+        val name = storageKey.removePrefix("user:")
+        if (name.isBlank() || name == "." || name == ".." ||
+            name.any { it == '/' || it == '\\\\' || it == '\\u0000' }) return null
+        if (Files.isSymbolicLink(imageDirectory.toPath()) || !imageDirectory.isDirectory) return null
+        val file = File(imageDirectory, name)
+        return file.takeIf { !Files.isSymbolicLink(it.toPath()) && it.isFile }
     }
 
     private fun fileFor(storageKey: String): File =
