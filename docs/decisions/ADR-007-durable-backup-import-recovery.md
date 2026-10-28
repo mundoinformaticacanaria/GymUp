@@ -5,6 +5,22 @@ Fecha: 2026-10-25
 Issue: #56 · PR: #57  
 Relacionado: ADR-005 y contrato funcional v1 §17
 
+## Preparación de imágenes de backup sin sobrescritura externa — 2026-10-28 16:09 UTC
+
+`UserExerciseImageStore.stageReplacement` deja de abrir imágenes de staging con
+`FileOutputStream` truncante. Ahora rechaza bytes vacíos o mayores de 10 MiB,
+crea cada archivo con `CREATE_NEW + NOFOLLOW_LINKS` y sincroniza su descriptor
+antes de publicar el directorio. Una sustitución por symlink justo antes de
+abrir falla sin escribir en el destino externo. Dos regresiones Robolectric
+cubren la inyección de symlink y el exceso de tamaño, verificando que Room,
+imágenes previas y tema permanecen intactos y no queda staging abandonado.
+
+**Límites:** no es una transacción entre Room, imágenes y DataStore; no
+elimina carreras de sustitución en directorios antecesores ni acredita
+durabilidad física tras muerte del proceso. La CI del HEAD debe verificarse.
+El journal sigue sin instalarse en `AppContainer` ni en el arranque. #56
+permanece abierta y PR #57 en borrador.
+
 ## Escritura de imágenes USER sin seguir temporales enlazados — 2026-10-28 15:12 UTC
 
 `ExerciseImageManager.addUserImage` deja de abrir el temporal mediante
