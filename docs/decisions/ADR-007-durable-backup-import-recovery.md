@@ -5,6 +5,27 @@ Fecha: 2026-10-25
 Issue: #56 · PR: #57  
 Relacionado: ADR-005 y contrato funcional v1 §17
 
+## Publicación segura de archivos temporales del journal — 2026-10-28 14:09 UTC
+
+`BackupRecoveryJournal.writeSynced` crea `previous.zip.tmp` y `state.tmp`
+mediante `FileChannel.open(CREATE_NEW, WRITE, NOFOLLOW_LINKS)`, en lugar de
+`FileOutputStream` tras una comprobación separada. Así se evita que un enlace
+simbólico inyectado entre el preflight y la apertura redirija la escritura
+o trunque un fichero externo. Se conserva `force(true)` sobre el descriptor
+antes de publicar el archivo por rename y sincronizar su directorio.
+
+Dos pruebas JVM inyectan enlaces simbólicos exactamente antes de la apertura:
+durante la preparación no se publica PREPARED, y durante la confirmación
+permanece PREPARED con la preimagen verificable. En ambos casos se conservan
+los bytes del destino externo. La CI de este HEAD debe verificarse antes
+de afirmar que las regresiones han superado el pipeline.
+
+**Límites:** no elimina carreras sobre directorios antecesores, no verifica
+durabilidad ante corte eléctrico ni instala el journal en el flujo real de
+backup/arranque. Siguen pendientes la barrera integral, la recuperación
+antes de UI/seeding y las pruebas reales Android 15/16. #56 continúa
+abierta y PR #57 en borrador.
+
 ## Lectura de journal protegida frente a sustitución del archivo final — 2026-10-28 13:15 UTC
 
 La inspección de `state` y `previous.zip` abre ahora los descriptores con
