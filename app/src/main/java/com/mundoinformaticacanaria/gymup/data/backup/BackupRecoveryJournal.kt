@@ -121,17 +121,40 @@ internal class BackupRecoveryJournal(
         requireNotSymlink(preparingDirectory)
         if (!preparingDirectory.exists()) return
         check(!directory.exists()) { "No se descarta preparación si existe un journal activo" }
-        check(preparingDirectory.deleteRecursively()) { "No se pudo limpiar la preparación incompleta" }
-        syncDirectory(preparingDirectory.parentFile)
+        cleanupJournalArtifacts(preparingDirectory)
     }
 
     /** Retry cleanup of a previously COMMITTED journal after an interrupted deletion. */
     fun cleanupRetired() {
         requireNotSymlink(retiredDirectory)
         if (retiredDirectory.exists()) {
-            check(retiredDirectory.deleteRecursively()) { "No se pudo limpiar el journal retirado" }
-            syncDirectory(retiredDirectory.parentFile)
+            cleanupJournalArtifacts(retiredDirectory)
         }
+    }
+
+    /**
+     * Delete only our flat journal artifacts. File.deleteRecursively() can traverse directory
+     * symlinks; a symlink nested inside a retired or unpublished journal must never lead to
+     * deletion outside the private recovery area. Preflight the entire directory before deleting
+     * any entry, and refuse unexpected files or subdirectories rather than guessing ownership.
+     * This is still not an atomic defence against a concurrent filesystem attacker (TOCTOU).
+     */
+    private fun cleanupJournalArtifacts(path: File) {
+        requireNotSymlink(path)
+        check(path.isDirectory) { "La ruta de limpieza no es un directorio de journal" }
+        val entries = path.listFiles() ?: error("No se pudo inspeccionar el directorio de journal")
+        val allowed = setOf(ARCHIVE_FILE, STATE_FILE, "$ARCHIVE_FILE.tmp", "$STATE_FILE.tmp")
+        entries.forEach { entry ->
+            requireNotSymlink(entry)
+            check(entry.name in allowed && entry.isFile) {
+                "Contenido inesperado en directorio de journal: ${entry.name}"
+            }
+        }
+        entries.forEach { entry ->
+            check(entry.delete()) { "No se pudo eliminar el archivo de journal: ${entry.name}" }
+        }
+        check(path.delete()) { "No se pudo eliminar el directorio de journal" }
+        syncDirectory(path.parentFile)
     }
 
     private fun writeSynced(target: File, bytes: ByteArray, replace: Boolean = false) {
