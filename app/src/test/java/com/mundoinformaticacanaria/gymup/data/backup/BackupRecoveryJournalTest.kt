@@ -351,4 +351,68 @@ class BackupRecoveryJournalTest {
         )
     }
 
+
+    @Test
+    fun `nested symlink in retired journal fails closed before deleting other entries`() {
+        val retired = File(temp.root, "recovery.retired")
+        assertTrue(retired.mkdir())
+        val marker = File(retired, "state")
+        marker.writeText("retain")
+        val outside = File(temp.root, "outside-retired-file")
+        outside.writeText("untouched")
+        val linked = File(retired, "previous.zip")
+        Files.createSymbolicLink(linked.toPath(), outside.toPath())
+
+        assertTrue(runCatching {
+            BackupRecoveryJournal(File(temp.root, "recovery")).cleanupRetired()
+        }.isFailure)
+        assertEquals("untouched", outside.readText())
+        assertEquals("retain", marker.readText())
+        assertTrue(Files.isSymbolicLink(linked.toPath()))
+    }
+
+    @Test
+    fun `dangling symlink in abandoned preparation preserves all entries`() {
+        val preparing = File(temp.root, "recovery.preparing")
+        assertTrue(preparing.mkdir())
+        val archive = File(preparing, "previous.zip")
+        archive.writeBytes(byteArrayOf(1, 2, 3))
+        val linked = File(preparing, "state.tmp")
+        Files.createSymbolicLink(linked.toPath(), File(temp.root, "missing-target").toPath())
+
+        assertTrue(runCatching {
+            BackupRecoveryJournal(File(temp.root, "recovery")).cleanupAbandonedPreparation()
+        }.isFailure)
+        assertArrayEquals(byteArrayOf(1, 2, 3), archive.readBytes())
+        assertTrue(Files.isSymbolicLink(linked.toPath()))
+    }
+
+    @Test
+    fun `unexpected nested directory in abandoned preparation is never traversed`() {
+        val preparing = File(temp.root, "recovery.preparing")
+        assertTrue(preparing.mkdir())
+        val archive = File(preparing, "previous.zip")
+        archive.writeBytes(byteArrayOf(4, 5))
+        val unexpected = File(preparing, "unknown")
+        assertTrue(unexpected.mkdir())
+        val sentinel = File(unexpected, "keep.txt")
+        sentinel.writeText("preserve")
+
+        assertTrue(runCatching {
+            BackupRecoveryJournal(File(temp.root, "recovery")).cleanupAbandonedPreparation()
+        }.isFailure)
+        assertArrayEquals(byteArrayOf(4, 5), archive.readBytes())
+        assertEquals("preserve", sentinel.readText())
+    }
+
+    @Test
+    fun `retired journal with known interrupted temporary entries is cleaned`() {
+        val retired = File(temp.root, "recovery.retired")
+        assertTrue(retired.mkdir())
+        File(retired, "previous.zip").writeBytes(byteArrayOf(1))
+        File(retired, "state.tmp").writeText("incomplete")
+        BackupRecoveryJournal(File(temp.root, "recovery")).cleanupRetired()
+        assertFalse(retired.exists())
+    }
+
 }
