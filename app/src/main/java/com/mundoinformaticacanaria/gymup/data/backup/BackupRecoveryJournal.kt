@@ -1,7 +1,6 @@
 package com.mundoinformaticacanaria.gymup.data.backup
 
 import java.io.File
-import java.io.FileOutputStream
 import java.nio.channels.Channels
 import java.nio.channels.FileChannel
 import java.nio.file.Files
@@ -21,6 +20,8 @@ internal class BackupRecoveryJournal(
     private val directory: File,
     // Deterministic test seam: replace a validated file before its descriptor is opened.
     private val beforeTrustedRead: (File) -> Unit = {},
+    // Deterministic seam: swap a validated temporary file before its descriptor is opened.
+    private val beforeTrustedWrite: (File) -> Unit = {},
     // Injected by tests to verify ordering/fail-closed behavior; production syncs metadata.
     private val syncDirectory: (File) -> Unit = ::syncDirectoryMetadata,
 ) {
@@ -190,9 +191,17 @@ internal class BackupRecoveryJournal(
         requireNotSymlink(target)
         requireNotSymlink(temp)
         check(!temp.exists()) { "Existe una escritura incompleta del journal" }
-        FileOutputStream(temp).use { output ->
-            output.write(bytes)
-            output.fd.sync()
+        // CREATE_NEW plus NOFOLLOW_LINKS prevents a symlink injected after preflight
+        // from redirecting journal bytes to another file. Never truncate an existing temp.
+        beforeTrustedWrite(temp)
+        FileChannel.open(
+            temp.toPath(),
+            StandardOpenOption.WRITE,
+            StandardOpenOption.CREATE_NEW,
+            LinkOption.NOFOLLOW_LINKS,
+        ).use { channel ->
+            Channels.newOutputStream(channel).write(bytes)
+            channel.force(true)
         }
         if (replace) {
             // Do not remove PREPARED before COMMITTED is ready: keep the old marker if rename fails.
