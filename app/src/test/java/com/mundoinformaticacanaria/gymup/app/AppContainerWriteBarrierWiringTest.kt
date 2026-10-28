@@ -6,6 +6,8 @@ import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedCatalogMain
 import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedExerciseCatalogRepository
 import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedRoutineRepository
 import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedSessionRepository
+import com.mundoinformaticacanaria.gymup.data.backup.BackupImportResult
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,5 +33,18 @@ class AppContainerWriteBarrierWiringTest {
         assertTrue(container.routineRepository is BarrierProtectedRoutineRepository)
         assertTrue(container.exerciseCatalogRepository is BarrierProtectedExerciseCatalogRepository)
         assertTrue(container.catalogMaintenanceRepository is BarrierProtectedCatalogMaintenanceRepository)
+    }
+
+    @Test
+    fun journaledBackupIsAvailableOnlyAfterStartupGateCompletes() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val container = DefaultAppContainer(context)
+
+        container.awaitReady()
+        val archive = container.backupManager.export()
+        assertTrue(archive.isNotEmpty())
+        assertTrue(container.backupManager.importReplaceAll(archive) is BackupImportResult.Imported)
+        // Recovery/seeding is idempotent after the first successful startup.
+        container.awaitReady()
     }
 }

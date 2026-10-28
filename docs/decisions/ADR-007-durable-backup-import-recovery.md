@@ -5,6 +5,23 @@ Fecha: 2026-10-25
 Issue: #56 · PR: #57  
 Relacionado: ADR-005 y contrato funcional v1 §17
 
+## Integración experimental de recuperación y puerta de UI — 2026-10-28 19:07 UTC
+
+`DefaultAppContainer` compone `JournaledBackupDataSource` con el mismo
+`BackupDomainWriteBarrier` usado por repositorios, imágenes y preferencias.
+`BackupStartupGate` ejecuta recuperación y seeding en una única sección
+exclusiva, y `GymUpApp` no compone ningún consumidor de repositorios ni
+ViewModel hasta que `awaitReady()` termina. Ante fallo de recuperación,
+muestra un estado cerrado con reintento, sin presentar datos potencialmente
+inconsistentes. Se elimina el seeding independiente lanzado en segundo plano.
+
+Se añade una prueba de integración Robolectric de inicialización, exportación
+e importación usando la composición productiva. **Esto no acredita durabilidad
+física**: faltan la auditoría final de escritores/DAO que puedan saltarse la
+barrera, pruebas de corte real y persistencia de metadatos en Android 15/16,
+incluidas ventanas de limpieza de imágenes. La PR permanece draft y #56
+abierta, sin autorización para fusionar ni generar un candidato APK.
+
 ## Verificación de contenido del staging tras fsync — 2026-10-28 18:13 UTC
 
 La comprobación anterior del staging validaba únicamente que cada imagen seguía siendo

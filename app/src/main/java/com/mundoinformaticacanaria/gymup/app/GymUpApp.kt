@@ -2,7 +2,24 @@ package com.mundoinformaticacanaria.gymup.app
 
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -24,8 +41,64 @@ import com.mundoinformaticacanaria.gymup.feature.sessions.SessionsScreen
 import com.mundoinformaticacanaria.gymup.feature.settings.CatalogMaintenanceScreen
 import com.mundoinformaticacanaria.gymup.feature.settings.SettingsScreen
 
+private sealed interface StartupState {
+    data object Loading : StartupState
+    data object Ready : StartupState
+    data class Failed(val message: String) : StartupState
+}
+
+/**
+ * Never compose a repository consumer until durable recovery and seeding have succeeded.
+ * A corrupt PREPARED journal leaves the UI closed; retry does not bypass recovery.
+ */
 @Composable
 fun GymUpApp(container: AppContainer) {
+    var attempt by remember(container) { mutableIntStateOf(0) }
+    var state by remember(container) { mutableStateOf<StartupState>(StartupState.Loading) }
+
+    LaunchedEffect(container, attempt) {
+        state = StartupState.Loading
+        state = try {
+            container.awaitReady()
+            StartupState.Ready
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            StartupState.Failed(error.message ?: "No se pudo recuperar el almacenamiento local")
+        }
+    }
+
+    when (val current = state) {
+        StartupState.Ready -> GymUpReadyApp(container)
+        StartupState.Loading -> GymUpTheme(themeMode = ThemeMode.SYSTEM) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(16.dp))
+                Text("Preparando los datos de GymUp…")
+            }
+        }
+        is StartupState.Failed -> GymUpTheme(themeMode = ThemeMode.SYSTEM) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text("No se pueden mostrar los datos hasta completar la recuperación.")
+                Spacer(Modifier.height(12.dp))
+                Text(current.message)
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = { attempt++ }) { Text("Reintentar recuperación") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GymUpReadyApp(container: AppContainer) {
     val appViewModel: AppViewModel = viewModel(
         factory = AppViewModel.Factory(container.userPreferencesRepository),
     )

@@ -3,9 +3,12 @@ package com.mundoinformaticacanaria.gymup.app
 import android.content.Context
 import com.mundoinformaticacanaria.gymup.BuildConfig
 import com.mundoinformaticacanaria.gymup.data.backup.BackupManager
+import com.mundoinformaticacanaria.gymup.data.backup.BackupRecoveryCoordinator
+import com.mundoinformaticacanaria.gymup.data.backup.BackupRecoveryJournal
+import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedJournaledBackupDataSource
+import com.mundoinformaticacanaria.gymup.data.backup.JournaledBackupDataSource
 import com.mundoinformaticacanaria.gymup.data.backup.BackupDomainWriteBarrier
 import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedCatalogMaintenanceRepository
-import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedDatabaseSeeder
 import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedExerciseCatalogRepository
 import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedHistoricalCleanupStore
 import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedRoutineRepository
@@ -31,12 +34,11 @@ import com.mundoinformaticacanaria.gymup.domain.repository.RoutineRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
 import com.mundoinformaticacanaria.gymup.domain.usecase.FilterRoutineExercisesUseCase
 import com.mundoinformaticacanaria.gymup.domain.usecase.SaveRoutineUseCase
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
+import java.io.File
 
 interface AppContainer {
+    /** Must succeed before UI, seeding or other domain access is exposed. */
+    suspend fun awaitReady()
     val userPreferencesRepository: UserPreferencesRepository
     val masterCatalogRepository: MasterCatalogRepository
     val exerciseCatalogRepository: ExerciseCatalogRepository
@@ -53,13 +55,11 @@ interface AppContainer {
 
 class DefaultAppContainer(context: Context) : AppContainer {
     private val appContext = context.applicationContext
-    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val database = GymUpDatabase.create(appContext)
-    // Incremental #56 wiring: all interface-based domain writers share this barrier.
-    // Backup remains UNJOURNALED until image, preferences and startup/UI paths are gated.
+    // All exposed domain writers, import/export and startup share this process-local barrier.
+    // This is not a cross-process or power-loss durability guarantee.
     private val domainWriteBarrier = BackupDomainWriteBarrier()
-    // Backup uses the raw delegate while UI writes take the shared barrier.
-    // Do not install the journal until startup recovery and all writers are gated.
+    // The backup delegate must stay unwrapped: journal recovery holds the barrier externally.
     private val backupPreferencesRepository = UserPreferencesRepository(appContext)
     override val userPreferencesRepository = UserPreferencesRepository(
         appContext,
@@ -85,17 +85,30 @@ class DefaultAppContainer(context: Context) : AppContainer {
     override val historicalCleanupManager = HistoricalCleanupManager(
         BarrierProtectedHistoricalCleanupStore(RoomHistoricalCleanupStore(database), domainWriteBarrier),
     )
-    override val backupManager = BackupManager(
-        dataSource = RoomBackupDataSource(appContext, database, backupPreferencesRepository),
+    private val journaledBackupDataSource = JournaledBackupDataSource(
+        delegate = RoomBackupDataSource(appContext, database, backupPreferencesRepository),
+        coordinator = BackupRecoveryCoordinator(
+            BackupRecoveryJournal(File(appContext.filesDir, "backup-recovery")),
+        ),
         appVersion = BuildConfig.VERSION_NAME,
     )
+    private val guardedBackupDataSource = BarrierProtectedJournaledBackupDataSource(
+        journaledBackupDataSource,
+        domainWriteBarrier,
+    )
+    private val startupGate = BackupStartupGate(
+        // Both callbacks use RAW adapters because BackupStartupGate owns the exclusive barrier.
+        recover = { journaledBackupDataSource.recoverBeforeDataAccess() },
+        seed = { DatabaseSeeder(appContext, database).seedIfNeeded() },
+        writeBarrier = domainWriteBarrier,
+    )
 
-    init {
-        applicationScope.launch {
-            BarrierProtectedDatabaseSeeder(
-                seedIfNeededUnprotected = { DatabaseSeeder(appContext, database).seedIfNeeded() },
-                barrier = domainWriteBarrier,
-            ).seedIfNeeded()
-        }
+    override suspend fun awaitReady() {
+        startupGate.awaitReady()
     }
+
+    override val backupManager = BackupManager(
+        dataSource = guardedBackupDataSource,
+        appVersion = BuildConfig.VERSION_NAME,
+    )
 }
