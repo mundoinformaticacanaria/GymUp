@@ -37,6 +37,7 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.channels.FileChannel
+import java.nio.file.Files
 import java.nio.file.StandardOpenOption
 import java.util.UUID
 import kotlinx.coroutines.NonCancellable
@@ -313,9 +314,21 @@ private class UserExerciseImageStore(
     private val parentDir = context.filesDir
     private val rootDir = File(parentDir, DIRECTORY)
 
-    fun readRequired(storageKey: String): ByteArray = fileFor(rootDir, storageKey).let { file ->
-        require(file.isFile) { "Falta la imagen personalizada $storageKey" }
-        file.readBytes()
+    fun readRequired(storageKey: String): ByteArray {
+        // A corrupted Room reference must not turn an export (or recovery pre-image)
+        // into a read outside the private image store. Do not follow symlinks, even
+        // dangling ones, and reject the image directory itself if it is a symlink.
+        require(storageKey.matches(Regex("^user:[0-9a-fA-F-]{36}$"))) {
+            "storage_key de imagen personalizada no válido"
+        }
+        check(!Files.isSymbolicLink(rootDir.toPath())) {
+            "El directorio de imágenes personalizadas es un enlace simbólico"
+        }
+        val file = fileFor(rootDir, storageKey)
+        check(!Files.isSymbolicLink(file.toPath()) && file.isFile) {
+            "Imagen personalizada ausente o insegura: $storageKey"
+        }
+        return file.readBytes()
     }
 
     fun stageReplacement(images: Map<String, ByteArray>): StagedImageReplacement {
