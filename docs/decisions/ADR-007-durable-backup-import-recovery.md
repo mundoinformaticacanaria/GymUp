@@ -5,6 +5,21 @@ Fecha: 2026-10-25
 Issue: #56 · PR: #57  
 Relacionado: ADR-005 y contrato funcional v1 §17
 
+## Protección adicional de importación — 2026-10-28 05:12 UTC
+
+El almacén privado `exercise-images` se comprueba antes de preparar una importación
+y **otra vez justo antes de activar** el directorio staged. Se rechazan enlaces
+simbólicos (también colgantes) y rutas que existan sin ser directorios. La
+comprobación evita mover una referencia simbólica al slot de preimagen o
+reemplazarla accidentalmente; las pruebas Robolectric cubren el enlace presente
+antes de importar y el enlace inyectado entre staging y activación, verificando
+que Room y tema no se confirman y que el destino externo no cambia.
+
+**Límites:** las comprobaciones de ruta no eliminan TOCTOU frente a cambios
+concurrentes fuera de la barrera. La importación productiva sigue sin journal
+instalado ni recuperación obligatoria antes de UI/seeding. CI de estos cambios
+pendiente de resultado; no se declara prueba física Android 15/16.
+
 ## Problema y límite actual
 
 Room, el directorio privado de imágenes y DataStore no comparten una transacción atómica. PR #57 mitiga excepciones y cancelaciones controladas manteniendo abierta la transacción Room y conservando imágenes anteriores. Su CI verde **no demuestra recuperación tras terminación abrupta**: un proceso puede morir después de conmutar imágenes, escribir tema o confirmar Room y antes de limpiar temporales.
