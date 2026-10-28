@@ -6,7 +6,6 @@ import com.mundoinformaticacanaria.gymup.data.local.ExerciseDao
 import com.mundoinformaticacanaria.gymup.data.local.ExerciseImageEntity
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.channels.Channels
 import java.nio.channels.FileChannel
@@ -43,6 +42,8 @@ class ExerciseImageManager internal constructor(
     private val domainWriteBarrier: BackupDomainWriteBarrier? = null,
     // Deterministic seam for a file replaced between validation and descriptor open.
     private val beforeUserImageRead: (File) -> Unit = {},
+    // Deterministic seam: inject an unsafe temporary path just before descriptor creation.
+    private val beforeUserImageWrite: (File) -> Unit = {},
 ) {
     private val imageDirectory = File(context.applicationContext.filesDir, DIRECTORY)
 
@@ -84,13 +85,24 @@ class ExerciseImageManager internal constructor(
         try {
             // Persist the image bytes before publishing the filename and Room metadata.
             // Directory rename durability still requires separate Android validation.
-            FileOutputStream(temporaryFile).use { output ->
-                output.write(bytes)
-                output.fd.sync()
+            // CREATE_NEW and NOFOLLOW_LINKS prevent a substituted temporary symlink from
+            // truncating an external file. The random name alone is not a security boundary.
+            beforeUserImageWrite(temporaryFile)
+            FileChannel.open(
+                temporaryFile.toPath(),
+                StandardOpenOption.CREATE_NEW,
+                StandardOpenOption.WRITE,
+                LinkOption.NOFOLLOW_LINKS,
+            ).use { channel ->
+                Channels.newOutputStream(channel).write(bytes)
+                channel.force(true)
             }
             check(temporaryFile.length() == bytes.size.toLong()) { "No se pudo guardar la imagen" }
             // Deterministic test seam: failure here must leave neither a published file nor Room metadata.
             afterUserImageSync(temporaryFile)
+            check(Files.isRegularFile(temporaryFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                "El temporal de imagen dejó de ser un archivo regular"
+            }
             check(temporaryFile.renameTo(finalFile)) { "No se pudo activar la imagen guardada" }
             val entity = ExerciseImageEntity(
                 id = id,
