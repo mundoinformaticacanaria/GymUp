@@ -5,6 +5,23 @@ Fecha: 2026-10-25
 Issue: #56 · PR: #57  
 Relacionado: ADR-005 y contrato funcional v1 §17
 
+## Lectura de journal protegida frente a sustitución del archivo final — 2026-10-28 13:15 UTC
+
+La inspección de `state` y `previous.zip` abre ahora los descriptores con
+`NOFOLLOW_LINKS`, tras un preflight y antes de leer bytes. Se verifica el tamaño
+del descriptor abierto y se limita la lectura al tamaño esperado más un byte;
+si cambia durante la lectura, se rechaza el journal. Dos pruebas JVM inyectan
+una sustitución por symlink **entre el preflight y la apertura** para ambos
+archivos y comprueban fallo cerrado y conservación de los originales y de los
+destinos externos. La CI de estos cambios debe verificarse antes de atribuir
+las pruebas como superadas.
+
+**Límites:** el descriptor protegido evita seguir enlaces simbólicos en el
+componente final, pero no resuelve carreras de sustitución en directorios
+antecesores, procesos externos, durabilidad del sistema de archivos ni los
+gates pendientes de integración productiva del journal y recuperación antes
+de UI/seeding. #56 sigue abierta y PR #57 permanece en draft.
+
 ## Protección de raíz de imágenes en baja de ejercicio — 2026-10-28 11:08 UTC
 
 La baja definitiva de un ejercicio valida que la raíz privada `exercise-images`
