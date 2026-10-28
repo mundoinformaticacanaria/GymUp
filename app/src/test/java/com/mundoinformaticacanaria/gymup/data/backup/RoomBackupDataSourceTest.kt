@@ -210,6 +210,76 @@ class RoomBackupDataSourceTest {
         }
     }
 
+
+    @Test
+    fun `backup import rejects symlinked image root before changing Room or theme`() = runBlocking {
+        val source = RoomBackupDataSource(context, database, preferences)
+        val before = source.exportSnapshot()
+        val replacementData = BackupDataCodec.decode(before.data.decodeToString()).getOrThrow()
+            .copy(preferences = BackupPreferences(ThemeMode.LIGHT.name))
+        val replacement = BackupSnapshot(
+            data = BackupDataCodec.encode(replacementData).encodeToByteArray(),
+            images = before.images,
+        )
+        val root = File(context.filesDir, "exercise-images")
+        val outside = File(context.filesDir, "external-images-${UUID.randomUUID()}")
+        assertTrue(root.deleteRecursively())
+        assertTrue(outside.mkdirs())
+        val sentinel = File(outside, "sentinel")
+        sentinel.writeBytes(byteArrayOf(42, 43))
+        Files.createSymbolicLink(root.toPath(), outside.toPath())
+        try {
+            val failure = runCatching { source.replaceAll(replacement) }.exceptionOrNull()
+            assertTrue("A symlinked image root must abort before Room mutation", failure is IllegalStateException)
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+            assertArrayEquals(byteArrayOf(42, 43), sentinel.readBytes())
+            assertTrue(Files.isSymbolicLink(root.toPath()))
+        } finally {
+            Files.deleteIfExists(root.toPath())
+            outside.deleteRecursively()
+        }
+        assertArrayEquals(before.data, source.exportSnapshot().data)
+    }
+
+    @Test
+    fun `backup import rejects image root replaced by symlink before activation`() = runBlocking {
+        val source = RoomBackupDataSource(context, database, preferences)
+        val before = source.exportSnapshot()
+        val replacementData = BackupDataCodec.decode(before.data.decodeToString()).getOrThrow()
+            .copy(preferences = BackupPreferences(ThemeMode.LIGHT.name))
+        val replacement = BackupSnapshot(
+            data = BackupDataCodec.encode(replacementData).encodeToByteArray(),
+            images = before.images,
+        )
+        val root = File(context.filesDir, "exercise-images")
+        val outside = File(context.filesDir, "external-images-${UUID.randomUUID()}")
+        assertTrue(root.deleteRecursively())
+        assertTrue(outside.mkdirs())
+        val sentinel = File(outside, "sentinel")
+        sentinel.writeBytes(byteArrayOf(51, 52))
+        val racingSource = RoomBackupDataSource(
+            context,
+            database,
+            preferences,
+            importFault = { phase ->
+                if (phase == BackupReplacePhase.BEFORE_IMAGES_ACTIVATED) {
+                    Files.createSymbolicLink(root.toPath(), outside.toPath())
+                }
+            },
+        )
+        try {
+            val failure = runCatching { racingSource.replaceAll(replacement) }.exceptionOrNull()
+            assertTrue("A root swapped after staging must abort the import", failure is IllegalStateException)
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+            assertArrayEquals(byteArrayOf(51, 52), sentinel.readBytes())
+            assertTrue(Files.isSymbolicLink(root.toPath()))
+        } finally {
+            Files.deleteIfExists(root.toPath())
+            outside.deleteRecursively()
+        }
+        assertArrayEquals(before.data, source.exportSnapshot().data)
+    }
+
     @Test
     fun `injected import failures restore Room images and DataStore without data loss`() = runBlocking {
         val dao = database.backupDao()
