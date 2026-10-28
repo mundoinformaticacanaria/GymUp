@@ -219,6 +219,26 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `backup export rejects oversized persisted image without changing Room or theme`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val image = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val file = requireNotNull(image.localFile)
+        // A persisted file can be corrupted or replaced after the 10 MiB import limit.
+        // Use a sparse file so this regression does not allocate the oversized payload.
+        java.io.RandomAccessFile(file, "rw").use { it.setLength(10L * 1024L * 1024L + 1L) }
+
+        val failure = runCatching {
+            RoomBackupDataSource(context, database, preferences).exportSnapshot()
+        }.exceptionOrNull()
+        assertTrue("An oversized pre-image must abort backup export", failure is IllegalStateException)
+        assertTrue(failure?.message?.contains("10 MiB") == true)
+        assertTrue(database.exerciseDao().getImages(exercise.id).any { it.id == image.id })
+        assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+        assertEquals(10L * 1024L * 1024L + 1L, file.length())
+    }
+
+    @Test
     fun `backup export rejects dangling user image symlink without changing Room`() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val image = ExerciseImageManager(context, database.exerciseDao())
