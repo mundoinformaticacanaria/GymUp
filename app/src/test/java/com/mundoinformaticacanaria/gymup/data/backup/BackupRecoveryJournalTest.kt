@@ -335,6 +335,64 @@ class BackupRecoveryJournalTest {
     }
 
     @Test
+    fun `journal marker swapped to symlink after preflight is never read`() {
+        val directory = File(temp.root, "recovery")
+        val previous = byteArrayOf(61, 62, 63)
+        BackupRecoveryJournal(directory).prepare(previous)
+        val outside = File(temp.root, "outside-state")
+        outside.writeText("untrusted marker")
+        val state = File(directory, "state")
+        val saved = File(temp.root, "saved-state")
+        var swapped = false
+        val reader = BackupRecoveryJournal(
+            directory,
+            beforeTrustedRead = { file ->
+                if (file.name == "state" && !swapped) {
+                    assertTrue(state.renameTo(saved))
+                    Files.createSymbolicLink(state.toPath(), outside.toPath())
+                    swapped = true
+                }
+            },
+        )
+
+        assertTrue(runCatching { reader.inspect() }.isFailure)
+        assertTrue(swapped)
+        assertTrue(Files.isSymbolicLink(state.toPath()))
+        assertEquals("untrusted marker", outside.readText())
+        assertTrue(saved.isFile)
+        assertArrayEquals(previous, File(directory, "previous.zip").readBytes())
+    }
+
+    @Test
+    fun `journal preimage swapped to symlink after preflight is never read`() {
+        val directory = File(temp.root, "recovery")
+        val previous = byteArrayOf(71, 72, 73)
+        BackupRecoveryJournal(directory).prepare(previous)
+        val outside = File(temp.root, "outside-archive")
+        outside.writeBytes(byteArrayOf(99, 98, 97))
+        val archive = File(directory, "previous.zip")
+        val saved = File(temp.root, "saved-archive")
+        var swapped = false
+        val reader = BackupRecoveryJournal(
+            directory,
+            beforeTrustedRead = { file ->
+                if (file.name == "previous.zip" && !swapped) {
+                    assertTrue(archive.renameTo(saved))
+                    Files.createSymbolicLink(archive.toPath(), outside.toPath())
+                    swapped = true
+                }
+            },
+        )
+
+        assertTrue(runCatching { reader.inspect() }.isFailure)
+        assertTrue(swapped)
+        assertTrue(Files.isSymbolicLink(archive.toPath()))
+        assertArrayEquals(byteArrayOf(99, 98, 97), outside.readBytes())
+        assertArrayEquals(previous, saved.readBytes())
+        assertTrue(File(directory, "state").isFile)
+    }
+
+    @Test
     fun `dangling symlink marker temp cannot be overwritten during commit`() {
         val directory = File(temp.root, "recovery")
         val journal = BackupRecoveryJournal(directory)
