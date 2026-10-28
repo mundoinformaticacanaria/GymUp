@@ -332,6 +332,11 @@ private class UserExerciseImageStore(
     }
 
     fun stageReplacement(images: Map<String, ByteArray>): StagedImageReplacement {
+        // Reject an unsafe current store before staging. Files.exists follows links and
+        // would otherwise allow replacing a symlink (including a dangling one).
+        check(!Files.isSymbolicLink(rootDir.toPath()) && (!rootDir.exists() || rootDir.isDirectory)) {
+            "El directorio de imágenes actual no es seguro para importar"
+        }
         val staging = File(parentDir, "$DIRECTORY-import-${UUID.randomUUID()}")
         check(staging.mkdirs()) { "No se pudo preparar la importación de imágenes" }
         try {
@@ -388,6 +393,11 @@ private class StagedImageReplacement(
 
     fun activate() {
         check(!finished && !activated) { "La sustitución de imágenes ya se activó" }
+        // Recheck at the rename boundary: the store may have changed after staging.
+        // Never move a symlink into the preserved previous-image slot.
+        check(!Files.isSymbolicLink(current.toPath()) && (!current.exists() || current.isDirectory)) {
+            "El directorio de imágenes cambió a una ruta insegura durante la importación"
+        }
         if (current.exists()) {
             check(current.renameTo(previous)) { "No se pudieron preservar las imágenes actuales" }
             oldMoved = true
