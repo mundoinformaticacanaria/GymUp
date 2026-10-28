@@ -1322,3 +1322,11 @@ y verifica fallo cerrado, conservación de la referencia Room y del tema.
 global de un backup ni los directorios antecesores sujetos a TOCTOU. No se ha
 conectado el journal al flujo productivo ni se ha ejecutado una prueba física de
 muerte de proceso. La PR #57 sigue draft y la Issue #56 abierta.
+
+## Verificación de contenido al publicar imágenes USER — 2026-10-28 21:08 UTC
+
+La auditoría de `ExerciseImageManager.addUserImage` identificó que, después de escribir y sincronizar el temporal, la validación solo comprobaba su longitud y tipo regular. Una sustitución o alteración del temporal que conservase exactamente el mismo tamaño podía publicarse como imagen válida y recibir una referencia Room, a diferencia de la validación de bytes ya incorporada al staging de importación.
+
+El commit `723bc82` reabre el temporal con `NOFOLLOW_LINKS` después del punto de inyección y compara los bytes completos y el tamaño del descriptor con la imagen original **antes** del rename y del alta Room. La regresión Robolectric `a788020` sustituye los bytes por otros de idéntica longitud, exige fallo cerrado sin fila Room ni archivo publicado y verifica que un reintento normal funciona.
+
+**Límites:** esta comprobación no hace atómico el rename frente a otro proceso ni resuelve la durabilidad de metadatos, los escritores directos no auditados, la limpieza recuperable ni los cortes físicos de proceso. El resultado de CI del HEAD actualizado debe verificarse antes de atribuir validación. Mantener #56 abierta y PR #57 en borrador, sin merge ni candidato APK.
