@@ -1088,3 +1088,26 @@ utilizada por Compose. Esta mejora aislada no activa el journal en
 producción ni elimina la necesidad de gate previo a UI/seeding,
 auditoría DAO, limpieza recuperable y pruebas reales de interrupción
 en Android 15/16. #56 sigue abierta y PR #57 en borrador.
+
+## Galería Compose sin lectura de rutas mutables — 2026-10-28 08:10 UTC
+
+La galería todavía invocaba `BitmapFactory.decodeFile(localFile.absolutePath)`
+aunque `ExerciseImageManager.readBytes` ya utilizaba apertura con
+`NOFOLLOW_LINKS` y límite de 10 MiB. Entre observar la fila Room y pintar
+Compose, un enlace simbólico podía sustituir el archivo y hacer que el
+`decodeFile` siguiera una ruta ajena a la imagen.
+
+La PR #57 cambia la galería para obtener bytes exclusivamente mediante
+`manager.readBytes(item)` y decodificarlos con `BitmapFactory.decodeByteArray`.
+El trabajo de lectura y decodificación se realiza en `Dispatchers.IO` mediante
+`produceState`, sin bloquear el hilo de composición. Dos regresiones Robolectric
+verifican una imagen PNG válida y la sustitución determinista por symlink
+entre observación y apertura. El archivo externo no se altera.
+
+**Límites:** `NOFOLLOW_LINKS` protege el componente final, no el cambio
+concurrente de directorios antecesores. El límite de bytes comprimidos no
+limita por sí solo las dimensiones del bitmap decodificado. La CI del nuevo
+HEAD debe verificarse; no se han ejecutado pruebas físicas. Esta corrección
+no conecta el journal productivo, no instala recuperación antes de UI/seeding,
+ni resuelve la limpieza recuperable, auditoría DAO o cortes Android 15/16.
+La Issue #56 permanece abierta y la PR #57 en borrador.
