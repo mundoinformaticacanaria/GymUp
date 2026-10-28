@@ -33,6 +33,13 @@ internal class BackupRecoveryJournal(
         data object Committed : State
     }
 
+    /** Fail closed on unsafe recovery artifacts before best-effort cleanup can suppress errors. */
+    internal fun verifyPathSafety() {
+        requireNotSymlink(directory)
+        requireNotSymlink(preparingDirectory)
+        requireNotSymlink(retiredDirectory)
+    }
+
     fun inspect(): State {
         requireNotSymlink(directory)
         if (!directory.exists()) return State.Absent
