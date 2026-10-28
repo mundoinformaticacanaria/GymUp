@@ -1046,3 +1046,26 @@ No demuestra una instantánea consistente ante escritores DAO directos ni activa
 el journal productivo. Se debe verificar la CI del HEAD con estas pruebas;
 continúan pendientes recuperación antes de UI/seeding, limpieza recuperable,
 auditoría de escritores y cortes reales en Android 15/16. #56 abierta y PR #57 draft.
+
+## Auditoría de lectura de imágenes y raíz de almacenamiento — 2026-10-28 06:10 UTC
+
+La auditoría de `ExerciseImageManager` detectó una ruta adicional de acceso a ficheros
+fuera del mecanismo de exportación: `observeImages` construía un `localFile`
+directamente desde `storageKey` y aceptaba cualquier `File.isFile`, que sigue
+symlinks. Una fila Room malformada (`user:../...`) o un symlink interno podía
+exponer bytes de otro fichero privado a la galería y a `readBytes`. Además,
+`addUserImage` permitía que la propia raíz `exercise-images` fuese un symlink,
+redireccionando la escritura fuera del directorio esperado.
+
+La corrección comprueba que la raíz no sea un enlace simbólico antes de crear
+imágenes, valida las claves de lectura y rechaza directorios, symlinks y rutas
+fuera de la raíz al exponer `localFile` o leer bytes. `readBytes` tampoco confía
+en un `File` arbitrario entregado por un llamador. La baja individual rechaza
+también la raíz enlazada. Cuatro pruebas Robolectric cubren raíz enlazada,
+referencia traversal, enlace a fichero externo y lectura ordinaria.
+
+**Límites:** el `File` expuesto a Compose todavía puede sustituirse después de
+la comprobación (TOCTOU); la galería usa `BitmapFactory.decodeFile`, no apertura
+atómica sin seguimiento de enlaces. No hay journal productivo, gate de arranque
+ni garantía de durabilidad ante corte. Esta mitigación no autoriza fusionar PR #57,
+cerrar #56 o generar un APK; las pruebas físicas Android 15/16 siguen pendientes.
