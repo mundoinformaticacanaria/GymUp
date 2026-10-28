@@ -993,3 +993,22 @@ Se detectó que `ExerciseImageManager.deleteUserImage` utilizaba la clave persis
 La auditoría de `BackupRecoveryJournal` identificó que `File.exists()` sigue enlaces simbólicos y que `deleteRecursively()` sobre directorios de preparación o retirada no debe recibir rutas que apunten fuera del área privada de recuperación. El cambio `550103b` rechaza enlaces simbólicos —también colgantes— en el directorio activo, `.preparing`, `.retired`, `previous.zip`, `state` y temporales de escritura/confirmación antes de leer, sobrescribir o limpiar. La regresión `78496ce` incorpora cinco pruebas JVM para journal activo enlazado, limpieza de `.retired`/`.preparing`, preimagen enlazada y temporal colgante, preservando datos externos y el estado PREPARED. Además, `027d85d`/`d7afdff` incorporan una prevalidación de rutas en `BackupRecoveryCoordinator` **antes** de la limpieza best-effort, que de otro modo silenciaría un fallo de `.retired`; `ced5d10` prueba que el arranque se bloquea sin tocar datos externos.
 
 **Alcance:** defensa frente a rutas ya alteradas antes de la operación; no elimina carreras TOCTOU entre comprobación y acceso, no protege frente a otro proceso con acceso al sandbox y no constituye por sí misma recuperación duradera. La CI del HEAD con estos cambios debe verificarse. Sigue pendiente conectar el journal al backup real, impedir UI/seeding antes de la recuperación, auditar escrituras directas y probar interrupciones físicas Android 15/16. Mantener #56 abierta y PR #57 en borrador.
+
+## Limpieza fail-closed de artefactos internos del journal — 2026-10-28 03:10 UTC
+
+La protección previa rechazaba symlinks en las rutas de directorio, pero las llamadas
+`deleteRecursively()` para `.preparing` y `.retired` no verificaban **sus entradas
+internas**. Se sustituye por limpieza explícita de los únicos archivos planos
+permitidos (`previous.zip`, `state` y sus temporales `.tmp`), con prevalidación
+completa: symlinks internos (incluso colgantes), subdirectorios y nombres ajenos
+provocan fallo cerrado **antes de eliminar ninguna entrada**. Se añaden cuatro
+regresiones JVM: enlace en `.retired`, enlace colgante en `.preparing`,
+subdirectorio inesperado y limpieza correcta de temporales conocidos.
+
+**Límites:** la comprobación previa no es atómica respecto a actores externos
+(TOCTOU); un fallo de borrado a mitad de la limpieza puede dejar restos que se
+reintentan o requieren intervención, pero no autoriza a descartar una preimagen
+PREPARED. La cobertura JVM requiere CI del HEAD nuevo; no se han realizado
+pruebas instrumentadas ni físicas. Continúan pendientes integración productiva
+del journal, recuperación obligatoria antes de UI/seeding, auditoría de
+escritores/DAO, limpieza recuperable de imágenes y cortes reales Android 15/16.
