@@ -1111,3 +1111,21 @@ HEAD debe verificarse; no se han ejecutado pruebas físicas. Esta corrección
 no conecta el journal productivo, no instala recuperación antes de UI/seeding,
 ni resuelve la limpieza recuperable, auditoría DAO o cortes Android 15/16.
 La Issue #56 permanece abierta y la PR #57 en borrador.
+
+## Exportación USER: descriptor sin seguimiento tras preflight — 2026-10-28 10:15 UTC
+
+`UserExerciseImageStore.readRequired` comprobaba `Files.isSymbolicLink` y
+`File.isFile` antes de `File.readBytes()`, que seguía enlaces si un fichero
+era sustituido entre ambas operaciones. La exportación de backup y la captura
+de la preimagen de recuperación comparten esta ruta. Ahora se abre el archivo
+final mediante `Files.newInputStream(..., LinkOption.NOFOLLOW_LINKS)`; un fallo
+de apertura aborta la exportación sin modificar Room ni DataStore (commit
+`c1a53d6`). La regresión Robolectric `27a054e` sustituye de forma
+determinista el archivo por un enlace después de la validación y verifica que
+no se leen bytes externos ni se altera la referencia Room.
+
+**Límites:** la apertura no protege ante sustitución concurrente de directorios
+antecesores, ni establece un snapshot global consistente; el journal aún no
+está instalado en AppContainer y falta gate de arranque antes de UI/seeding.
+La prueba necesita CI del HEAD; no acredita corte físico ni durabilidad Android.
+Mantener #56 abierta y PR #57 draft.
