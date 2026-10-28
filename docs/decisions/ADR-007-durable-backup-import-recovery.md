@@ -1,5 +1,33 @@
 # ADR-007 (propuesta) — Recuperación duradera de importación replace-all
 
+## Auditoría de escritores y límites de visibilidad — 2026-10-28 22:08 UTC
+
+La inspección de `DefaultAppContainer` confirma que los métodos mutadores
+de `SessionRepository`, `RoutineRepository` y `CatalogMaintenanceRepository`
+están sobreescritos por adaptadores de barrera; los delegados restantes son
+consultas/flows. También están protegidos el favorito del catálogo,
+`ExerciseImageManager`, `UserPreferencesRepository.setThemeMode` y la
+limpieza histórica. Recuperación y seeding comparten una sección exclusiva
+en `BackupStartupGate`. El backup y el seeder emplean delegados crudos
+dentro de esa exclusión para no reacquirir el mutex no reentrante.
+`RoomHistoryRepository` solo consulta.
+
+Se incorpora una regresión Robolectric de composición real que exporta el
+tema, lo modifica y lo restaura mediante importación completa. El resultado
+de CI del nuevo HEAD debe verificarse antes de atribuirle validación.
+
+**Pendiente crítico:** este inventario no acredita todas las llamadas DAO
+ni protege lecturas/flows durante una importación iniciada con la app abierta.
+`BackupStartupGate.ready` solo gobierna el arranque inicial: si una
+importación en caliente deja `PREPARED` por rollback fallido, la UI ya
+compuesta no se cierra automáticamente. Además,
+`RoomCatalogMaintenanceRepository.deleteExercise` confirma Room antes de
+borrar imágenes USER; la barrera serializa escritores pero no recupera una
+caída entre fases. Deben resolverse visibilidad durante fallo en caliente,
+limpieza recuperable, accesos directos, durabilidad y pruebas físicas de
+interrupción/reinicio Android 15/16 antes de cerrar #56. La PR sigue draft,
+sin merge ni candidato APK.
+
 Estado: **IMPLEMENTACIÓN EXPERIMENTAL CONECTADA EN PR #57 (DRAFT) — SIN VALIDACIÓN FÍSICA NI CIERRE**  
 Fecha: 2026-10-25  
 Issue: #56 · PR: #57  
