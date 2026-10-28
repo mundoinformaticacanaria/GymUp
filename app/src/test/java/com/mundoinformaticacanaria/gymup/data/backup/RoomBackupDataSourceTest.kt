@@ -19,6 +19,7 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataCodec
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupPreferences
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataValidationResult
+import java.nio.file.Files
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.flow.first
@@ -158,6 +159,54 @@ class RoomBackupDataSourceTest {
         val restoredImage = imageManager.observeImages(exercise.id).first().single()
         assertArrayEquals(imageBytes, imageManager.readBytes(restoredImage))
         assertTrue(restoredImage.localFile?.isFile == true)
+    }
+
+    @Test
+    fun `backup export rejects symlinked user image without reading external bytes`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val image = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val imageFile = requireNotNull(image.localFile)
+        val outside = File(context.filesDir, "external-image-${UUID.randomUUID()}")
+        val sentinel = byteArrayOf(91, 92, 93)
+        outside.writeBytes(sentinel)
+        assertTrue(imageFile.delete())
+        Files.createSymbolicLink(imageFile.toPath(), outside.toPath())
+
+        try {
+            val failure = runCatching {
+                RoomBackupDataSource(context, database, preferences).exportSnapshot()
+            }.exceptionOrNull()
+            assertTrue("An export must not follow a user-image symlink", failure is IllegalStateException)
+            assertArrayEquals(sentinel, outside.readBytes())
+            assertTrue(database.exerciseDao().getImages(exercise.id).any { it.id == image.id })
+        } finally {
+            Files.deleteIfExists(imageFile.toPath())
+            outside.delete()
+        }
+    }
+
+    @Test
+    fun `backup export rejects dangling user image symlink without changing Room`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val image = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, byteArrayOf(4, 5, 6))
+        val imageFile = requireNotNull(image.localFile)
+        assertTrue(imageFile.delete())
+        Files.createSymbolicLink(
+            imageFile.toPath(),
+            File(context.filesDir, "missing-image-${UUID.randomUUID()}").toPath(),
+        )
+
+        try {
+            val failure = runCatching {
+                RoomBackupDataSource(context, database, preferences).exportSnapshot()
+            }.exceptionOrNull()
+            assertTrue("A dangling symlink must not be treated as an image", failure is IllegalStateException)
+            assertTrue(database.exerciseDao().getImages(exercise.id).any { it.id == image.id })
+        } finally {
+            Files.deleteIfExists(imageFile.toPath())
+        }
     }
 
     @Test
