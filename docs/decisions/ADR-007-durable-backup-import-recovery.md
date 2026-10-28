@@ -5,6 +5,22 @@ Fecha: 2026-10-25
 Issue: #56 · PR: #57  
 Relacionado: ADR-005 y contrato funcional v1 §17
 
+## Protección de raíz de imágenes en baja de ejercicio — 2026-10-28 11:08 UTC
+
+La baja definitiva de un ejercicio valida que la raíz privada `exercise-images`
+no sea un enlace simbólico (incluido colgante) ni un archivo ordinario, además
+de validar cada referencia `user:` y el tipo del fichero final. Se comprueba
+antes de confirmar Room y de nuevo antes de cada eliminación física. Esto
+impide que una raíz ya enlazada redirija el borrado a un directorio externo;
+las regresiones Robolectric verifican la conservación de ejercicio, referencias
+y bytes externos para una raíz enlazada y la preservación de Room ante raíz
+colgante. La CI del nuevo HEAD está pendiente de verificación.
+
+**Límite:** la validación por ruta no elimina la carrera TOCTOU si otro actor
+sustituye la raíz entre la comprobación y la operación; tampoco hace atómico
+el borrado de Room e imágenes. Sigue siendo necesaria una limpieza recuperable
+y la integración productiva del journal antes de considerar #56 resuelta.
+
 ## Protección adicional de importación — 2026-10-28 05:12 UTC
 
 El almacén privado `exercise-images` se comprueba antes de preparar una importación
