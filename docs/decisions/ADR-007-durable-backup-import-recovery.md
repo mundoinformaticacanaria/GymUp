@@ -981,3 +981,9 @@ comprobaciones y el borrado. No se ha integrado journal de limpieza ni
 recuperación productiva de importaciones; siguen pendientes recuperación antes
 de UI/seeding, auditoría de escritores/DAO y cortes reales Android 15/16.
 La PR #57 permanece en borrador y la Issue #56 abierta.
+
+## Auditoría incremental — 2026-10-28 01:12 UTC: borrado individual de imágenes
+
+Se detectó que `ExerciseImageManager.deleteUserImage` utilizaba la clave persistida de Room para construir una ruta de fichero sin validarla antes de borrar la fila. Una referencia corrupta `user:../...` podía apuntar fuera de `exercise-images`; un directorio o enlace simbólico (incluido el colgante, invisible para `File.exists`) podía provocar una baja de metadatos sin limpieza válida. Se introduce validación previa de prefijo, nombre simple y tipo de objeto del sistema de archivos, coherente con la protección del borrado de ejercicios. Tres pruebas Robolectric cubren traversal, symlink colgante y directorio, verificando conservación de la fila Room y del objeto original. La CI del nuevo HEAD queda pendiente de comprobación.
+
+**Límite:** esta prevalidación no es transacción atómica ni journal; no elimina la ventana entre borrado de Room y limpieza física ante corte abrupto ni protege frente a sustituciones concurrentes del fichero fuera de la barrera de dominio. La recuperación productiva, el gate antes de UI/seeding, la auditoría restante de DAO y la prueba física Android 15/16 siguen pendientes. Issue #56 abierta, PR #57 draft, sin merge ni candidato APK.
