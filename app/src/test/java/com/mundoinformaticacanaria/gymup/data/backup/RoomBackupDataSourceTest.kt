@@ -188,6 +188,37 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `backup export rejects image swapped to symlink after preflight`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val image = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val imageFile = requireNotNull(image.localFile)
+        val outside = File(context.filesDir, "external-racing-image-${UUID.randomUUID()}")
+        val sentinel = byteArrayOf(81, 82, 83)
+        outside.writeBytes(sentinel)
+        val source = RoomBackupDataSource(
+            context,
+            database,
+            preferences,
+            beforeRequiredImageRead = { file ->
+                assertEquals(imageFile.absolutePath, file.absolutePath)
+                assertTrue(file.delete())
+                Files.createSymbolicLink(file.toPath(), outside.toPath())
+            },
+        )
+        try {
+            val failure = runCatching { source.exportSnapshot() }.exceptionOrNull()
+            assertTrue("Export must reject a symlink swapped after validation", failure is IllegalStateException)
+            assertArrayEquals(sentinel, outside.readBytes())
+            assertTrue(database.exerciseDao().getImages(exercise.id).any { it.id == image.id })
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+        } finally {
+            Files.deleteIfExists(imageFile.toPath())
+            outside.delete()
+        }
+    }
+
+    @Test
     fun `backup export rejects dangling user image symlink without changing Room`() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val image = ExerciseImageManager(context, database.exerciseDao())
