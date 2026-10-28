@@ -3,6 +3,7 @@ package com.mundoinformaticacanaria.gymup.data.backup
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.channels.FileChannel
+import java.nio.file.Files
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 
@@ -33,9 +34,11 @@ internal class BackupRecoveryJournal(
     }
 
     fun inspect(): State {
+        requireNotSymlink(directory)
         if (!directory.exists()) return State.Absent
         check(directory.isDirectory) { "El journal no es un directorio" }
         val stateFile = File(directory, STATE_FILE)
+        requireNotSymlink(stateFile)
         check(stateFile.isFile && stateFile.length() in 1..MAX_STATE_BYTES) { "Journal incompleto o marcador de tamaño inválido" }
         val parts = stateFile.readText(Charsets.US_ASCII).trimEnd('\n').split(' ')
         check(parts.size == 3 && parts[0] == VERSION && parts[2].matches(SHA256)) {
@@ -45,6 +48,7 @@ internal class BackupRecoveryJournal(
             "Estado de recuperación desconocido"
         }
         val archiveFile = File(directory, ARCHIVE_FILE)
+        requireNotSymlink(archiveFile)
         check(archiveFile.isFile && archiveFile.length() in 1..MAX_ARCHIVE_BYTES) {
             "Falta la copia previa o su tamaño no es válido"
         }
@@ -54,6 +58,9 @@ internal class BackupRecoveryJournal(
     }
 
     fun prepare(previousArchive: ByteArray) {
+        requireNotSymlink(directory)
+        requireNotSymlink(retiredDirectory)
+        requireNotSymlink(preparingDirectory)
         require(previousArchive.isNotEmpty() && previousArchive.size.toLong() <= MAX_ARCHIVE_BYTES) {
             "Tamaño de copia previa no válido"
         }
@@ -79,6 +86,7 @@ internal class BackupRecoveryJournal(
         // PREPARED is still authoritative; discard only this uncommitted marker so startup
         // recovery can finish instead of being permanently blocked by the stale temp file.
         val interruptedCommit = File(directory, "$STATE_FILE.tmp")
+        requireNotSymlink(interruptedCommit)
         if (interruptedCommit.exists()) {
             check(interruptedCommit.isFile && interruptedCommit.delete()) {
                 "No se pudo limpiar un marcador COMMITTED interrumpido"
@@ -94,6 +102,7 @@ internal class BackupRecoveryJournal(
      */
     fun cleanupCommitted() {
         check(inspect() is State.Committed) { "No se puede eliminar un journal pendiente" }
+        requireNotSymlink(retiredDirectory)
         check(!retiredDirectory.exists()) { "Queda una limpieza anterior pendiente" }
         check(directory.renameTo(retiredDirectory)) { "No se pudo retirar el journal confirmado" }
         syncDirectory(directory.parentFile)
@@ -102,6 +111,7 @@ internal class BackupRecoveryJournal(
 
     /** Discard only an unpublished pre-image: no data mutation can have started yet. */
     fun cleanupAbandonedPreparation() {
+        requireNotSymlink(preparingDirectory)
         if (!preparingDirectory.exists()) return
         check(!directory.exists()) { "No se descarta preparación si existe un journal activo" }
         check(preparingDirectory.deleteRecursively()) { "No se pudo limpiar la preparación incompleta" }
@@ -110,6 +120,7 @@ internal class BackupRecoveryJournal(
 
     /** Retry cleanup of a previously COMMITTED journal after an interrupted deletion. */
     fun cleanupRetired() {
+        requireNotSymlink(retiredDirectory)
         if (retiredDirectory.exists()) {
             check(retiredDirectory.deleteRecursively()) { "No se pudo limpiar el journal retirado" }
             syncDirectory(retiredDirectory.parentFile)
@@ -118,6 +129,8 @@ internal class BackupRecoveryJournal(
 
     private fun writeSynced(target: File, bytes: ByteArray, replace: Boolean = false) {
         val temp = File(target.parentFile, "${target.name}.tmp")
+        requireNotSymlink(target)
+        requireNotSymlink(temp)
         check(!temp.exists()) { "Existe una escritura incompleta del journal" }
         FileOutputStream(temp).use { output ->
             output.write(bytes)
@@ -131,6 +144,11 @@ internal class BackupRecoveryJournal(
         }
         // fsync(file) alone does not persist the rename/creation of its directory entry.
         syncDirectory(target.parentFile)
+    }
+
+    /** Reject even dangling links: File.exists() follows links and can hide them. */
+    private fun requireNotSymlink(file: File) {
+        check(!Files.isSymbolicLink(file.toPath())) { "Ruta de journal con enlace simbólico: ${file.name}" }
     }
 
     private fun sha256(bytes: ByteArray): String =
