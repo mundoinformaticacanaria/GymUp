@@ -1,6 +1,7 @@
 package com.mundoinformaticacanaria.gymup.data.backup
 
 import java.io.File
+import java.nio.file.Files
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -271,4 +272,83 @@ class BackupRecoveryJournalTest {
                 .previousArchive,
         )
     }
+
+    @Test
+    fun `symlinked active journal fails closed without following its target`() {
+        val target = File(temp.root, "valid-recovery")
+        val previous = byteArrayOf(31, 32)
+        BackupRecoveryJournal(target).prepare(previous)
+        val linked = File(temp.root, "recovery")
+        Files.createSymbolicLink(linked.toPath(), target.toPath())
+
+        assertTrue(runCatching { BackupRecoveryJournal(linked).inspect() }.isFailure)
+        assertArrayEquals(
+            previous,
+            (BackupRecoveryJournal(target).inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
+        )
+    }
+
+    @Test
+    fun `symlinked retired journal cannot delete files outside recovery`() {
+        val outside = File(temp.root, "outside-retired")
+        assertTrue(outside.mkdir())
+        val sentinel = File(outside, "keep.txt")
+        sentinel.writeText("preserve")
+        val retired = File(temp.root, "recovery.retired")
+        Files.createSymbolicLink(retired.toPath(), outside.toPath())
+
+        assertTrue(runCatching {
+            BackupRecoveryJournal(File(temp.root, "recovery")).cleanupRetired()
+        }.isFailure)
+        assertEquals("preserve", sentinel.readText())
+        assertTrue(Files.isSymbolicLink(retired.toPath()))
+    }
+
+    @Test
+    fun `symlinked unpublished preparation cannot delete files outside recovery`() {
+        val outside = File(temp.root, "outside-preparing")
+        assertTrue(outside.mkdir())
+        val sentinel = File(outside, "keep.txt")
+        sentinel.writeText("preserve")
+        val preparing = File(temp.root, "recovery.preparing")
+        Files.createSymbolicLink(preparing.toPath(), outside.toPath())
+
+        val journal = BackupRecoveryJournal(File(temp.root, "recovery"))
+        assertTrue(runCatching { journal.cleanupAbandonedPreparation() }.isFailure)
+        assertTrue(runCatching { journal.prepare(byteArrayOf(1)) }.isFailure)
+        assertEquals("preserve", sentinel.readText())
+    }
+
+    @Test
+    fun `symlinked preimage cannot be read as trusted recovery data`() {
+        val directory = File(temp.root, "recovery")
+        val journal = BackupRecoveryJournal(directory)
+        journal.prepare(byteArrayOf(41, 42))
+        val archive = File(directory, "previous.zip")
+        val outside = File(temp.root, "outside.zip")
+        assertTrue(archive.renameTo(outside))
+        Files.createSymbolicLink(archive.toPath(), outside.toPath())
+
+        assertTrue(runCatching { journal.inspect() }.isFailure)
+        assertTrue(runCatching { journal.cleanupCommitted() }.isFailure)
+        assertArrayEquals(byteArrayOf(41, 42), outside.readBytes())
+    }
+
+    @Test
+    fun `dangling symlink marker temp cannot be overwritten during commit`() {
+        val directory = File(temp.root, "recovery")
+        val journal = BackupRecoveryJournal(directory)
+        val previous = byteArrayOf(51, 52)
+        journal.prepare(previous)
+        val marker = File(directory, "state.tmp")
+        Files.createSymbolicLink(marker.toPath(), File(temp.root, "missing-target").toPath())
+
+        assertTrue(runCatching { journal.markCommitted() }.isFailure)
+        assertTrue(Files.isSymbolicLink(marker.toPath()))
+        assertArrayEquals(
+            previous,
+            (journal.inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
+        )
+    }
+
 }
