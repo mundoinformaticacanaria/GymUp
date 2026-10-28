@@ -19,6 +19,7 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataCodec
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupPreferences
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupDataValidationResult
+import java.io.File
 import java.nio.file.Files
 import java.time.LocalDate
 import java.util.UUID
