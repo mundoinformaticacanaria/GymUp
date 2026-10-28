@@ -334,4 +334,61 @@ class ExerciseImageDurabilityTest {
         assertTrue(unexpected.isDirectory)
     }
 
+
+    @Test
+    fun `temporary symlink injected before image write cannot overwrite outside bytes`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val outside = context.filesDir.resolve("outside-image-write").apply {
+            writeBytes(byteArrayOf(7, 8, 9))
+        }
+        try {
+            val manager = ExerciseImageManager(
+                context = context,
+                exerciseDao = database.exerciseDao(),
+                beforeUserImageWrite = { temp ->
+                    Files.createSymbolicLink(temp.toPath(), outside.toPath())
+                },
+            )
+
+            val failure = runCatching {
+                manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+            }.exceptionOrNull()
+
+            assertTrue(failure is IOException)
+            assertArrayEquals(byteArrayOf(7, 8, 9), outside.readBytes())
+            assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+            assertTrue(context.filesDir.resolve("exercise-images").listFiles().orEmpty().isEmpty())
+        } finally {
+            outside.delete()
+        }
+    }
+
+    @Test
+    fun `temporary symlink swapped after sync cannot become a Room image`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val outside = context.filesDir.resolve("outside-image-after-sync").apply {
+            writeBytes(byteArrayOf(4, 5, 6))
+        }
+        try {
+            val manager = ExerciseImageManager(
+                context = context,
+                exerciseDao = database.exerciseDao(),
+                afterUserImageSync = { temp ->
+                    Files.delete(temp.toPath())
+                    Files.createSymbolicLink(temp.toPath(), outside.toPath())
+                },
+            )
+
+            val failure = runCatching {
+                manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+            }.exceptionOrNull()
+
+            assertTrue(failure is IllegalStateException)
+            assertArrayEquals(byteArrayOf(4, 5, 6), outside.readBytes())
+            assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+            assertTrue(context.filesDir.resolve("exercise-images").listFiles().orEmpty().isEmpty())
+        } finally {
+            outside.delete()
+        }
+    }
 }
