@@ -305,6 +305,64 @@ class RoomCatalogMaintenanceRepositoryTest {
         assertFalse(missingTarget.exists())
     }
 
+    @Test
+    fun `exercise deletion rejects symlinked image root without deleting external files`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Raíz enlazada", "Linked image root"))
+        val root = context.filesDir.resolve("exercise-images")
+        val outside = context.filesDir.resolve("outside-image-root").apply { mkdirs() }
+        val externalImage = outside.resolve("external-image").apply { writeText("keep me") }
+        root.deleteRecursively()
+        Files.createSymbolicLink(root.toPath(), outside.toPath())
+        try {
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = "external-image", exerciseId = exerciseId, position = 1,
+                    sourceType = "USER", storageKey = "user:external-image",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+            }
+            assertTrue(maintenance.getExercise(exerciseId) != null)
+            assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+            assertEquals("keep me", externalImage.readText())
+            assertTrue(Files.isSymbolicLink(root.toPath()))
+        } finally {
+            Files.deleteIfExists(root.toPath())
+            outside.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `exercise deletion rejects dangling image root before committing Room`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Raíz colgante", "Dangling image root"))
+        val root = context.filesDir.resolve("exercise-images")
+        val missing = context.filesDir.resolve("missing-image-root")
+        root.deleteRecursively()
+        Files.createSymbolicLink(root.toPath(), missing.toPath())
+        try {
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = "missing-image", exerciseId = exerciseId, position = 1,
+                    sourceType = "USER", storageKey = "user:missing-image",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+            assertTrue(Files.isSymbolicLink(root.toPath()))
+            assertFalse(root.exists())
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+            }
+            assertTrue(maintenance.getExercise(exerciseId) != null)
+            assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+        } finally {
+            Files.deleteIfExists(root.toPath())
+        }
+    }
+
     private fun customInput(
         groupId: String,
         es: String,
