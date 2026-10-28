@@ -2,8 +2,10 @@ package com.mundoinformaticacanaria.gymup.data.backup
 
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.channels.Channels
 import java.nio.channels.FileChannel
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 
@@ -17,6 +19,8 @@ import java.security.MessageDigest
  */
 internal class BackupRecoveryJournal(
     private val directory: File,
+    // Deterministic test seam: replace a validated file before its descriptor is opened.
+    private val beforeTrustedRead: (File) -> Unit = {},
     // Injected by tests to verify ordering/fail-closed behavior; production syncs metadata.
     private val syncDirectory: (File) -> Unit = ::syncDirectoryMetadata,
 ) {
@@ -45,9 +49,8 @@ internal class BackupRecoveryJournal(
         if (!directory.exists()) return State.Absent
         check(directory.isDirectory) { "El journal no es un directorio" }
         val stateFile = File(directory, STATE_FILE)
-        requireNotSymlink(stateFile)
-        check(stateFile.isFile && stateFile.length() in 1..MAX_STATE_BYTES) { "Journal incompleto o marcador de tamaño inválido" }
-        val parts = stateFile.readText(Charsets.US_ASCII).trimEnd('\n').split(' ')
+        val parts = readTrustedFile(stateFile, MAX_STATE_BYTES)
+            .toString(Charsets.US_ASCII).trimEnd('\n').split(' ')
         check(parts.size == 3 && parts[0] == VERSION && parts[2].matches(SHA256)) {
             "Journal de recuperación desconocido o corrupto"
         }
@@ -55,11 +58,7 @@ internal class BackupRecoveryJournal(
             "Estado de recuperación desconocido"
         }
         val archiveFile = File(directory, ARCHIVE_FILE)
-        requireNotSymlink(archiveFile)
-        check(archiveFile.isFile && archiveFile.length() in 1..MAX_ARCHIVE_BYTES) {
-            "Falta la copia previa o su tamaño no es válido"
-        }
-        val archive = archiveFile.readBytes()
+        val archive = readTrustedFile(archiveFile, MAX_ARCHIVE_BYTES)
         check(sha256(archive) == parts[2]) { "Checksum de recuperación incorrecto" }
         return if (parts[1] == "COMMITTED") State.Committed else State.Prepared(archive)
     }
@@ -155,6 +154,35 @@ internal class BackupRecoveryJournal(
         }
         check(path.delete()) { "No se pudo eliminar el directorio de journal" }
         syncDirectory(path.parentFile)
+    }
+
+    /**
+     * The final component must still be a regular file when its descriptor opens.
+     * Checking File.isFile / isSymbolicLink then calling readBytes would allow a
+     * symlink substitution between those operations. NOFOLLOW_LINKS is enforced
+     * by the descriptor open itself; reads are bounded even if the file grows.
+     * Ancestor directory substitution is a separate unresolved TOCTOU risk.
+     */
+    private fun readTrustedFile(file: File, maxBytes: Long): ByteArray {
+        requireNotSymlink(file)
+        check(file.isFile && file.length() in 1..maxBytes) {
+            "Archivo de recuperación ausente o de tamaño inválido: ${file.name}"
+        }
+        beforeTrustedRead(file)
+        Files.newByteChannel(
+            file.toPath(),
+            setOf(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
+        ).use { channel ->
+            val expectedSize = channel.size()
+            check(expectedSize in 1..maxBytes) {
+                "Archivo de recuperación de tamaño inválido: ${file.name}"
+            }
+            val bytes = Channels.newInputStream(channel).readNBytes(expectedSize.toInt() + 1)
+            check(bytes.size.toLong() == expectedSize && channel.size() == expectedSize) {
+                "El archivo de recuperación cambió durante la lectura: ${file.name}"
+            }
+            return bytes
+        }
     }
 
     private fun writeSynced(target: File, bytes: ByteArray, replace: Boolean = false) {
