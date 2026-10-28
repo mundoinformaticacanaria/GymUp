@@ -50,9 +50,11 @@ fun ExerciseImageGallery(
                         decodeUserImageBitmap(manager, image)
                     }
                 }
-                if (bitmap != null) {
+                // Compose's delegated state property cannot be smart-cast across reads.
+                val loadedBitmap = bitmap
+                if (loadedBitmap != null) {
                     Image(
-                        bitmap = bitmap,
+                        bitmap = loadedBitmap,
                         contentDescription = "${image.position}. Imagen de ayuda del ejercicio",
                         modifier = Modifier.size(140.dp),
                         contentScale = ContentScale.Fit,
