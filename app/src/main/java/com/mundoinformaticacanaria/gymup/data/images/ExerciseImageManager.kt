@@ -8,6 +8,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.channels.FileChannel
+import java.nio.file.Files
 import java.nio.file.StandardOpenOption
 import java.util.UUID
 import kotlinx.coroutines.NonCancellable
@@ -144,7 +145,10 @@ class ExerciseImageManager internal constructor(
     private suspend fun deleteUserImageUnprotected(imageId: String) {
         val image = requireNotNull(exerciseDao.getImageById(imageId)) { "La imagen ya no existe" }
         require(image.sourceType == USER_SOURCE) { "Solo pueden eliminarse imágenes personalizadas" }
-        val file = fileFor(image.storageKey)
+        // Validate the persisted key and on-disk type BEFORE removing the Room row.
+        // A corrupt reference must not escape the private directory or silently drop
+        // metadata for a directory or dangling symlink (File.exists follows symlinks).
+        val file = validatedUserImageFile(image.storageKey)
         // Keep the file until Room confirms the deletion. If removing the file then
         // fails, restore the original Room reference instead of silently orphaning it.
         // This is only exception recovery; abrupt process death still needs the
@@ -179,6 +183,20 @@ class ExerciseImageManager internal constructor(
             }
             throw failure
         }
+    }
+
+    private fun validatedUserImageFile(storageKey: String): File {
+        require(storageKey.startsWith("user:")) { "Referencia de imagen personalizada no válida" }
+        val name = storageKey.removePrefix("user:")
+        require(
+            name.isNotBlank() && name != "." && name != ".." &&
+                name.none { it == '/' || it == '\\' || it == '\u0000' },
+        ) { "Ruta de imagen personalizada no válida" }
+        val file = File(imageDirectory, name)
+        require(!Files.isSymbolicLink(file.toPath()) && (!file.exists() || file.isFile)) {
+            "La imagen personalizada no es un archivo regular"
+        }
+        return file
     }
 
     fun readBytes(item: ExerciseImageItem): ByteArray? =
