@@ -496,21 +496,44 @@ private class StagedImageReplacement(
         check(!finished) { "La sustitución de imágenes ya terminó" }
         // Preserve the previous directory if deletion/restoration fails; never erase it.
         if (activated && current.exists()) {
-            check(current.deleteRecursively()) { "No se pudieron retirar las imágenes importadas" }
+            check(deleteFlatImageDirectoryNoFollow(current)) { "No se pudieron retirar las imágenes importadas de forma segura" }
         }
         if (oldMoved) {
             check(previous.renameTo(current)) { "No se pudieron recuperar las imágenes anteriores" }
         }
         // Recovery is not complete until the restored directory entry is synced.
         syncDirectory(current.parentFile)
-        staged.deleteRecursively()
+        check(deleteFlatImageDirectoryNoFollow(staged)) { "No se pudo limpiar el staging de forma segura" }
         finished = true
     }
 
     fun complete() {
         check(activated && !finished) { "La sustitución de imágenes no está activada" }
         // A failed cleanup leaves a recoverable copy rather than reporting an import failure.
-        previous.deleteRecursively()
+        deleteFlatImageDirectoryNoFollow(previous)
         finished = true
     }
+}
+
+/**
+ * Best-effort cleanup of a flat private image directory without recursive traversal.
+ * Symlink entries are deleted as links, never followed. An unexpected nested directory,
+ * linked root or I/O failure leaves remaining data for inspection/recovery.
+ * This is NOT an atomic defense against a concurrent actor replacing ancestor paths.
+ */
+internal fun deleteFlatImageDirectoryNoFollow(directory: File): Boolean {
+    val root = directory.toPath()
+    if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS)) return true
+    if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) return false
+    return runCatching {
+        Files.newDirectoryStream(root).use { stream ->
+            val entries = stream.toList()
+            check(entries.all { entry ->
+                Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(entry)
+            }) { "El directorio de imágenes contiene entradas inesperadas" }
+            entries.forEach { Files.delete(it) }
+        }
+        Files.delete(root)
+        true
+    }.getOrDefault(false)
 }
