@@ -110,6 +110,47 @@ class BackupRecoveryCoordinatorTest {
     }
 
     @Test
+    fun `committed journal permits export while obsolete cleanup is pending`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val journal = BackupRecoveryJournal(dir)
+        journal.prepare(byteArrayOf(1, 2, 3))
+        journal.markCommitted()
+        var reads = 0
+
+        val exported = BackupRecoveryCoordinator(BackupRecoveryJournal(dir))
+            .readSnapshotIfRecovered {
+                reads++
+                byteArrayOf(90, 91)
+            }
+
+        assertArrayEquals(byteArrayOf(90, 91), exported)
+        assertEquals(1, reads)
+        // A read-only export must not mutate or silently retire the journal.
+        assertEquals(BackupRecoveryJournal.State.Committed, journal.inspect())
+    }
+
+    @Test
+    fun `prepared or corrupt committed journal blocks export before domain read`() = runBlocking {
+        val dir = File(temp.root, "recovery")
+        val journal = BackupRecoveryJournal(dir)
+        journal.prepare(byteArrayOf(1, 2, 3))
+        var reads = 0
+        val coordinator = BackupRecoveryCoordinator(journal)
+
+        assertTrue(runCatching {
+            coordinator.readSnapshotIfRecovered { reads++; byteArrayOf(42) }
+        }.isFailure)
+        assertEquals(0, reads)
+
+        journal.markCommitted()
+        File(dir, "previous.zip").writeBytes(byteArrayOf(99))
+        assertTrue(runCatching {
+            coordinator.readSnapshotIfRecovered { reads++; byteArrayOf(42) }
+        }.isFailure)
+        assertEquals(0, reads)
+    }
+
+    @Test
     fun `committed journal only cleans up and never replays old state`() = runBlocking {
         val dir = File(temp.root, "recovery")
         val journal = BackupRecoveryJournal(dir)
