@@ -320,6 +320,7 @@ private class UserExerciseImageStore(
 ) {
     private val parentDir = context.filesDir
     private val rootDir = File(parentDir, DIRECTORY)
+    private val MAX_USER_IMAGE_BYTES = 10 * 1024 * 1024
 
     fun readRequired(storageKey: String): ByteArray {
         // A corrupted Room reference must not turn an export (or recovery pre-image)
@@ -339,7 +340,20 @@ private class UserExerciseImageStore(
         // following symlinks so a replacement after validation cannot leak other bytes.
         beforeRequiredImageRead(file)
         return try {
-            Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS).use { it.readBytes() }
+            Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS).use { input ->
+                val output = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (count == 0) continue
+                    check(output.size() <= MAX_USER_IMAGE_BYTES - count) {
+                        "La imagen personalizada supera el límite de 10 MiB: $storageKey"
+                    }
+                    output.write(buffer, 0, count)
+                }
+                output.toByteArray()
+            }
         } catch (error: IOException) {
             throw IllegalStateException("No se pudo leer la imagen personalizada de forma segura: $storageKey", error)
         }
