@@ -39,6 +39,7 @@ internal class BackupRecoveryCoordinator(
      */
     suspend fun <T> readSnapshotIfRecovered(readSnapshot: suspend () -> T): T =
         mutex.withLock {
+            journal.verifyPathSafety()
             check(journal.inspect() is BackupRecoveryJournal.State.Absent) {
                 "Existe una recuperación pendiente: no se puede exportar"
             }
@@ -47,6 +48,7 @@ internal class BackupRecoveryCoordinator(
 
     suspend fun recoverBeforeDataAccess(restorePrevious: suspend (ByteArray) -> Unit) {
         mutex.withLock {
+            journal.verifyPathSafety()
             runCatching { journal.cleanupRetired() }
             journal.cleanupAbandonedPreparation()
             when (val state = journal.inspect()) {
@@ -80,6 +82,7 @@ internal class BackupRecoveryCoordinator(
         restorePrevious: suspend (ByteArray) -> Unit,
     ) {
         mutex.withLock {
+            journal.verifyPathSafety()
             runCatching { journal.cleanupRetired() }
             journal.cleanupAbandonedPreparation()
             check(journal.inspect() is BackupRecoveryJournal.State.Absent) {
