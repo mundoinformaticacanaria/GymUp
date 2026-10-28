@@ -36,7 +36,7 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupSessionType
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import java.io.File
 import java.io.IOException
-import java.io.FileOutputStream
+import java.nio.channels.Channels
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -58,10 +58,13 @@ class RoomBackupDataSource(
     private val importFault: (BackupReplacePhase) -> Unit = {},
     // Test seam: replace the file after preflight but before opening its descriptor.
     private val beforeRequiredImageRead: (File) -> Unit = {},
+    // Deterministic seam: an unsafe staging target appears before descriptor creation.
+    private val beforeStagedImageWrite: (File) -> Unit = {},
 ) : BackupDataSource {
     private val backupDao = database.backupDao()
     private val imageStore = UserExerciseImageStore(
-        context.applicationContext, afterStagedImageSync, imageDirectorySync, beforeRequiredImageRead,
+        context.applicationContext, afterStagedImageSync, imageDirectorySync,
+        beforeRequiredImageRead, beforeStagedImageWrite,
     )
 
     override suspend fun exportSnapshot(): BackupSnapshot = database.withTransaction {
@@ -317,6 +320,7 @@ private class UserExerciseImageStore(
     private val afterStagedImageSync: (String) -> Unit,
     private val syncDirectory: (File) -> Unit,
     private val beforeRequiredImageRead: (File) -> Unit,
+    private val beforeStagedImageWrite: (File) -> Unit,
 ) {
     private val parentDir = context.filesDir
     private val rootDir = File(parentDir, DIRECTORY)
@@ -370,13 +374,22 @@ private class UserExerciseImageStore(
         try {
             images.forEach { (storageKey, bytes) ->
                 require(storageKey.matches(Regex("^user:[0-9a-fA-F-]{36}$"))) { "storage_key no válido" }
+                require(bytes.isNotEmpty() && bytes.size <= MAX_USER_IMAGE_BYTES) {
+                    "Tamaño de imagen personalizada no válido: $storageKey"
+                }
                 val target = fileFor(staging, storageKey)
-                // Sync staged image bytes before the journal can later become COMMITTED.
-                // This is necessary but not sufficient for power-loss durability: directory
-                // rename metadata still needs an explicit durability strategy/validation.
-                FileOutputStream(target).use { output ->
-                    output.write(bytes)
-                    output.fd.sync()
+                // CREATE_NEW + NOFOLLOW_LINKS prevents an injected staging symlink from
+                // redirecting or truncating an external file. Sync bytes before publication.
+                // Directory rename metadata still requires Android durability validation.
+                beforeStagedImageWrite(target)
+                FileChannel.open(
+                    target.toPath(),
+                    StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE,
+                    LinkOption.NOFOLLOW_LINKS,
+                ).use { channel ->
+                    Channels.newOutputStream(channel).write(bytes)
+                    channel.force(true)
                 }
                 afterStagedImageSync(storageKey)
                 check(target.length() == bytes.size.toLong()) { "No se pudo escribir $storageKey" }
