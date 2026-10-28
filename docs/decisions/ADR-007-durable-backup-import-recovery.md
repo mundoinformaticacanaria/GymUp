@@ -5,6 +5,25 @@ Fecha: 2026-10-25
 Issue: #56 · PR: #57  
 Relacionado: ADR-005 y contrato funcional v1 §17
 
+## Escritura de imágenes USER sin seguir temporales enlazados — 2026-10-28 15:12 UTC
+
+`ExerciseImageManager.addUserImage` deja de abrir el temporal mediante
+`FileOutputStream` (que podría truncar un destino externo si se sustituye
+la ruta por un symlink) y utiliza `FileChannel.open(CREATE_NEW, WRITE,
+NOFOLLOW_LINKS)`, con `force(true)` antes de publicar el nombre. Tras el
+seam de sincronización vuelve a comprobar que el temporal es un archivo
+regular sin seguir enlaces, antes del rename y antes de insertar en Room.
+
+Dos regresiones Robolectric inyectan enlaces simbólicos antes de la apertura
+y después de la sincronización, verificando que los bytes externos permanecen
+intactos y que no se crea una referencia Room. La CI del HEAD debe completarse
+antes de atribuir validación a estos cambios.
+
+**Límites:** la segunda comprobación no es una operación atómica con el
+rename; persisten TOCTOU sobre el temporal y los directorios antecesores.
+No sustituye la limpieza recuperable de imágenes, la instalación productiva
+del journal, la barrera completa ni las pruebas reales de corte Android 15/16.
+
 ## Publicación segura de archivos temporales del journal — 2026-10-28 14:09 UTC
 
 `BackupRecoveryJournal.writeSynced` crea `previous.zip.tmp` y `state.tmp`
