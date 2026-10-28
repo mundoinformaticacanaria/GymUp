@@ -1,6 +1,6 @@
 # ADR-007 (propuesta) — Recuperación duradera de importación replace-all
 
-Estado: **PROPUESTO / IMPLEMENTACIÓN PARCIAL NO CONECTADA**  
+Estado: **IMPLEMENTACIÓN EXPERIMENTAL CONECTADA EN PR #57 (DRAFT) — SIN VALIDACIÓN FÍSICA NI CIERRE**  
 Fecha: 2026-10-25  
 Issue: #56 · PR: #57  
 Relacionado: ADR-005 y contrato funcional v1 §17
