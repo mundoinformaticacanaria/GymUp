@@ -748,6 +748,46 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `staging same size corruption after fsync aborts before Room mutation`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val image = manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val original = RoomBackupDataSource(context, database, preferences).exportSnapshot()
+        val data = BackupDataCodec.decode(original.data.decodeToString()).getOrThrow()
+        val replacement = BackupSnapshot(
+            data = BackupDataCodec.encode(
+                data.copy(preferences = BackupPreferences(ThemeMode.LIGHT.name)),
+            ).encodeToByteArray(),
+            images = mapOf(image.storageKey to byteArrayOf(4, 5, 6)),
+        )
+        var corrupted = false
+        val unsafe = RoomBackupDataSource(
+            context, database, preferences,
+            afterStagedImageSync = { key ->
+                assertEquals(image.storageKey, key)
+                val staging = context.filesDir.listFiles().orEmpty().single {
+                    it.name.startsWith("exercise-images-import-")
+                }
+                val target = File(staging, key.removePrefix("user:"))
+                // The replacement is a regular file of identical length: checking
+                // only size and NOFOLLOW_LINKS would accept the wrong image.
+                target.writeBytes(byteArrayOf(9, 9, 9))
+                corrupted = true
+            },
+        )
+        val failure = runCatching { unsafe.replaceAll(replacement) }.exceptionOrNull()
+        assertTrue("A same-size staged image substitution must abort", failure is IllegalStateException)
+        assertTrue(corrupted)
+        assertArrayEquals(original.data, RoomBackupDataSource(context, database, preferences).exportSnapshot().data)
+        assertArrayEquals(byteArrayOf(1, 2, 3), manager.readBytes(image))
+        assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+        assertEquals(1, database.exerciseDao().getImages(exercise.id).size)
+        assertTrue("Failed staging must be removed", context.filesDir.listFiles().orEmpty().none {
+            it.name.startsWith("exercise-images-import-")
+        })
+    }
+
+    @Test
     fun `staging symlink swapped after fsync is rejected and removed without following it`() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val manager = ExerciseImageManager(context, database.exerciseDao())
