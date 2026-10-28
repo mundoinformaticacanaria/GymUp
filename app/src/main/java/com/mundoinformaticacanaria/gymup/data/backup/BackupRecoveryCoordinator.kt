@@ -40,7 +40,10 @@ internal class BackupRecoveryCoordinator(
     suspend fun <T> readSnapshotIfRecovered(readSnapshot: suspend () -> T): T =
         mutex.withLock {
             journal.verifyPathSafety()
-            check(journal.inspect() is BackupRecoveryJournal.State.Absent) {
+            // COMMITTED already makes the new (or restored) domain authoritative.
+            // A failed best-effort journal cleanup must not block a read-only export;
+            // PREPARED and corrupt/unknown markers still fail closed.
+            check(journal.inspect() !is BackupRecoveryJournal.State.Prepared) {
                 "Existe una recuperación pendiente: no se puede exportar"
             }
             readSnapshot()
