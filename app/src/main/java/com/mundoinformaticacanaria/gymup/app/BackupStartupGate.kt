@@ -8,15 +8,12 @@ import kotlinx.coroutines.sync.withLock
 /**
  * Fail-closed startup sequence for durable backup recovery.
  *
- * Call [awaitReady] before starting database seeding or exposing any repository/UI access.
+ * DefaultAppContainer calls [awaitReady] before composing the repository-backed UI.
  * Concurrent callers wait for the same recovery and seeding sequence; a failed or cancelled
- * attempt never marks startup as ready and may be retried. This is only a sequencing primitive:
- * it does not prevent writes by callers that bypass it, and is NOT yet wired into AppContainer.
- * Production wiring also requires verified durable recovery and gating all data access.
- * When [writeBarrier] is supplied, recovery AND seeding run in one exclusive section.
- * Callbacks must use RAW, unwrapped stores: nested barrier acquisition would deadlock.
- * The optional barrier is still NOT installed in AppContainer, and callers bypassing
- * the startup gate remain unprotected.
+ * attempt never marks startup as ready and may be retried. Recovery and seeding share the
+ * production write barrier; callbacks must use raw stores to avoid nested mutex acquisition.
+ * This gate does not protect bypass writers, reads during hot import, other processes,
+ * or abrupt process/power loss. Those remain separate #56 verification gates.
  */
 internal class BackupStartupGate(
     private val recover: suspend () -> Unit,
