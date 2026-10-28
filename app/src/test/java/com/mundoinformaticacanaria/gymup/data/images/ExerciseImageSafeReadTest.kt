@@ -170,7 +170,8 @@ class ExerciseImageSafeReadTest {
         val exercise = database.backupDao().getExercises().first()
         val original = ExerciseImageManager(context, database.exerciseDao())
         val saved = original.addUserImage(exercise.id, pngBytes())
-        val outside = context.filesDir.resolve("outside-gallery").apply { writeBytes(pngBytes()) }
+        val outsideBytes = pngBytes()
+        val outside = context.filesDir.resolve("outside-gallery").apply { writeBytes(outsideBytes) }
         val manager = ExerciseImageManager(
             context,
             database.exerciseDao(),
@@ -183,7 +184,7 @@ class ExerciseImageSafeReadTest {
 
         assertNull(decodeUserImageBitmap(manager, observed))
         assertTrue(Files.isSymbolicLink(saved.localFile!!.toPath()))
-        assertArrayEquals(outside.readBytes(), pngBytes())
+        assertArrayEquals(outsideBytes, outside.readBytes())
     }
 
     @Test
