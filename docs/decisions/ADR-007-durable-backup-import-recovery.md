@@ -5,6 +5,24 @@ Fecha: 2026-10-25
 Issue: #56 · PR: #57  
 Relacionado: ADR-005 y contrato funcional v1 §17
 
+## Revalidación del staging tras fsync y limpieza sin seguir enlaces — 2026-10-28 17:08 UTC
+
+`UserExerciseImageStore.stageReplacement` vuelve a abrir cada imagen staged con
+`NOFOLLOW_LINKS` después del seam de sincronización y comprueba que sigue siendo
+regular y conserva el tamaño esperado. Si la ruta fue sustituida por un symlink,
+la importación aborta antes de cambiar Room o preferencias. La limpieza de un
+staging fallido elimina exclusivamente entradas planas mediante `Files.delete`,
+sin recorrer enlaces ni subdirectorios inesperados; si no puede limpiarse,
+conserva el error original y adjunta el fallo de limpieza.
+
+Una regresión Robolectric inyecta el symlink **después del fsync**, verifica que
+los bytes externos, Room, la imagen activa y el tema permanecen intactos y que
+el staging no persiste. **Límite:** la revalidación sigue teniendo una ventana
+TOCTOU hasta el rename, y la limpieza no es una operación atómica frente a
+actores que modifiquen el directorio. No se ha instalado el journal productivo,
+no hay recuperación antes de UI/seeding ni pruebas físicas de corte Android 15/16.
+La CI del nuevo HEAD debe comprobarse antes de atribuirle validación.
+
 ## Preparación de imágenes de backup sin sobrescritura externa — 2026-10-28 16:09 UTC
 
 `UserExerciseImageStore.stageReplacement` deja de abrir imágenes de staging con
