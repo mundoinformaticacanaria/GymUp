@@ -473,4 +473,51 @@ class BackupRecoveryJournalTest {
         assertFalse(retired.exists())
     }
 
+    @Test
+    fun `preparation never follows symlink injected before opening temporary preimage`() {
+        val directory = File(temp.root, "recovery")
+        val outside = File(temp.root, "outside-preimage")
+        outside.writeBytes(byteArrayOf(91, 92, 93))
+        val journal = BackupRecoveryJournal(
+            directory,
+            beforeTrustedWrite = { temporary ->
+                if (temporary.name == "previous.zip.tmp") {
+                    Files.createSymbolicLink(temporary.toPath(), outside.toPath())
+                }
+            },
+        )
+
+        assertTrue(runCatching { journal.prepare(byteArrayOf(1, 2, 3)) }.isFailure)
+        assertArrayEquals(byteArrayOf(91, 92, 93), outside.readBytes())
+        assertFalse(directory.exists())
+        assertTrue(Files.isSymbolicLink(File(temp.root, "recovery.preparing/previous.zip.tmp").toPath()))
+    }
+
+    @Test
+    fun `commit never follows symlink injected before opening temporary marker`() {
+        val directory = File(temp.root, "recovery")
+        val outside = File(temp.root, "outside-marker")
+        outside.writeText("do not overwrite")
+        var injectOnCommit = false
+        val journal = BackupRecoveryJournal(
+            directory,
+            beforeTrustedWrite = { temporary ->
+                if (injectOnCommit && temporary.name == "state.tmp") {
+                    Files.createSymbolicLink(temporary.toPath(), outside.toPath())
+                }
+            },
+        )
+        val previous = byteArrayOf(11, 12, 13)
+        journal.prepare(previous)
+        injectOnCommit = true
+
+        assertTrue(runCatching { journal.markCommitted() }.isFailure)
+        assertEquals("do not overwrite", outside.readText())
+        assertTrue(Files.isSymbolicLink(File(directory, "state.tmp").toPath()))
+        assertArrayEquals(
+            previous,
+            (journal.inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
+        )
+    }
+
 }
