@@ -108,6 +108,39 @@ class ExerciseImageSafeReadTest {
     }
 
     @Test
+    fun swappedSymlinkAfterValidationCannotBeRead() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val ordinaryManager = ExerciseImageManager(context, database.exerciseDao())
+        val saved = ordinaryManager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val outside = context.filesDir.resolve("outside-gallery").apply {
+            writeBytes(byteArrayOf(8, 7, 6))
+        }
+        val manager = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            beforeUserImageRead = { file ->
+                Files.delete(file.toPath())
+                Files.createSymbolicLink(file.toPath(), outside.toPath())
+            },
+        )
+        val item = manager.observeImages(exercise.id).first().single()
+
+        assertNull(manager.readBytes(item))
+        assertTrue(Files.isSymbolicLink(saved.localFile!!.toPath()))
+        assertArrayEquals(byteArrayOf(8, 7, 6), outside.readBytes())
+    }
+
+    @Test
+    fun oversizedPersistedImageCannotBeReadIntoMemory() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val saved = manager.addUserImage(exercise.id, byteArrayOf(1))
+        saved.localFile!!.writeBytes(ByteArray(10 * 1024 * 1024 + 1))
+
+        assertNull(manager.readBytes(saved))
+    }
+
+    @Test
     fun regularImageRemainsVisibleAndReadable() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val manager = ExerciseImageManager(context, database.exerciseDao())
