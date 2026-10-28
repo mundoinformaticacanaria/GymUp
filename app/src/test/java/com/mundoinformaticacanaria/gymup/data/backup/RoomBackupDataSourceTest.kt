@@ -351,9 +351,12 @@ class RoomBackupDataSourceTest {
         )
 
         for (phase in BackupReplacePhase.entries) {
-            val failingSource = RoomBackupDataSource(context, database, preferences) { current ->
-                if (current == phase) error("Fallo inyectado en $phase")
-            }
+            val failingSource = RoomBackupDataSource(
+                context, database, preferences,
+                importFault = { current ->
+                    if (current == phase) error("Fallo inyectado en $phase")
+                },
+            )
             val failure = runCatching { failingSource.replaceAll(replacement) }.exceptionOrNull()
             assertTrue("Se esperaba fallo en $phase", failure is IllegalStateException)
             assertNotNull("Room no debe perder la sesión en $phase", database.trainingDao().getSession(sessionId))
