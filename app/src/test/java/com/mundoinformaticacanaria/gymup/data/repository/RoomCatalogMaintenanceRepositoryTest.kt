@@ -14,6 +14,7 @@ import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogKind
 import com.mundoinformaticacanaria.gymup.domain.repository.RoutineRemovalConfirmationRequired
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionSource
 import java.io.IOException
+import java.nio.file.Files
 import java.time.LocalDate
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -274,6 +275,34 @@ class RoomCatalogMaintenanceRepositoryTest {
         assertTrue(maintenance.getExercise(exerciseId) != null)
         assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
         assertTrue(unexpectedDirectory.isDirectory)
+    }
+
+    @Test
+    fun `exercise deletion rejects a dangling symbolic link before committing Room`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Enlace roto", "Dangling link"))
+        val imageDirectory = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val missingTarget = imageDirectory.resolve("missing-image-target")
+        val danglingLink = imageDirectory.resolve("dangling-image")
+        Files.createSymbolicLink(danglingLink.toPath(), missingTarget.toPath())
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "dangling-image", exerciseId = exerciseId, position = 1,
+                sourceType = "USER", storageKey = "user:dangling-image",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+
+        assertFalse(danglingLink.exists()) // File.exists follows the missing target.
+        assertTrue(Files.isSymbolicLink(danglingLink.toPath()))
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+
+        assertTrue(maintenance.getExercise(exerciseId) != null)
+        assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+        assertTrue(Files.isSymbolicLink(danglingLink.toPath()))
+        assertFalse(missingTarget.exists())
     }
 
     private fun customInput(
