@@ -392,17 +392,50 @@ private class UserExerciseImageStore(
                     channel.force(true)
                 }
                 afterStagedImageSync(storageKey)
-                check(target.length() == bytes.size.toLong()) { "No se pudo escribir $storageKey" }
+                // Reopen the final staging component without following symlinks. A path
+                // replaced after fsync must not be published as an imported user image.
+                check(Files.isRegularFile(target.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                    "Imagen staged insegura: $storageKey"
+                }
+                FileChannel.open(
+                    target.toPath(),
+                    StandardOpenOption.READ,
+                    LinkOption.NOFOLLOW_LINKS,
+                ).use { channel ->
+                    check(channel.size() == bytes.size.toLong()) {
+                        "No se pudo escribir $storageKey"
+                    }
+                }
             }
             // Persist the staging directory entries and its parent before activation.
             // File byte fsync alone does not make newly created image names durable.
             syncDirectory(staging)
             syncDirectory(parentDir)
         } catch (error: Throwable) {
-            staging.deleteRecursively()
+            // Never recursively traverse an attacker-supplied staging symlink.
+            // Keep the original import error and report cleanup failure as suppressed.
+            runCatching { discardFailedStaging(staging) }.onFailure(error::addSuppressed)
             throw error
         }
         return StagedImageReplacement(rootDir, staging, syncDirectory)
+    }
+
+    private fun discardFailedStaging(staging: File) {
+        val path = staging.toPath()
+        check(!Files.isSymbolicLink(path) && Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+            "Directorio de staging inseguro"
+        }
+        val entries = staging.listFiles() ?: error("No se pudo inspeccionar el staging")
+        entries.forEach { entry ->
+            val entryPath = entry.toPath()
+            check(
+                Files.isRegularFile(entryPath, LinkOption.NOFOLLOW_LINKS) ||
+                    Files.isSymbolicLink(entryPath),
+            ) { "Contenido inesperado en staging: ${entry.name}" }
+        }
+        // Files.delete removes the link itself, never the file it points to.
+        entries.forEach { Files.delete(it.toPath()) }
+        Files.delete(path)
     }
 
     private fun fileFor(directory: File, storageKey: String): File =
