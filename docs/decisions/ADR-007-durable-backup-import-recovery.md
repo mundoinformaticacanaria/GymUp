@@ -5,6 +5,41 @@ Fecha: 2026-10-25
 Issue: #56 · PR: #57  
 Relacionado: ADR-005 y contrato funcional v1 §17
 
+## Limpieza plana de directorios de imágenes — 2026-10-28 20:10 UTC
+
+En `StagedImageReplacement.rollback` y `complete`, la retirada de
+directorios importados/anteriores deja de utilizar `File.deleteRecursively()`.
+La función `deleteFlatImageDirectoryNoFollow` acepta exclusivamente una
+raíz de directorio real y entradas planas regulares o enlaces simbólicos;
+elimina cada enlace **como enlace**, sin recorrer su destino, y rechaza
+subdirectorios inesperados o una raíz enlazada. El rollback exige limpieza
+correcta antes de restaurar el directorio anterior; si falla, deja el
+journal PREPARED para reintento. La limpieza de una importación ya confirmada
+sigue siendo best-effort y no convierte un commit exitoso en un falso fallo.
+
+Cuatro pruebas JVM cubren directorio plano, enlace interno a directorio
+externo, raíz enlazada y subdirectorio inesperado. **La CI de estos commits
+debe verificarse**. La operación sigue sin ser atómica frente a sustituciones
+concurrentes de rutas/ancestros y no resuelve por sí sola residuos de imágenes
+de una caída abrupta; faltan auditoría de escritores/DAO, durabilidad real y
+pruebas de corte Android 15/16.
+
+## Auditoría parcial de composición productiva — 2026-10-28 20:10 UTC
+
+Revisión estática de `DefaultAppContainer`: los repositorios de sesiones,
+rutinas, catálogo de ejercicios, mantenimiento de catálogos y limpieza
+histórica se exponen mediante adaptadores con la misma barrera. El gestor de
+imágenes y el repositorio de preferencias reciben esa barrera; el delegado
+crudo de backup no la recibe para evitar bloqueo por mutex no reentrante.
+`BackupStartupGate` mantiene la exclusión durante recovery y seeding,
+y `GymUpApp` no compone ViewModels antes de `awaitReady()`.
+
+**Esta revisión no es una certificación global**: aún hay que inventariar
+cada escritura DAO/archivo/DataStore y comprobar accesos fuera del contenedor,
+concurrencia y terminación abrupta. Algunos comentarios históricos en
+adaptadores aún describen su etapa anterior sin conexión; el cableado
+efectivo se determina por el código de `AppContainer`, no por esos comentarios.
+
 ## Integración experimental de recuperación y puerta de UI — 2026-10-28 19:07 UTC
 
 `DefaultAppContainer` compone `JournaledBackupDataSource` con el mismo
