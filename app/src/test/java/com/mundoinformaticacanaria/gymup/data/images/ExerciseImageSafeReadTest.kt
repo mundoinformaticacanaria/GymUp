@@ -1,17 +1,21 @@
 package com.mundoinformaticacanaria.gymup.data.images
 
 import android.content.Context
+import android.graphics.Bitmap
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mundoinformaticacanaria.gymup.data.local.ExerciseImageEntity
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
 import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
+import com.mundoinformaticacanaria.gymup.feature.exercises.decodeUserImageBitmap
+import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -138,6 +142,48 @@ class ExerciseImageSafeReadTest {
         saved.localFile!!.writeBytes(ByteArray(10 * 1024 * 1024 + 1))
 
         assertNull(manager.readBytes(saved))
+    }
+
+    private fun pngBytes(): ByteArray {
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        return try {
+            ByteArrayOutputStream().use { output ->
+                assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                output.toByteArray()
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    @Test
+    fun galleryDecoderReadsValidImageThroughManager() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val saved = manager.addUserImage(exercise.id, pngBytes())
+
+        assertNotNull(decodeUserImageBitmap(manager, saved))
+    }
+
+    @Test
+    fun galleryDecoderRejectsSymlinkSwappedAfterObservation() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val original = ExerciseImageManager(context, database.exerciseDao())
+        val saved = original.addUserImage(exercise.id, pngBytes())
+        val outside = context.filesDir.resolve("outside-gallery").apply { writeBytes(pngBytes()) }
+        val manager = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            beforeUserImageRead = { file ->
+                Files.delete(file.toPath())
+                Files.createSymbolicLink(file.toPath(), outside.toPath())
+            },
+        )
+        val observed = manager.observeImages(exercise.id).first().single()
+
+        assertNull(decodeUserImageBitmap(manager, observed))
+        assertTrue(Files.isSymbolicLink(saved.localFile!!.toPath()))
+        assertArrayEquals(outside.readBytes(), pngBytes())
     }
 
     @Test
