@@ -1145,3 +1145,20 @@ antecesores, ni establece un snapshot global consistente; el journal aún no
 está instalado en AppContainer y falta gate de arranque antes de UI/seeding.
 La prueba necesita CI del HEAD; no acredita corte físico ni durabilidad Android.
 Mantener #56 abierta y PR #57 draft.
+
+## Lectura acotada de preimágenes de backup — 2026-10-28 12:15 UTC
+
+La exportación de backups y la captura de preimagen para el journal usaban
+`InputStream.readBytes()` sobre archivos USER persistidos, sin límite de tamaño.
+Aunque la incorporación ordinaria de imágenes restringe a 10 MiB, un fichero
+corrupto o sustituido después del alta podía provocar una lectura arbitrariamente
+grande y presión de memoria antes de preparar la recuperación. La lectura
+`NOFOLLOW_LINKS` ahora consume bloques acotados y **aborta antes de superar
+10 MiB**, sin publicar un backup parcial ni alterar Room/DataStore (commit
+`0f0e1fd`). La regresión Robolectric crea un archivo disperso de 10 MiB + 1 byte
+y verifica fallo cerrado, conservación de la referencia Room y del tema.
+
+**Límites:** se controla el tamaño de bytes de cada imagen USER, no el tamaño
+global de un backup ni los directorios antecesores sujetos a TOCTOU. No se ha
+conectado el journal al flujo productivo ni se ha ejecutado una prueba física de
+muerte de proceso. La PR #57 sigue draft y la Issue #56 abierta.
