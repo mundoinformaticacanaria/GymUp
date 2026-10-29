@@ -201,3 +201,20 @@ coordinador. No prueba carreras de montaje/desmontaje reales, lectores fuera
 de Compose, multiproceso, rotación instrumentada, ni durabilidad ante corte
 físico. El resultado de Android CI de estos commits debe verificarse antes de
 declarar las pruebas superadas. #56 permanece abierta y PR #57 draft.
+
+## Cierre de carrera de registro tardío de Activity — 2026-10-29
+
+La versión inicial de leases contabilizaba lectores existentes, pero `registerReader()` aceptaba
+una Activity que comenzase a montar el árbol después de `ClosingReaders`, incluso cuando
+el `CompletableDeferred` de cierre ya estaba resuelto. Eso podía volver a abrir lectores
+Room/DataStore durante el reemplazo. Ahora la adquisición del lease rechaza estados
+`ClosingReaders`, `Importing`, `Recovering` y `Blocked`, y `GymUpReadyApp` lo solicita
+**antes** de crear ViewModels. Si no obtiene lease, no compone lectores.
+
+El lease y el `ViewModelStore` pertenecen a un `RememberObserver`, que limpia el store
+antes de liberarlo tanto en `onForgotten` como en `onAbandoned`; esto evita dejar
+un lease colgado cuando Compose abandona una composición antes de aplicar efectos.
+Una regresión JVM comprueba rechazo de montaje tardío durante cierre/importación y
+reapertura tras generación completada. La instrumentación real multi-Activity/rotación,
+la auditoría de lectores externos y los cortes Android 15/16 siguen pendientes;
+no equiparar esta prueba a validación física ni cerrar #56.

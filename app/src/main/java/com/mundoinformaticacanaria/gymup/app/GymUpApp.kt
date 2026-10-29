@@ -3,7 +3,7 @@ package com.mundoinformaticacanaria.gymup.app
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
@@ -177,24 +178,42 @@ private fun HotBackupGateScreen(message: String, onRetry: (() -> Unit)? = null) 
     }
 }
 
+private class ReaderViewModelOwner(private val lease: AutoCloseable?) :
+    ViewModelStoreOwner, RememberObserver {
+    override val viewModelStore = ViewModelStore()
+    private val released = AtomicBoolean(false)
+
+    override fun onRemembered() = Unit
+    override fun onForgotten() = release()
+    override fun onAbandoned() = release()
+
+    private fun release() {
+        if (released.compareAndSet(false, true)) {
+            // Stop collectors before releasing the last lease and unblocking import.
+            viewModelStore.clear()
+            lease?.close()
+        }
+    }
+}
+
 @Composable
 private fun GymUpReadyApp(container: AppContainer, generation: Long) {
     // The Activity ViewModelStore outlives this composition. An Activity-scoped
     // AppViewModel would keep collecting DataStore while the import gate is closed.
     // Clear this dedicated store on disposal, before readersDisposed is acknowledged.
-    val appViewModelOwner = remember(generation) {
-        object : ViewModelStoreOwner {
-            override val viewModelStore = ViewModelStore()
-        }
+    // Acquire the reader lease BEFORE constructing any ViewModel/Room collector.
+    // DisposableEffect is too late: a new Activity can mount between the
+    // ClosingReaders handshake and its first effect, after import has begun.
+    // RememberObserver also releases an abandoned composition (not only one
+    // successfully applied), so an aborted mount cannot strand the gate.
+    val appViewModelOwner = remember(container, generation) {
+        val coordinator = container.hotBackupImportCoordinator
+        val lease = coordinator?.registerReader()
+        if (coordinator != null && lease == null) null else ReaderViewModelOwner(lease)
     }
-    DisposableEffect(appViewModelOwner, container.hotBackupImportCoordinator) {
-        // Every Activity holds its own reader lease. Release only after its
-        // ViewModels have stopped collecting Room/DataStore.
-        val readerLease = container.hotBackupImportCoordinator?.registerReader()
-        onDispose {
-            appViewModelOwner.viewModelStore.clear()
-            readerLease?.close()
-        }
+    if (appViewModelOwner == null) {
+        HotBackupGateScreen("Esperando a que finalice la importación…")
+        return
     }
     val appViewModel: AppViewModel = viewModel(
         viewModelStoreOwner = appViewModelOwner,

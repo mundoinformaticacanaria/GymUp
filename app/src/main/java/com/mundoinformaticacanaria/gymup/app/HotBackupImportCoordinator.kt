@@ -54,8 +54,16 @@ class HotBackupImportCoordinator(
      * never acknowledge disposal on behalf of another Activity still reading Room.
      * Close the lease only after clearing that tree's ViewModels/collectors.
      */
-    fun registerReader(): AutoCloseable {
-        synchronized(readerLock) { activeReaders++ }
+    fun registerReader(): AutoCloseable? {
+        synchronized(readerLock) {
+            // A new Activity may compose from a stale lifecycle snapshot while
+            // another Activity is already closing its readers. Never let a late
+            // mount re-open Room/DataStore after the gate has begun closing.
+            if (mutableState.value != State.Idle && mutableState.value !is State.Completed) {
+                return null
+            }
+            activeReaders++
+        }
         val closed = AtomicBoolean(false)
         return AutoCloseable {
             if (closed.compareAndSet(false, true)) {

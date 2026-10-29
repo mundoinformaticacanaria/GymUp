@@ -15,6 +15,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -63,8 +65,8 @@ class HotBackupImportCoordinatorTest {
                 },
                 recover = {},
             )
-            val firstActivity = coordinator.registerReader()
-            val secondActivity = coordinator.registerReader()
+            val firstActivity = requireNotNull(coordinator.registerReader())
+            val secondActivity = requireNotNull(coordinator.registerReader())
             assertTrue(coordinator.start(byteArrayOf(1)))
             // The first Activity's SideEffect must not release the second reader.
             firstActivity.close()
@@ -80,7 +82,7 @@ class HotBackupImportCoordinatorTest {
             assertEquals(1L, done.generation)
             // A duplicate close must not decrement the count of a new generation.
             secondActivity.close()
-            val newActivity = coordinator.registerReader()
+            val newActivity = requireNotNull(coordinator.registerReader())
             assertTrue(coordinator.start(byteArrayOf(2)))
             coordinator.readersDisposed()
             assertEquals(1, imports)
@@ -91,6 +93,44 @@ class HotBackupImportCoordinatorTest {
                 }
             }
             assertEquals(2, imports)
+        } finally {
+            appScope.cancel()
+        }
+    }
+
+
+    @Test
+    fun `late Activity cannot acquire a reader lease after closing begins`() = runBlocking {
+        val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            var imports = 0
+            val releaseImport = CompletableDeferred<Unit>()
+            val coordinator = HotBackupImportCoordinator(
+                scope = appScope,
+                importArchive = {
+                    imports++
+                    releaseImport.await()
+                    BackupImportResult.Imported(0)
+                },
+                recover = {},
+            )
+            val existing = requireNotNull(coordinator.registerReader())
+            assertTrue(coordinator.start(byteArrayOf(1)))
+            // A stale Activity may attempt to compose before it receives the
+            // ClosingReaders state. It must never create a new Room reader.
+            assertNull(coordinator.registerReader())
+            existing.close()
+            coordinator.readersDisposed()
+            assertEquals(HotBackupImportCoordinator.State.Importing, coordinator.state.value)
+            assertEquals(1, imports)
+            assertNull(coordinator.registerReader())
+            releaseImport.complete(Unit)
+            withTimeout(2000) {
+                coordinator.state.first { it is HotBackupImportCoordinator.State.Completed }
+            }
+            val nextGeneration = coordinator.registerReader()
+            assertNotNull(nextGeneration)
+            nextGeneration!!.close()
         } finally {
             appScope.cancel()
         }
