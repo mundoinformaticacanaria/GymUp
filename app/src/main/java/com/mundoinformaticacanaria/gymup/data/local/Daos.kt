@@ -59,6 +59,9 @@ interface ExerciseDao {
     @Query("SELECT * FROM exercise_images WHERE id = :imageId LIMIT 1")
     suspend fun getImageById(imageId: String): ExerciseImageEntity?
 
+    @Query("SELECT COUNT(*) FROM exercise_images WHERE source_type = 'USER' AND storage_key = :storageKey")
+    suspend fun countUserImageStorageKeyReferences(storageKey: String): Int
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertImage(image: ExerciseImageEntity)
 
