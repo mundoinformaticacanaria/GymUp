@@ -237,3 +237,23 @@ global sobre DAO ni cubre multiproceso. Siguen siendo puertas obligatorias
 la instrumentación de dos Activity y rotación en Android 15/16, la revisión
 de lectores/DAO fuera de Compose, y las pruebas de durabilidad y corte real.
 No cerrar #56 ni sacar PR #57 de draft basándose en la prueba JVM.
+
+## Serialización de inicio de importación y alta de Activity — 2026-10-29 12:10 UTC
+
+La revisión de `HotBackupImportCoordinator.start` detecta que la transición
+`active` / `readerGate` / `ClosingReaders` se publicaba fuera del
+`readerLock` utilizado por `registerReader`. Aunque el recuento de leases
+y la comprobación del estado mitigaban la ventana, el protocolo no garantizaba
+una única operación lineal de admisión de lectores frente al inicio del cierre.
+`2b5081f` mueve la publicación de la transición dentro del mismo monitor:
+una Activity concurrente obtiene un lease contabilizado **antes** del cierre
+o recibe rechazo **después**. No se relaja la barrera de escritores.
+
+`10863f6` añade una regresión JVM concurrente de 40 intercalaciones
+de `start` y `registerReader` con dos hilos: si se concede el lease,
+la importación no puede entrar en el dominio hasta su liberación; si se
+rechaza, puede proseguir tras el acuse de desmontaje. Esta prueba es de
+sincronización JVM, **no** reproduce dos Activity reales ni valida un corte
+de proceso. Su resultado debe contrastarse con CI del HEAD actualizado.
+Siguen pendientes instrumentación multi-Activity/rotación, auditoría final
+de DAO/lectores externos, durabilidad y cortes físicos Android 15/16.
