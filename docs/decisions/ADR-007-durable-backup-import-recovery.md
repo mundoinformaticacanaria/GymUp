@@ -1421,3 +1421,20 @@ ni convierte en duradera la limpieza de imágenes o el journal. Tampoco cubre
 escritores que eludan la composición, otros procesos o corte de alimentación.
 #56 permanece abierta y PR #57 draft; faltan gates de visibilidad, auditoría
 DAO, limpieza recuperable y cortes físicos Android 15/16.
+
+## Leases de lectores por Activity durante importación en caliente — 2026-10-29
+
+El acuse único de `readersDisposed()` no bastaba en presencia de dos
+`Activity` que comparten el mismo `DefaultAppContainer`: el primer
+`SideEffect` podía liberar el reemplazo mientras el segundo árbol todavía
+leía Room/DataStore. El coordinador incorpora ahora leases por árbol de
+`GymUpReadyApp`, con cierre idempotente al desmontar y **después** de limpiar
+su `ViewModelStore`. El acuse de la UI solo completa la barrera cuando
+no queda ninguna lease activa. Una prueba JVM comprueba dos lectores,
+acuse anticipado, último cierre y segunda generación de importación.
+
+La protección sigue siendo cooperativa e intra-proceso. No cubre
+lectores directos fuera del árbol, carreras instrumentadas de montaje
+multi-Activity, otros procesos ni durabilidad ante cortes físicos.
+Pendiente CI definitiva del HEAD, pruebas instrumentadas Android 15/16
+y auditoría completa antes de fusionar PR #57 o cerrar #56.
