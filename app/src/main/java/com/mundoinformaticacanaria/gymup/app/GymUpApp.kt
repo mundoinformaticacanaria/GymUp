@@ -187,8 +187,14 @@ private fun GymUpReadyApp(container: AppContainer, generation: Long) {
             override val viewModelStore = ViewModelStore()
         }
     }
-    DisposableEffect(appViewModelOwner) {
-        onDispose { appViewModelOwner.viewModelStore.clear() }
+    DisposableEffect(appViewModelOwner, container.hotBackupImportCoordinator) {
+        // Every Activity holds its own reader lease. Release only after its
+        // ViewModels have stopped collecting Room/DataStore.
+        val readerLease = container.hotBackupImportCoordinator?.registerReader()
+        onDispose {
+            appViewModelOwner.viewModelStore.clear()
+            readerLease?.close()
+        }
     }
     val appViewModel: AppViewModel = viewModel(
         viewModelStoreOwner = appViewModelOwner,
