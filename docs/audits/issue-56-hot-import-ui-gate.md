@@ -179,3 +179,25 @@ atribuirle éxito. No demuestra que no existan carreras TOCTOU entre la
 comprobación y el borrado, ni protección entre procesos. Tampoco acredita
 rotación real, durabilidad de fsync en Android 15/16 o cortes de energía.
 Se mantiene #56 abierta y PR #57 draft; sin merge ni APK.
+
+## Coordinación de lectores de varias Activity — 2026-10-29 09:xx UTC
+
+Hallazgo: el acuse único de `readersDisposed()` podía iniciar la sustitución
+cuando la primera `Activity` había desmontado su UI, aunque otra `Activity`
+todavía mantuviera un `NavHost` con lectores Room/DataStore. El contenedor es
+compartido por las instancias de `MainActivity`, pero el acuse anterior no
+contabilizaba consumidores montados.
+
+La corrección de PR #57 introduce leases por árbol `GymUpReadyApp` en
+`HotBackupImportCoordinator`. Cada árbol registra un lector y libera su lease
+al desmontarse, **después de limpiar su `ViewModelStore`**. El acuse
+`readersDisposed()` ya no libera la importación mientras exista otra lease.
+Una regresión JVM crea dos lectores de Activity, retira uno, intenta el acuse
+anticipado y comprueba que no se ejecuta la importación hasta retirar el
+segundo. También cubre cierre duplicado y nueva generación.
+
+**Límites:** esto solo contabiliza árboles Compose que cooperan con el
+coordinador. No prueba carreras de montaje/desmontaje reales, lectores fuera
+de Compose, multiproceso, rotación instrumentada, ni durabilidad ante corte
+físico. El resultado de Android CI de estos commits debe verificarse antes de
+declarar las pruebas superadas. #56 permanece abierta y PR #57 draft.
