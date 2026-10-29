@@ -2,6 +2,7 @@ package com.mundoinformaticacanaria.gymup.app
 
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.key
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -195,8 +197,11 @@ private fun GymUpReadyApp(container: AppContainer, generation: Long) {
     val themeMode by appViewModel.themeMode.collectAsStateWithLifecycle()
     val navController = rememberNavController()
 
-    GymUpTheme(themeMode = themeMode) {
-        NavHost(
+    // NavHost's ViewModelStore must be cleared together with AppViewModel.
+    // Otherwise navigation ViewModels can keep observing Room after UI disposal.
+    CompositionLocalProvider(LocalViewModelStoreOwner provides appViewModelOwner) {
+        GymUpTheme(themeMode = themeMode) {
+            NavHost(
             navController = navController,
             startDestination = Routes.HOME,
             modifier = Modifier.navigationBarsPadding(),
@@ -337,6 +342,7 @@ private fun GymUpReadyApp(container: AppContainer, generation: Long) {
                     onBack = navController::popBackStack,
                 )
             }
+        }
         }
     }
 }
