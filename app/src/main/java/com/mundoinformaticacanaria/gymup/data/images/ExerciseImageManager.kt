@@ -187,6 +187,11 @@ class ExerciseImageManager internal constructor(
         // A corrupt reference must not escape the private directory or silently drop
         // metadata for a directory or dangling symlink (File.exists follows symlinks).
         val file = validatedUserImageFile(image.storageKey)
+        // storage_key is not unique in the Room schema. Fail before deleting metadata
+        // if another image row still points to the same private file.
+        require(exerciseDao.countUserImageStorageKeyReferences(image.storageKey) == 1) {
+            "La imagen personalizada tiene referencias duplicadas: borrado cancelado"
+        }
         // Keep the file until Room confirms the deletion. If removing the file then
         // fails, restore the original Room reference instead of silently orphaning it.
         // This is only exception recovery; abrupt process death still needs the
