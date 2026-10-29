@@ -51,6 +51,52 @@ class HotBackupImportCoordinatorTest {
     }
 
     @Test
+    fun `two Activity readers must both dispose before hot import mutates domain`() = runBlocking {
+        val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            var imports = 0
+            val coordinator = HotBackupImportCoordinator(
+                scope = appScope,
+                importArchive = {
+                    imports++
+                    BackupImportResult.Imported(0)
+                },
+                recover = {},
+            )
+            val firstActivity = coordinator.registerReader()
+            val secondActivity = coordinator.registerReader()
+            assertTrue(coordinator.start(byteArrayOf(1)))
+            // The first Activity's SideEffect must not release the second reader.
+            firstActivity.close()
+            coordinator.readersDisposed()
+            assertEquals(HotBackupImportCoordinator.State.ClosingReaders, coordinator.state.value)
+            assertEquals(0, imports)
+
+            secondActivity.close()
+            val done = withTimeout(2000) {
+                coordinator.state.first { it is HotBackupImportCoordinator.State.Completed }
+            } as HotBackupImportCoordinator.State.Completed
+            assertEquals(1, imports)
+            assertEquals(1L, done.generation)
+            // A duplicate close must not decrement the count of a new generation.
+            secondActivity.close()
+            val newActivity = coordinator.registerReader()
+            assertTrue(coordinator.start(byteArrayOf(2)))
+            coordinator.readersDisposed()
+            assertEquals(1, imports)
+            newActivity.close()
+            withTimeout(2000) {
+                coordinator.state.first {
+                    it is HotBackupImportCoordinator.State.Completed && it.generation == 2L
+                }
+            }
+            assertEquals(2, imports)
+        } finally {
+            appScope.cancel()
+        }
+    }
+
+    @Test
     fun `cancelling screen scope does not cancel application import`(): Unit = runBlocking {
         val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         try {
