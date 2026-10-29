@@ -257,3 +257,25 @@ sincronización JVM, **no** reproduce dos Activity reales ni valida un corte
 de proceso. Su resultado debe contrastarse con CI del HEAD actualizado.
 Siguen pendientes instrumentación multi-Activity/rotación, auditoría final
 de DAO/lectores externos, durabilidad y cortes físicos Android 15/16.
+
+## Instrumentación de filesystem de imágenes en Android — 2026-10-29 13:12 UTC
+
+Se incorpora `UserImageOrphanReconcilerDeviceTest` (commit `c07cc77`) en
+`app/src/androidTest`. Usa un `ContextWrapper` cuyo `filesDir` está
+aislado bajo un directorio temporal de caché: **no toca las imágenes reales
+de la aplicación instalada**. Dos casos previstos en dispositivo comprueban:
+
+1. Un fichero UUID huérfano se elimina y se ejecuta el `FileChannel.force(true)`
+   real del directorio, preservando nombres legacy desconocidos.
+2. Un enlace simbólico UUID se rechaza con `IOException`, sin seguirlo ni
+   borrar el archivo externo.
+
+Estos tests son **instrumentados, no ejecutados en esta pasada**. El Android CI
+ordinario de PR solo ejecuta JVM/Robolectric, lint y `assembleDebug`, por lo
+que un `SUCCESS` de ese workflow no valida ni compila necesariamente
+`androidTest`. Para validar en Android 15 y 16 se requiere
+`connectedDebugAndroidTest` (o ejecución equivalente) en dispositivo/emulador
+controlado, más comprobación de la salida y versión del SO. Esto **no**
+sustituye pruebas de muerte de proceso, corte de alimentación ni durabilidad
+Room/DataStore, y no acredita aún rotación/multi-Activity reales. Mantener
+#56 abierta y PR #57 draft, sin fusionar ni generar candidato.
