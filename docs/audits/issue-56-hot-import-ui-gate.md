@@ -218,3 +218,22 @@ Una regresión JVM comprueba rechazo de montaje tardío durante cierre/importaci
 reapertura tras generación completada. La instrumentación real multi-Activity/rotación,
 la auditoría de lectores externos y los cortes Android 15/16 siguen pendientes;
 no equiparar esta prueba a validación física ni cerrar #56.
+
+## Regresión de lectura durante recuperación bloqueada — 2026-10-29 11:10 UTC
+
+Se añade una prueba JVM en `HotBackupImportCoordinatorTest` para un fallo
+determinista de importación seguido de un primer fallo de recuperación.
+Una `Activity` reconstruida no puede adquirir lease mientras el estado es
+`Blocked`, ni durante el reintento `Recovering` suspendido; solo vuelve
+a obtenerlo después de `Completed`. La prueba también verifica que un
+segundo backup no se inicia mientras la recuperación está pendiente y que
+se conserva el error original de importación. Esta prueba **no ejecuta**
+rotación real, lectores Room activos ni terminación física del proceso.
+
+Auditoría de alcance: `registerReader()` controla únicamente los árboles
+`GymUpReadyApp` del proceso y `BackupDomainWriteBarrier` únicamente
+escritores cooperantes. El gate de UI no equivale a un lock de lectura
+global sobre DAO ni cubre multiproceso. Siguen siendo puertas obligatorias
+la instrumentación de dos Activity y rotación en Android 15/16, la revisión
+de lectores/DAO fuera de Compose, y las pruebas de durabilidad y corte real.
+No cerrar #56 ni sacar PR #57 de draft basándose en la prueba JVM.
