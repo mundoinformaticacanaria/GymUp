@@ -276,6 +276,36 @@ class RoomCatalogMaintenanceRepositoryTest {
     }
 
     @Test
+    fun `exercise deletion refuses to remove an image still referenced by another exercise`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val firstId = maintenance.createExercise(customInput(group.id, "Compartido A", "Shared A"))
+        val secondId = maintenance.createExercise(customInput(group.id, "Compartido B", "Shared B"))
+        val image = context.filesDir.resolve("exercise-images")
+            .apply { mkdirs() }
+            .resolve("shared-storage")
+            .apply { writeText("preserve both references") }
+        listOf(firstId, secondId).forEachIndexed { index, exerciseId ->
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = "shared-${index}", exerciseId = exerciseId, position = 1,
+                    sourceType = "USER", storageKey = "user:shared-storage",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { maintenance.deleteExercise(firstId, confirmRoutineRemoval = true) }
+        }
+
+        assertTrue(maintenance.getExercise(firstId) != null)
+        assertTrue(maintenance.getExercise(secondId) != null)
+        assertEquals(1, database.exerciseDao().getImages(firstId).size)
+        assertEquals(1, database.exerciseDao().getImages(secondId).size)
+        assertEquals("preserve both references", image.readText())
+    }
+
+    @Test
     fun `exercise deletion rejects traversal image key before committing Room`() = runBlocking {
         val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
         val exerciseId = maintenance.createExercise(customInput(group.id, "Imagen insegura", "Unsafe image"))
