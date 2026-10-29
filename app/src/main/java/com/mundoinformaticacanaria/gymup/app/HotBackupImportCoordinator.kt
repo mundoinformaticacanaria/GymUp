@@ -46,6 +46,34 @@ class HotBackupImportCoordinator(
     private val active = AtomicBoolean(false)
     private val generation = AtomicLong(0)
     private val readerGate = AtomicReference<CompletableDeferred<Unit>?>(null)
+    private val readerLock = Any()
+    private var activeReaders = 0
+
+    /**
+     * Every mounted repository-backed UI tree holds a lease. A single Activity must
+     * never acknowledge disposal on behalf of another Activity still reading Room.
+     * Close the lease only after clearing that tree's ViewModels/collectors.
+     */
+    fun registerReader(): AutoCloseable {
+        synchronized(readerLock) { activeReaders++ }
+        val closed = AtomicBoolean(false)
+        return AutoCloseable {
+            if (closed.compareAndSet(false, true)) {
+                synchronized(readerLock) {
+                    check(activeReaders > 0)
+                    activeReaders--
+                    releaseReaderGateIfEmpty()
+                }
+            }
+        }
+    }
+
+    /** Caller must hold [readerLock]. */
+    private fun releaseReaderGateIfEmpty() {
+        if (activeReaders == 0 && mutableState.value == State.ClosingReaders) {
+            readerGate.get()?.complete(Unit)
+        }
+    }
     private val mutableState = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = mutableState.asStateFlow()
     private var originalFailure: String = "No se pudo importar el backup."
@@ -92,7 +120,7 @@ class HotBackupImportCoordinator(
 
     /** Called by the top-level UI after its data-consuming composition is disposed. */
     fun readersDisposed() {
-        if (mutableState.value == State.ClosingReaders) readerGate.get()?.complete(Unit)
+        synchronized(readerLock) { releaseReaderGateIfEmpty() }
     }
 
     /** Keep readers closed until a failed recovery is explicitly retried successfully. */
