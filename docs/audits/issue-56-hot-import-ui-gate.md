@@ -162,3 +162,18 @@ Se ha comprobado el árbol completo de fuentes Kotlin de producción del HEAD `4
 Se añaden dos pruebas Robolectric a `UserImageOrphanReconcilerTest`: (1) conservar nombres legacy y temporales desconocidos mientras se retira un huérfano UUID, y (2) fallar cerrado ante un directorio huérfano con nombre UUID, sin eliminar su contenido. Se aísla la segunda fixture para no contaminar otras pruebas. Commits `44bd8a8` y `f79033d`; **CI del nuevo HEAD pendiente de resultado** al registrar esta sección. La CI anterior [#40828152370](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/40828152370) terminó SUCCESS para `4269afe` (código previo).
 
 Continúan sin verificarse las rutas de lectura fuera de Compose, la rotación y multi-Activity reales, la compatibilidad de fsync de directorios en Android 15/16, la durabilidad Room/DataStore frente a interrupción y los cortes físicos. #56 abierta, PR #57 draft sobre #50; no merge, APK ni release.
+
+## Regresión de enlace simbólico en huérfano UUID — 2026-10-29 08:11 UTC
+
+El test Robolectric `canonical orphan symlink is rejected without following its external target`
+(archivo `UserImageOrphanReconcilerTest.kt`, commit `f37de53`) prepara una
+entrada con nombre UUID canónico que es un enlace simbólico a un archivo
+**fuera** de `exercise-images`. Exige `IOException`, conservación del enlace
+y de los bytes del destino externo. Complementa la prueba de subdirectorio
+no regular y caracteriza el comportamiento fail-closed de `NOFOLLOW_LINKS`.
+
+La prueba se ha publicado, pero **requiere Android CI definitiva** antes de
+atribuirle éxito. No demuestra que no existan carreras TOCTOU entre la
+comprobación y el borrado, ni protección entre procesos. Tampoco acredita
+rotación real, durabilidad de fsync en Android 15/16 o cortes de energía.
+Se mantiene #56 abierta y PR #57 draft; sin merge ni APK.
