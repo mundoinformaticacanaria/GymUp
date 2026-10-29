@@ -144,6 +144,48 @@ class BarrierProtectedJournaledBackupDataSourceTest {
         assertArrayEquals(snapshot("before").data, backup.exportSnapshot().data)
     }
 
+    @Test
+    fun `cancelling hot import after mutation restores preimage before releasing writers`() = runBlocking {
+        val barrier = BackupDomainWriteBarrier()
+        val replacementEntered = CompletableDeferred<Unit>()
+        val neverRelease = CompletableDeferred<Unit>()
+        val source = object : BackupDataSource {
+            var current = snapshot("before")
+
+            override suspend fun exportSnapshot(): BackupSnapshot = current
+
+            override suspend fun replaceAll(snapshot: BackupSnapshot) {
+                current = snapshot
+                if (snapshot.data.contentEquals("after".encodeToByteArray())) {
+                    replacementEntered.complete(Unit)
+                    neverRelease.await()
+                }
+            }
+        }
+        val backup = wrapper(source, barrier)
+        val importing = async(start = CoroutineStart.UNDISPATCHED) {
+            backup.replaceAll(snapshot("after"))
+        }
+        replacementEntered.await()
+        assertArrayEquals(snapshot("after").data, source.current.data)
+
+        val writer = async(start = CoroutineStart.UNDISPATCHED) {
+            barrier.withDomainWrite {
+                assertArrayEquals(snapshot("before").data, source.current.data)
+                "allowed"
+            }
+        }
+        assertFalse("Writer must wait until cancellation rollback completes", writer.isCompleted)
+
+        importing.cancelAndJoin()
+        assertArrayEquals(snapshot("before").data, source.current.data)
+        assertEquals("allowed", writer.await())
+        assertEquals(
+            BackupRecoveryJournal.State.Absent,
+            BackupRecoveryJournal(File(temp.root, "journal")).inspect(),
+        )
+    }
+
     private fun wrapper(
         source: BackupDataSource,
         barrier: BackupDomainWriteBarrier,
