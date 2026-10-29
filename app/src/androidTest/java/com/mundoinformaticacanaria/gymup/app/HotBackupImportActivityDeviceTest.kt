@@ -15,15 +15,32 @@ import org.junit.Test
  * Android 15/16 instrumentation for #56: real Activity/Compose lifecycles, not a JVM model.
  *
  * Uses an intentionally invalid archive. BackupManager validates before replaceAll, so this
- * test does not replace any Room data, preferences or user images. It runs only in the
- * instrumentation application's sandbox and never launches a candidate APK workflow.
+ * test does not replace any Room data, preferences or user images. It launches the TARGET
+ * application's MainActivity, which can initialize its real Room/DataStore during startup.
+ * Only run on an explicitly authorized disposable AVD/test device; never on personal data.
  *
  * A stopped Activity must retain its reader lease until its composition is actually disposed.
  * An acknowledgement from another Activity must not allow import to pass that lease.
  */
 class HotBackupImportActivityDeviceTest {
+    /**
+     * An explicit operator opt-in is required BEFORE launching the target MainActivity.
+     * This is not proof that the selected device is disposable; the operator must still
+     * verify the serial/API and absence of personal GymUp data.
+     */
+    private fun requireDisposableTestDevice() {
+        check(
+            InstrumentationRegistry.getArguments()
+                .getString("gymup_disposable_test_device") == "true",
+        ) {
+            "MainActivity androidTest bloqueado: usa solo AVD/dispositivo desechable " +
+                "y habilita -Pandroid.testInstrumentationRunnerArguments.gymup_disposable_test_device=true"
+        }
+    }
+
     @Test
     fun stoppedSecondActivityKeepsImportClosedUntilItsCompositionDisposes() {
+        requireDisposableTestDevice()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val first = ActivityScenario.launch(MainActivity::class.java)
         var second: ActivityScenario<MainActivity>? = null
@@ -90,6 +107,7 @@ class HotBackupImportActivityDeviceTest {
      */
     @Test
     fun rotationDuringClosingReadersKeepsImportBlockedByStoppedActivity() {
+        requireDisposableTestDevice()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val first = ActivityScenario.launch(MainActivity::class.java)
         var second: ActivityScenario<MainActivity>? = null
