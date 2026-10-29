@@ -2,6 +2,7 @@ package com.mundoinformaticacanaria.gymup.app
 
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
@@ -25,6 +26,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -174,8 +177,19 @@ private fun HotBackupGateScreen(message: String, onRetry: (() -> Unit)? = null) 
 
 @Composable
 private fun GymUpReadyApp(container: AppContainer, generation: Long) {
+    // The Activity ViewModelStore outlives this composition. An Activity-scoped
+    // AppViewModel would keep collecting DataStore while the import gate is closed.
+    // Clear this dedicated store on disposal, before readersDisposed is acknowledged.
+    val appViewModelOwner = remember(generation) {
+        object : ViewModelStoreOwner {
+            override val viewModelStore = ViewModelStore()
+        }
+    }
+    DisposableEffect(appViewModelOwner) {
+        onDispose { appViewModelOwner.viewModelStore.clear() }
+    }
     val appViewModel: AppViewModel = viewModel(
-        key = "gymup-app-$generation",
+        viewModelStoreOwner = appViewModelOwner,
         factory = AppViewModel.Factory(container.userPreferencesRepository),
     )
     val themeMode by appViewModel.themeMode.collectAsStateWithLifecycle()
