@@ -117,6 +117,34 @@ class UserImageOrphanReconcilerTest {
         }
     }
 
+    @Test fun `linked image root fails closed without traversing an external directory`() = runBlocking {
+        val root = context.filesDir.resolve("exercise-images")
+        val parked = context.filesDir.resolve("parked-images-" + UUID.randomUUID())
+        val external = context.filesDir.resolve("external-images-" + UUID.randomUUID())
+            .apply { mkdirs() }
+        val valuable = external.resolve(UUID.randomUUID().toString())
+            .apply { writeText("external image bytes") }
+        val hadRoot = java.nio.file.Files.exists(
+            root.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS,
+        )
+        try {
+            if (hadRoot) java.nio.file.Files.move(root.toPath(), parked.toPath())
+            java.nio.file.Files.createSymbolicLink(root.toPath(), external.toPath())
+            assertThrows(IOException::class.java) {
+                runBlocking {
+                    UserImageOrphanReconciler(context, database.exerciseDao(), syncDirectory = {}).reconcile()
+                }
+            }
+            assertTrue(java.nio.file.Files.isSymbolicLink(root.toPath()))
+            assertTrue(valuable.readText() == "external image bytes")
+        } finally {
+            java.nio.file.Files.deleteIfExists(root.toPath())
+            if (hadRoot) java.nio.file.Files.move(parked.toPath(), root.toPath())
+            valuable.delete()
+            external.delete()
+        }
+    }
+
     @Test fun `failed metadata sync is surfaced and retry is idempotent`() = runBlocking {
         val orphan = context.filesDir.resolve("exercise-images").apply { mkdirs() }
             .resolve(UUID.randomUUID().toString()).apply { writeText("fsync") }
