@@ -80,4 +80,68 @@ class HotBackupImportActivityDeviceTest {
             first.close()
         }
     }
+
+    /**
+     * A rotation while another stopped Activity still holds a reader must not
+     * accidentally acknowledge that other Activity's lease or mount a new
+     * Room/DataStore reader in the recreated tree.
+     *
+     * The invalid archive guarantees that this test never replaces user data.
+     */
+    @Test
+    fun rotationDuringClosingReadersKeepsImportBlockedByStoppedActivity() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val first = ActivityScenario.launch(MainActivity::class.java)
+        var second: ActivityScenario<MainActivity>? = null
+        try {
+            lateinit var container: AppContainer
+            first.onActivity { activity ->
+                container = (activity.application as GymUpApplication).container
+            }
+            runBlocking { withTimeout(20_000) { container.awaitReady() } }
+            instrumentation.waitForIdleSync()
+
+            second = ActivityScenario.launch(MainActivity::class.java)
+            second.onActivity { activity ->
+                assertTrue((activity.application as GymUpApplication).container === container)
+            }
+            instrumentation.waitForIdleSync()
+            second.moveToState(Lifecycle.State.CREATED)
+            first.moveToState(Lifecycle.State.RESUMED)
+
+            val coordinator = requireNotNull(container.hotBackupImportCoordinator)
+            assertTrue(coordinator.start(byteArrayOf(1, 2, 3)))
+            assertEquals(
+                HotBackupImportCoordinator.State.ClosingReaders,
+                coordinator.state.value,
+            )
+
+            // Destroy/recreate the first Activity while the second is still stopped.
+            // The new composition must render the gate, not register a new reader.
+            first.recreate()
+            instrumentation.waitForIdleSync()
+            coordinator.readersDisposed()
+            assertEquals(
+                "Recreation cannot release the stopped Activity's lease",
+                HotBackupImportCoordinator.State.ClosingReaders,
+                coordinator.state.value,
+            )
+
+            second.moveToState(Lifecycle.State.RESUMED)
+            val completed = runBlocking {
+                withTimeout(20_000) {
+                    coordinator.state.first { it is HotBackupImportCoordinator.State.Completed }
+                }
+            } as HotBackupImportCoordinator.State.Completed
+            assertTrue(
+                "Invalid ZIP must not replace domain data after rotation",
+                completed.outcome !is HotBackupImportCoordinator.Outcome.Result ||
+                    (completed.outcome as HotBackupImportCoordinator.Outcome.Result).value
+                        !is com.mundoinformaticacanaria.gymup.data.backup.BackupImportResult.Imported,
+            )
+        } finally {
+            second?.close()
+            first.close()
+        }
+    }
 }

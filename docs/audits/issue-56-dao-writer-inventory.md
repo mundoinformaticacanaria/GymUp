@@ -67,3 +67,19 @@ física ni durabilidad tras muerte de proceso. Quedan pendientes ejecución
 Android 15/16, rotación/multi-Activity, revisión completa de lectores y
 pruebas de interrupción de Room/DataStore/filesystem. #56 sigue abierta y
 PR #57 en borrador.
+
+## Rotación durante cierre de lectores — 2026-10-29 18:10 UTC
+
+Se añade una prueba `androidTest` de dos `MainActivity` reales para la
+carrera de recreación: con la segunda Activity detenida pero aún compuesta,
+se inicia una importación con ZIP deliberadamente inválido y se recrea la
+primera Activity mientras el coordinador permanece en `ClosingReaders`.
+Un acuse adicional no debe liberar el lease de la Activity detenida;
+solo al reanudarla y desmontar su árbol puede completarse la validación del
+archivo inválido. La prueba evita sustituir Room, preferencias o imágenes.
+
+**Cobertura pendiente de ejecución:** el CI ordinario compila `androidTest`
+pero no lo ejecuta en un dispositivo. La rotación y la concurrencia deben
+probarse físicamente en Android 15/16; siguen pendientes la auditoría global
+de lectores/DAO, durabilidad Room/DataStore/directorios y cortes de proceso.
+#56 permanece abierta y PR #57 en borrador.
