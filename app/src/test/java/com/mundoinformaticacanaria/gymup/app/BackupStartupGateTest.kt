@@ -212,4 +212,27 @@ class BackupStartupGateTest {
         assertEquals(1, seeds)
     }
 
+    @Test
+    fun `orphan reconciliation runs after recovery and seed and retries before ready`() = runBlocking {
+        val events = mutableListOf<String>()
+        var cleanups = 0
+        val gate = BackupStartupGate(
+            recover = { events += "recover" },
+            seed = { events += "seed" },
+            reconcileImages = {
+                events += "reconcile"
+                if (++cleanups == 1) error("simulated cleanup failure")
+            },
+        )
+
+        assertTrue(runCatching { gate.awaitReady() }.isFailure)
+        assertEquals(listOf("recover", "seed", "reconcile"), events)
+        gate.awaitReady()
+        gate.awaitReady()
+        assertEquals(
+            listOf("recover", "seed", "reconcile", "recover", "seed", "reconcile"),
+            events,
+        )
+    }
+
 }
