@@ -266,6 +266,28 @@ class ExerciseImageDurabilityTest {
 
 
     @Test
+    fun `single image deletion refuses to remove shared storage bytes`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val original = byteArrayOf(2, 7, 1, 8)
+        val image = manager.addUserImage(exercise.id, original)
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "duplicate-storage-row", exerciseId = exercise.id, position = 2,
+                sourceType = "USER", storageKey = image.storageKey,
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+
+        val failure = runCatching { manager.deleteUserImage(image.id) }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals(image.id, database.exerciseDao().getImageById(image.id)?.id)
+        assertEquals(2, database.exerciseDao().getImages(exercise.id).size)
+        assertArrayEquals(original, image.localFile!!.readBytes())
+    }
+
+    @Test
     fun `single image deletion rejects traversal before dropping Room row`() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val outside = context.filesDir.resolve("outside-image-delete").apply { writeText("preserve") }
