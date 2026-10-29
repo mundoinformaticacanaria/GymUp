@@ -9,6 +9,8 @@ import com.mundoinformaticacanaria.gymup.data.backup.BarrierProtectedSessionRepo
 import com.mundoinformaticacanaria.gymup.data.backup.BackupImportResult
 import com.mundoinformaticacanaria.gymup.core.model.ThemeMode
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -52,6 +54,30 @@ class AppContainerWriteBarrierWiringTest {
         } finally {
             container.userPreferencesRepository.setThemeMode(ThemeMode.SYSTEM)
         }
+    }
+
+    @Test
+    fun productionHotImportCannotStartBeforeReadersAreDisposed() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val container = DefaultAppContainer(context)
+        container.awaitReady()
+        val archive = container.backupManager.export()
+        val coordinator = requireNotNull(container.hotBackupImportCoordinator)
+
+        assertTrue(coordinator.start(archive))
+        assertTrue(coordinator.state.value is HotBackupImportCoordinator.State.ClosingReaders)
+        // Real backup mutation is gated until the top-level Compose tree is gone.
+        coordinator.readersDisposed()
+        val completed = withTimeout(15_000) {
+            coordinator.state.first {
+                it is HotBackupImportCoordinator.State.Completed ||
+                    it is HotBackupImportCoordinator.State.Blocked
+            }
+        }
+        assertTrue(completed is HotBackupImportCoordinator.State.Completed)
+        val outcome = (completed as HotBackupImportCoordinator.State.Completed).outcome
+        assertTrue(outcome is HotBackupImportCoordinator.Outcome.Result)
+        assertTrue((outcome as HotBackupImportCoordinator.Outcome.Result).value is BackupImportResult.Imported)
     }
 
     @Test
