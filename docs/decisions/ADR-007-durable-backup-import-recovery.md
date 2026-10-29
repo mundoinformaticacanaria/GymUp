@@ -1,5 +1,26 @@
 # ADR-007 (propuesta) — Recuperación duradera de importación replace-all
 
+## Gate de UI para importación en caliente — 2026-10-29 03:14 UTC
+
+La PR #57 conecta `HotBackupImportCoordinator` a `DefaultAppContainer` con
+`SupervisorJob` de aplicación y deriva la confirmación de `BackupSection`
+a esa operación, sin depender del scope de pantalla. `GymUpApp` retira
+`GymUpReadyApp` durante `ClosingReaders` y confirma el cierre mediante
+`SideEffect` tras aplicar la eliminación del árbol Compose. Un
+`ViewModelStore` propio del árbol se limpia al desmontarlo para cancelar
+también el lector persistente de preferencias de `AppViewModel`. La UI
+permanece cerrada durante importación, recuperación y fallo bloqueante; tras
+resultado terminal se crea una nueva generación de navegación/ViewModels y se
+presenta el resultado al usuario. Se añaden pruebas JVM del segundo handshake
+y Robolectric del cableado real antes de importar.
+
+**Límites:** aún falta verificar CI del nuevo HEAD, rotación/recreación de
+Activity y cancelación de lectores en instrumentación, así como auditar
+accesos DAO directos o fuera de composición. No se ha probado durabilidad
+ante corte de proceso/energía ni limpieza recuperable de imágenes tras bajas.
+La Issue #56 sigue abierta y PR #57 en borrador; sin merge ni APK.
+
+
 ## Auditoría de escritores y límites de visibilidad — 2026-10-28 22:08 UTC
 
 La inspección de `DefaultAppContainer` confirma que los métodos mutadores

@@ -1,6 +1,6 @@
 # #56 — Auditoría del gate de UI durante importación en caliente
 
-Estado: **pendiente de implementación**. Revisión estática del 2026-10-29.
+Estado: **integración experimental del gate Compose en PR #57; validación CI y pruebas instrumentadas pendientes**. Revisión inicial del 2026-10-29.
 Alcance: PR #57, sin modificar el candidato BF-02.
 
 ## Rutas verificadas
@@ -29,7 +29,7 @@ El test JVM `cancelling hot import after mutation restores preimage before relea
 
 ## Puertas que siguen abiertas
 
-No hay exclusión de lectores/flows durante importación en caliente, limpieza recuperable de imágenes tras baja de ejercicio, auditoría completa de accesos directos DAO, garantía de durabilidad física ni prueba de corte real. #56 y PR #57 deben permanecer abiertas/en borrador. No generar APK ni fusionar por esta evidencia.
+La composición Compose ahora se desmonta antes del reemplazo, pero no se ha acreditado el aislamiento de todos los accesos DAO/lectores fuera de la UI. Siguen pendientes limpieza recuperable de imágenes tras baja de ejercicio, auditoría completa de accesos directos, durabilidad física y prueba de corte real. #56 y PR #57 deben permanecer abiertas/en borrador. No generar APK ni fusionar por esta evidencia.
 
 ## Infraestructura aislada del coordinador — 2026-10-29 02:14 UTC
 
