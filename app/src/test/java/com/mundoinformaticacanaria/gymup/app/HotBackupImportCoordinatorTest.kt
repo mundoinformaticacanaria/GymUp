@@ -178,4 +178,69 @@ class HotBackupImportCoordinatorTest {
             appScope.cancel()
         }
     }
+    @Test
+    fun `recreation before disposal acknowledgement cannot bypass the reader gate`() = runBlocking {
+        val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val originalScreenScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            var imports = 0
+            val coordinator = HotBackupImportCoordinator(
+                scope = appScope,
+                importArchive = {
+                    imports++
+                    BackupImportResult.Imported(0)
+                },
+                recover = {},
+            )
+
+            assertTrue(coordinator.start(byteArrayOf(1)))
+            // Model an Activity/screen being destroyed before it can acknowledge
+            // disposal. Cancelling its scope must not release the application gate.
+            originalScreenScope.cancel()
+            assertEquals(HotBackupImportCoordinator.State.ClosingReaders, coordinator.state.value)
+            assertEquals(0, imports)
+            assertFalse(coordinator.start(byteArrayOf(2)))
+
+            // Only the replacement UI's explicit acknowledgement may begin import.
+            coordinator.readersDisposed()
+            val completed = withTimeout(2000) {
+                coordinator.state.first { it is HotBackupImportCoordinator.State.Completed }
+            } as HotBackupImportCoordinator.State.Completed
+            assertEquals(1, imports)
+            assertEquals(1L, completed.generation)
+        } finally {
+            originalScreenScope.cancel()
+            appScope.cancel()
+        }
+    }
+
+    @Test
+    fun `recreated screen does not reopen readers while recovery is pending`() = runBlocking {
+        val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val finishRecovery = CompletableDeferred<Unit>()
+            val coordinator = HotBackupImportCoordinator(
+                scope = appScope,
+                importArchive = { error("failure after replacement") },
+                recover = { finishRecovery.await() },
+            )
+
+            assertTrue(coordinator.start(byteArrayOf(1)))
+            coordinator.readersDisposed()
+            assertEquals(HotBackupImportCoordinator.State.Recovering, coordinator.state.value)
+            assertFalse(coordinator.start(byteArrayOf(2)))
+            // An Activity recreated here observes Recovering, not Completed/Idle.
+            finishRecovery.complete(Unit)
+            val completed = withTimeout(2000) {
+                coordinator.state.first { it is HotBackupImportCoordinator.State.Completed }
+            } as HotBackupImportCoordinator.State.Completed
+            assertEquals(
+                HotBackupImportCoordinator.Outcome.Failed("failure after replacement"),
+                completed.outcome,
+            )
+        } finally {
+            appScope.cancel()
+        }
+    }
+
 }
