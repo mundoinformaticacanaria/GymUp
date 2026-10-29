@@ -101,3 +101,28 @@ La recuperación del journal de importación no reconstruye esa limpieza.
 Se requiere protocolo idempotente propio o recolección reconciliable,
 pruebas de corte/reinicio y validación de rutas. No cerrar #56 ni fusionar
 PR #57 por esta auditoría parcial.
+
+## Auditoría de claves USER compartidas y borrado parcial — 2026-10-29 05:20 UTC
+
+La tabla `exercise_images` solo impone unicidad sobre `(exercise_id, position)`,
+**no sobre `storage_key`**. Por ello dos filas distintas (incluso de ejercicios
+diferentes) pueden referenciar el mismo archivo privado. Antes de esta corrección,
+`RoomCatalogMaintenanceRepository.deleteExercise` y
+`ExerciseImageManager.deleteUserImage` podían eliminar bytes todavía
+referenciados por otra fila. Se añaden consultas de recuento y una comprobación
+**anterior a cualquier borrado de Room**: solo se permite retirar el archivo
+cuando existe exactamente una referencia USER a esa clave. Dos pruebas
+Robolectric inyectan duplicados y comprueban que se preservan filas y bytes.
+
+También se incorporan dos pruebas de caracterización de la ventana restante:
+si falla la retirada de la segunda imagen de un ejercicio, la primera ya puede
+haberse eliminado y Room haber confirmado la baja; si falla el fsync del
+directorio después del borrado, la operación comunica error pero no demuestra
+durabilidad. **Estas pruebas no son recuperación**. Queda pendiente diseñar
+y conectar un protocolo persistente de limpieza/reconciliación que no borre
+imágenes válidas ni siga enlaces, antes de cerrar #56.
+
+La comprobación de unicidad es transaccional para la baja de ejercicio, pero
+no sustituye exclusión entre procesos ni garantiza atomicidad de la operación
+completa Room/FS. La validación CI de los nuevos commits está pendiente;
+sin pruebas físicas ni autorización para fusionar o generar APK.
