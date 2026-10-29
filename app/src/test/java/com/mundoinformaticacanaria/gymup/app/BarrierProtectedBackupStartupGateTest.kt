@@ -82,4 +82,36 @@ class BarrierProtectedBackupStartupGateTest {
         assertEquals(2, attempts)
         assertEquals(1, seeds)
     }
+    @Test
+    fun `domain writer cannot interleave with orphan image reconciliation`() = runBlocking {
+        val barrier = BackupDomainWriteBarrier()
+        val enteredCleanup = CompletableDeferred<Unit>()
+        val finishCleanup = CompletableDeferred<Unit>()
+        val events = mutableListOf<String>()
+        val gate = BackupStartupGate(
+            recover = { events += "recover" },
+            seed = { events += "seed" },
+            reconcileImages = {
+                events += "cleanup-start"
+                enteredCleanup.complete(Unit)
+                finishCleanup.await()
+                events += "cleanup-end"
+            },
+            writeBarrier = barrier,
+        )
+
+        val startup = launch { gate.awaitReady() }
+        enteredCleanup.await()
+        val writer = launch { barrier.withDomainWrite { events += "write" } }
+        yield()
+        assertFalse(writer.isCompleted)
+        finishCleanup.complete(Unit)
+        startup.join()
+        writer.join()
+        assertEquals(
+            listOf("recover", "seed", "cleanup-start", "cleanup-end", "write"),
+            events,
+        )
+    }
+
 }
