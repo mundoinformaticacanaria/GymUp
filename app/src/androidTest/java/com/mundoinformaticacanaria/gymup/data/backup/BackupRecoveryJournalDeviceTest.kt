@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -57,6 +58,54 @@ class BackupRecoveryJournalDeviceTest {
             assertFalse(preparing.exists())
             journal.prepare(byteArrayOf(9))
             assertTrue(BackupRecoveryJournal(directory).inspect() is BackupRecoveryJournal.State.Prepared)
+        }
+    }
+
+    @Test
+    fun failedReplayKeepsPreparedJournalForDeviceRetry() {
+        withJournalDirectory { directory ->
+            val previous = byteArrayOf(12, 34, 56, 78)
+            BackupRecoveryJournal(directory).prepare(previous)
+            var replayCount = 0
+
+            // Simulate an interrupted restore without killing the instrumentation process.
+            // The pre-image must remain durable and readable by a NEW coordinator.
+            val firstFailure = runCatching {
+                runBlocking {
+                    BackupRecoveryCoordinator(BackupRecoveryJournal(directory))
+                        .recoverBeforeDataAccess { archive ->
+                            assertArrayEquals(previous, archive)
+                            replayCount++
+                            error("injected restore failure")
+                        }
+                }
+            }.exceptionOrNull()
+            assertTrue(firstFailure is IllegalStateException)
+            assertArrayEquals(
+                previous,
+                (BackupRecoveryJournal(directory).inspect() as BackupRecoveryJournal.State.Prepared)
+                    .previousArchive,
+            )
+
+            runBlocking {
+                BackupRecoveryCoordinator(BackupRecoveryJournal(directory))
+                    .recoverBeforeDataAccess { archive ->
+                        assertArrayEquals(previous, archive)
+                        replayCount++
+                    }
+            }
+            assertEquals(2, replayCount)
+            assertEquals(
+                BackupRecoveryJournal.State.Absent,
+                BackupRecoveryJournal(directory).inspect(),
+            )
+
+            // A subsequent startup must not replay an already committed restore.
+            runBlocking {
+                BackupRecoveryCoordinator(BackupRecoveryJournal(directory))
+                    .recoverBeforeDataAccess { replayCount++ }
+            }
+            assertEquals(2, replayCount)
         }
     }
 
