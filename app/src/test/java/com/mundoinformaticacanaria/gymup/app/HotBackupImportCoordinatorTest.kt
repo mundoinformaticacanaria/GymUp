@@ -429,4 +429,47 @@ class HotBackupImportCoordinatorTest {
         }
     }
 
+
+    @Test
+    fun `failed import cannot begin recovery while another Activity still reads domain`() = runBlocking {
+        val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            var importCalls = 0
+            var recoveryCalls = 0
+            val coordinator = HotBackupImportCoordinator(
+                scope = appScope,
+                importArchive = {
+                    importCalls++
+                    error("injected import failure")
+                },
+                recover = { recoveryCalls++ },
+            )
+            val firstActivity = requireNotNull(coordinator.registerReader())
+            val stoppedSecondActivity = requireNotNull(coordinator.registerReader())
+
+            assertTrue(coordinator.start(byteArrayOf(1)))
+            firstActivity.close()
+            // An extra acknowledgement cannot release the stopped Activity's lease.
+            coordinator.readersDisposed()
+            assertEquals(HotBackupImportCoordinator.State.ClosingReaders, coordinator.state.value)
+            assertEquals(0, importCalls)
+            assertEquals(0, recoveryCalls)
+            assertNull(coordinator.registerReader())
+
+            stoppedSecondActivity.close()
+            val completed = withTimeout(2000) {
+                coordinator.state.first { it is HotBackupImportCoordinator.State.Completed }
+            } as HotBackupImportCoordinator.State.Completed
+            assertEquals(1, importCalls)
+            assertEquals(1, recoveryCalls)
+            assertEquals(
+                HotBackupImportCoordinator.Outcome.Failed("injected import failure"),
+                completed.outcome,
+            )
+            requireNotNull(coordinator.registerReader()).close()
+        } finally {
+            appScope.cancel()
+        }
+    }
+
 }
