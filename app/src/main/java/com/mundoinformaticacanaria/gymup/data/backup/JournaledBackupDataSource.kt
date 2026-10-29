@@ -5,11 +5,10 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 /**
  * Connects the durable recovery coordinator to the existing backup data source.
  *
- * This adapter is not installed in AppContainer yet. Production wiring MUST first provide a
- * global write barrier, consistent pre-image capture and a startup gate before database seeding
- * or any repository/UI access. Coordinators sharing a journal path serialize only their own
- * operations within one process; other repository writers remain unprotected. Using this adapter
- * for imports without startup recovery would be unsafe.
+ * Wired by DefaultAppContainer in PR #57 behind a shared process-local write barrier and
+ * startup recovery gate. The delegate remains raw to avoid reentering the non-reentrant mutex.
+ * This does not protect UI readers during hot imports, bypass writers, other processes or
+ * power-loss durability. The PR remains experimental until those gates are resolved.
  */
 internal class JournaledBackupDataSource(
     private val delegate: BackupDataSource,

@@ -1376,3 +1376,27 @@ la lectura de dominio. Esta corrección no elimina las ventanas de lectura de
 UI durante importación en caliente, ni aporta durabilidad ante muerte real de
 proceso, limpieza recuperable de imágenes o validación física Android 15/16.
 La Issue #56 y la PR #57 siguen abiertas/en borrador.
+
+## Bloqueo de escritores tras recuperación fallida en caliente — 2026-10-29 00:20 UTC
+
+`BarrierProtectedJournaledBackupDataSource` mantiene la exclusión del mismo
+`BackupDomainWriteBarrier` durante un reintento de recuperación si falla una
+importación. La máquina de estados ya intenta rollback; el reintento adicional
+comprueba y recupera un posible `PREPARED` antes de liberar a los escritores.
+Si también falla, la barrera marca la instancia como **recuperación pendiente**
+y rechaza nuevas escrituras cooperantes, exportaciones e importaciones hasta
+que `recoverBeforeDataAccess` termine correctamente (habitualmente tras
+reiniciar la app). Si el rollback y la recuperación terminan, no se bloquean
+operaciones posteriores. El error original se conserva y se adjunta el fallo
+de recuperación como excepción suprimida.
+
+Dos pruebas JVM cubren recuperación fallida seguida de bloqueo y recuperación
+posterior, y rollback exitoso que no bloquea escritores. **No se afirma CI
+validada hasta que concluya el workflow del HEAD.**
+
+**Límites críticos:** la barrera no intercepta lecturas/flows de la UI ya
+compuesta, no resuelve un marcador COMMITTED ambiguo tras un error de fsync,
+ni convierte en duradera la limpieza de imágenes o el journal. Tampoco cubre
+escritores que eludan la composición, otros procesos o corte de alimentación.
+#56 permanece abierta y PR #57 draft; faltan gates de visibilidad, auditoría
+DAO, limpieza recuperable y cortes físicos Android 15/16.

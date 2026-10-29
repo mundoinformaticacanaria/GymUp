@@ -9,15 +9,16 @@ import kotlinx.coroutines.sync.withLock
 /**
  * Startup recovery state machine for an interrupted replace-all.
  *
- * This is intentionally not wired into application startup yet. The caller must block *all*
- * repository access and database seeding until [recoverBeforeDataAccess] returns successfully.
+ * DefaultAppContainer wires this coordinator into startup recovery in PR #57. The caller must
+ * block repository access and database seeding until [recoverBeforeDataAccess] succeeds.
  * [restorePrevious] must validate the saved archive, restore Room, images and preferences, and
  * confirm that the restored state is durable before returning. A failed or cancelled restoration
  * leaves PREPARED intact for a retry on the next startup.
  *
- * Coordinators targeting the same canonical journal path share an in-process mutex. This does
- * not protect direct repository writes, external processes, or the app's startup UI/seeder; a
- * global domain write barrier is still required before production wiring.
+ * Coordinators targeting the same canonical journal path share an in-process mutex. The
+ * production composition additionally shares a write barrier with cooperating repositories
+ * and seeding. Direct DAO access, hot-import UI readers and external processes remain outside
+ * that guarantee.
  */
 internal class BackupRecoveryCoordinator(
     private val journal: BackupRecoveryJournal,
@@ -74,8 +75,8 @@ internal class BackupRecoveryCoordinator(
     /**
      * Orchestrates a reversible replace-all around a durable pre-image.
      *
-     * Not yet connected to the real import path: callers must ensure an app-wide write barrier,
-     * a consistent pre-image and a durable/idempotent [restorePrevious] implementation.
+     * Connected to the real import path in PR #57 through a process-local write barrier.
+     * Callers still need a consistent pre-image and durable/idempotent [restorePrevious].
      * If restoration fails, PREPARED is retained for startup recovery. A failed cleanup after
      * successful commit leaves COMMITTED for the next startup; it is not a failed import.
      */

@@ -10,6 +10,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -95,6 +96,52 @@ class BarrierProtectedJournaledBackupDataSourceTest {
             BackupRecoveryJournal.State.Absent,
             BackupRecoveryJournal(File(temp.root, "journal")).inspect(),
         )
+    }
+
+    @Test
+    fun `failed rollback blocks cooperating writers and exports until recovery succeeds`() = runBlocking {
+        val barrier = BackupDomainWriteBarrier()
+        val source = object : BackupDataSource {
+            var canRestore = false
+            override suspend fun exportSnapshot(): BackupSnapshot = snapshot("before")
+            override suspend fun replaceAll(snapshot: BackupSnapshot) {
+                if (!canRestore || snapshot.data.contentEquals("after".encodeToByteArray())) {
+                    error("Simulated replacement/rollback failure")
+                }
+            }
+        }
+        val backup = wrapper(source, barrier)
+
+        assertTrue(runCatching { backup.replaceAll(snapshot("after")) }.isFailure)
+        assertTrue(runCatching { barrier.withDomainWrite { "unsafe" } }.isFailure)
+        assertTrue(runCatching { backup.exportSnapshot() }.isFailure)
+        assertTrue(runCatching { backup.replaceAll(snapshot("after")) }.isFailure)
+
+        source.canRestore = true
+        backup.recoverBeforeDataAccess()
+        assertEquals("allowed", barrier.withDomainWrite { "allowed" })
+        assertArrayEquals(snapshot("before").data, backup.exportSnapshot().data)
+    }
+
+    @Test
+    fun `failed import with successful rollback does not block subsequent writes`() = runBlocking {
+        val barrier = BackupDomainWriteBarrier()
+        val source = object : BackupDataSource {
+            var current = snapshot("before")
+            override suspend fun exportSnapshot(): BackupSnapshot = current
+            override suspend fun replaceAll(snapshot: BackupSnapshot) {
+                if (snapshot.data.contentEquals("after".encodeToByteArray())) {
+                    error("Simulated import failure")
+                }
+                current = snapshot
+            }
+        }
+        val backup = wrapper(source, barrier)
+
+        assertTrue(runCatching { backup.replaceAll(snapshot("after")) }.isFailure)
+        assertArrayEquals(snapshot("before").data, source.current.data)
+        assertEquals("allowed", barrier.withDomainWrite { "allowed" })
+        assertArrayEquals(snapshot("before").data, backup.exportSnapshot().data)
     }
 
     private fun wrapper(

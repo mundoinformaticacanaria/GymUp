@@ -17,10 +17,31 @@ import kotlinx.coroutines.sync.withLock
  */
 internal class BackupDomainWriteBarrier {
     private val mutex = Mutex()
+    // Protected by mutex. A failed hot-import recovery must not allow another mutation
+    // to overwrite the pre-image needed for the next successful recovery attempt.
+    private var recoveryRequired = false
 
     /** Guard one complete domain mutation, including related Room/file/preferences writes. */
-    suspend fun <T> withDomainWrite(block: suspend () -> T): T = mutex.withLock { block() }
+    suspend fun <T> withDomainWrite(block: suspend () -> T): T = mutex.withLock {
+        ensureRecovered()
+        block()
+    }
 
     /** Guard the full backup operation against all cooperating domain writers. */
     suspend fun <T> withExclusiveBackup(block: suspend () -> T): T = mutex.withLock { block() }
+
+    /** These methods are only called from inside [withExclusiveBackup], with mutex held. */
+    internal fun ensureRecovered() {
+        check(!recoveryRequired) {
+            "Recuperación de backup pendiente: reinicia GymUp antes de modificar los datos"
+        }
+    }
+
+    internal fun markRecoveryRequired() {
+        recoveryRequired = true
+    }
+
+    internal fun markRecovered() {
+        recoveryRequired = false
+    }
 }
