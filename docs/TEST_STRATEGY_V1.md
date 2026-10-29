@@ -25,6 +25,7 @@ Cobertura obligatoria para:
 - series adicionales copiando última serie de referencia;
 - creación desde rutina y duplicación omitiendo desactivados;
 - ranking de búsqueda;
+- búsqueda y filtrado del selector de ejercicios de rutina;
 - agrupación de datos de gráfica por modalidad/unidad;
 - construcción de DTO de informe;
 - validadores de backup.
@@ -41,7 +42,8 @@ Cobertura obligatoria para:
 - queries temporales de precarga;
 - filtros históricos combinados;
 - actualización transaccional de resultado;
-- migraciones Room.
+- migraciones Room;
+- guardado atómico de metadatos y orden completo de una rutina.
 
 ### Cobertura de UI y validación física
 
@@ -57,7 +59,9 @@ Los flujos críticos se mantienen como objetivo de automatización progresiva y,
 6. crear desde rutina con omitidos desactivados;
 7. exportar una sesión realizada;
 8. cambio tema sistema/claro/oscuro;
-9. texto grande sin perder controles esenciales.
+9. texto grande sin perder controles esenciales;
+10. crear y editar una rutina recorriendo Datos → Ejercicios → Resumen;
+11. buscar, filtrar, añadir, reordenar y quitar ejercicios con la acción primaria visible.
 
 Una PR no debe afirmar que existen pruebas Compose/instrumentadas si solo aporta pruebas JVM o Robolectric.
 
@@ -104,6 +108,17 @@ Una PR no debe afirmar que existen pruebas Compose/instrumentadas si solo aporta
 - `Otro` de Tipo de sesión no se modifica;
 - ejercicio con histórico se desactiva, no se borra;
 - ejercicio sin histórico en rutina requiere operación atómica sobre referencias.
+
+### Rutinas y ergonomía
+
+- listado, creación y edición son destinos independientes;
+- el borrador no se persiste parcialmente antes de `Guardar`;
+- el guardado conserva exactamente el orden visible;
+- no se puede guardar el mismo ejercicio dos veces;
+- un ejercicio desactivado ya presente puede conservarse o quitarse, pero no añadirse;
+- `Siguiente`, `Anterior` y `Guardar` permanecen localizables sin recorrer la lista;
+- las listas largas desplazan su contenido dentro de una zona acotada;
+- con fuente ampliada ningún control esencial queda oculto.
 
 ### Export/import
 
