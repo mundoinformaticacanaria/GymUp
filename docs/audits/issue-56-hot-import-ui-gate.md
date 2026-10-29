@@ -296,3 +296,9 @@ workflow, ejecutar instrumentación en Android 15/16, pruebas multi-Activity
 y rotación, auditoría DAO/lectores y cortes de proceso/durabilidad.
 No fusionar ni cerrar #56 con la compilación aislada.
 
+
+## Regresión Android de último propietario de imagen USER — 2026-10-29 16:16 UTC
+
+La prueba instrumentada `sharedImageIsRetiredOnlyAfterLastRoomReferenceDisappearsAndRetryIsIdempotent` (commit `a32fab7`) ejercita en un dispositivo Android, cuando se ejecute, la secuencia de baja de una clave USER compartida por dos filas Room: después de retirar la primera fila, el reconciliador conserva los bytes; después de confirmar la segunda baja, una nueva instancia de reconciliador retira el UUID huérfano y un segundo arranque simulado es idempotente. Un archivo legacy desconocido permanece intacto. La fixture utiliza Room en memoria y un `filesDir` aislado, sin afectar datos reales del usuario.
+
+**Estado de evidencia:** test publicado, pero aún **no ejecutado en Android 15/16**. La CI ordinaria solo compila `androidTest`; su resultado no equivale a ejecución física ni simula muerte real del proceso, persistencia Room en disco o corte de energía. Faltan rotación/multi-Activity instrumentadas, auditoría final de lectores/DAO y pruebas de durabilidad/corte. #56 abierta y PR #57 draft, sin merge ni candidato APK.
