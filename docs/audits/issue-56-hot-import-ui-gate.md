@@ -279,3 +279,20 @@ controlado, más comprobación de la salida y versión del SO. Esto **no**
 sustituye pruebas de muerte de proceso, corte de alimentación ni durabilidad
 Room/DataStore, y no acredita aún rotación/multi-Activity reales. Mantener
 #56 abierta y PR #57 draft, sin fusionar ni generar candidato.
+
+## Cobertura de compilación instrumentada y raíz enlazada — 2026-10-29 14:14 UTC
+
+La prueba Android de reconciliación incorpora un tercer caso: raíz
+`exercise-images` enlazada a un directorio externo, que debe rechazarse sin
+leer ni eliminar su contenido. El caso usa almacenamiento aislado en caché
+y no toca los datos instalados. La PR añade además
+`compileDebugAndroidTestKotlin` al workflow ordinario de verificación,
+para **compilar** fuentes `androidTest` y detectar errores de Kotlin antes
+de la prueba física. Esta tarea no ejecuta un emulador, no valida fsync real
+ni crea/publica un candidato APK.
+
+**Puertas aún abiertas:** comprobar CI para el HEAD que incorpora el
+workflow, ejecutar instrumentación en Android 15/16, pruebas multi-Activity
+y rotación, auditoría DAO/lectores y cortes de proceso/durabilidad.
+No fusionar ni cerrar #56 con la compilación aislada.
+
