@@ -159,6 +159,13 @@ class RoomCatalogMaintenanceRepository(
             val imageStorageKeys = dao.getExerciseImages(exerciseId)
                 .filter { it.sourceType == "USER" }
                 .map { validatedUserImageStorageKey(it.storageKey) }
+            // The schema does not enforce unique storage_key across image rows. Never
+            // remove bytes still referenced by another image, even in corrupt/legacy data.
+            imageStorageKeys.forEach { storageKey ->
+                require(dao.countUserImageStorageKeyReferences(storageKey) == 1) {
+                    "La imagen personalizada tiene referencias duplicadas: baja cancelada"
+                }
+            }
             if (routineReferences > 0) dao.removeRoutineReferences(exerciseId)
             dao.deleteExercise(exerciseId)
             DeletionExecution(
