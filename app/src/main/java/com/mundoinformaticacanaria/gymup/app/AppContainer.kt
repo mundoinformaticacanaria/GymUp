@@ -17,6 +17,7 @@ import com.mundoinformaticacanaria.gymup.data.backup.RoomBackupDataSource
 import com.mundoinformaticacanaria.gymup.data.cleanup.HistoricalCleanupManager
 import com.mundoinformaticacanaria.gymup.data.cleanup.RoomHistoricalCleanupStore
 import com.mundoinformaticacanaria.gymup.data.images.ExerciseImageManager
+import com.mundoinformaticacanaria.gymup.data.images.UserImageOrphanReconciler
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
 import com.mundoinformaticacanaria.gymup.data.preferences.UserPreferencesRepository
 import com.mundoinformaticacanaria.gymup.data.repository.RoomCatalogMaintenanceRepository
@@ -105,6 +106,8 @@ class DefaultAppContainer(context: Context) : AppContainer {
         // Both callbacks use RAW adapters because BackupStartupGate owns the exclusive barrier.
         recover = { journaledBackupDataSource.recoverBeforeDataAccess() },
         seed = { DatabaseSeeder(appContext, database).seedIfNeeded() },
+        // Only after the backup journal is resolved: never delete a file a rollback may restore.
+        reconcileImages = { UserImageOrphanReconciler(appContext, database.exerciseDao()).reconcile() },
         writeBarrier = domainWriteBarrier,
     )
 
