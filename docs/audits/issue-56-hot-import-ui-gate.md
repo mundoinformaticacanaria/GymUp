@@ -165,12 +165,14 @@ Continúan sin verificarse las rutas de lectura fuera de Compose, la rotación y
 
 ## Regresión de enlace simbólico en huérfano UUID — 2026-10-29 08:11 UTC
 
-El test Robolectric `canonical orphan symlink is rejected without following its external target`
-(archivo `UserImageOrphanReconcilerTest.kt`, commit `f37de53`) prepara una
-entrada con nombre UUID canónico que es un enlace simbólico a un archivo
-**fuera** de `exercise-images`. Exige `IOException`, conservación del enlace
-y de los bytes del destino externo. Complementa la prueba de subdirectorio
-no regular y caracteriza el comportamiento fail-closed de `NOFOLLOW_LINKS`.
+Dos tests Robolectric de `UserImageOrphanReconcilerTest.kt` (commits
+`f37de53` y `a594715`) verifican el rechazo de (1) una entrada UUID
+canónica que es un enlace simbólico a un archivo **fuera** de
+`exercise-images`, y (2) la propia raíz `exercise-images` enlazada a un
+directorio externo. Ambos exigen `IOException` y conservación de los bytes
+externos; el segundo aparca y restaura la raíz original de la fixture.
+Complementan la prueba de subdirectorio no regular y caracterizan el
+comportamiento fail-closed de `NOFOLLOW_LINKS`.
 
 La prueba se ha publicado, pero **requiere Android CI definitiva** antes de
 atribuirle éxito. No demuestra que no existan carreras TOCTOU entre la
