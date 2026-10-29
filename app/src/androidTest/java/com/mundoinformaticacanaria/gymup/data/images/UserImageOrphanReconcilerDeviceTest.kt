@@ -117,6 +117,49 @@ class UserImageOrphanReconcilerDeviceTest {
         assertEquals("keep external bytes", externalImage.readText())
     }
 
+    @Test
+    fun sharedImageIsRetiredOnlyAfterLastRoomReferenceDisappearsAndRetryIsIdempotent() =
+        withIsolatedStorage { context, root ->
+            val images = File(root, "exercise-images").apply { check(mkdirs()) }
+            val name = UUID.randomUUID().toString()
+            val shared = File(images, name).apply { writeText("preserve until unreferenced") }
+            val legacy = File(images, "legacy.jpg").apply { writeText("keep legacy") }
+
+            withInMemoryDatabase(context) { database ->
+                DatabaseSeeder(context, database).seedIfNeeded()
+                val exerciseId = database.exerciseDao().getAll().first().id
+                val rows = (1..2).map { index ->
+                    ExerciseImageEntity(
+                        id = UUID.randomUUID().toString(),
+                        exerciseId = exerciseId,
+                        position = 2000 + index,
+                        sourceType = "USER",
+                        storageKey = "user:$name",
+                        originalSourceUrl = null,
+                        author = null,
+                        license = null,
+                    )
+                }
+                rows.forEach { database.exerciseDao().insertImage(it) }
+                val reconciler = UserImageOrphanReconciler(context, database.exerciseDao())
+
+                database.exerciseDao().deleteImage(rows.first())
+                reconciler.reconcile()
+                assertTrue("The remaining Room row still owns the bytes", shared.exists())
+                assertEquals(1, database.exerciseDao().countUserImageStorageKeyReferences("user:$name"))
+
+                // Simulate Room commit followed by process death before filesystem cleanup.
+                database.exerciseDao().deleteImage(rows.last())
+                assertEquals(0, database.exerciseDao().countUserImageStorageKeyReferences("user:$name"))
+                UserImageOrphanReconciler(context, database.exerciseDao()).reconcile()
+                assertFalse("The now-orphaned UUID file must be removed", shared.exists())
+                // A subsequent startup must be safe after the previous cleanup completed.
+                UserImageOrphanReconciler(context, database.exerciseDao()).reconcile()
+            }
+
+            assertEquals("keep legacy", legacy.readText())
+        }
+
     private fun withIsolatedStorage(block: suspend (Context, File) -> Unit) = runBlocking {
         val base = ApplicationProvider.getApplicationContext<Context>()
         val root = File(base.cacheDir, "gymup-image-device-test-${UUID.randomUUID()}")
