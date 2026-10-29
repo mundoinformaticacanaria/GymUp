@@ -3,6 +3,7 @@ package com.mundoinformaticacanaria.gymup.app
 import com.mundoinformaticacanaria.gymup.data.backup.BackupImportResult
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
@@ -64,7 +65,7 @@ class HotBackupImportCoordinatorTest {
                 },
                 recover = {},
             )
-            val screen = launch {
+            val screen = launch(start = CoroutineStart.UNDISPATCHED) {
                 assertTrue(coordinator.start(byteArrayOf(1)))
                 awaitCancellation()
             }
