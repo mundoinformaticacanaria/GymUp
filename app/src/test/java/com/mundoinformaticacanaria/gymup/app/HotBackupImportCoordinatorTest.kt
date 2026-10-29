@@ -1,6 +1,9 @@
 package com.mundoinformaticacanaria.gymup.app
 
 import com.mundoinformaticacanaria.gymup.data.backup.BackupImportResult
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -98,6 +101,59 @@ class HotBackupImportCoordinatorTest {
         }
     }
 
+
+
+    @Test
+    fun `concurrent Activity mount and import start never bypass the reader gate`() = runBlocking {
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            repeat(40) {
+                val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+                val importEntered = CompletableDeferred<Unit>()
+                val releaseImport = CompletableDeferred<Unit>()
+                val coordinator = HotBackupImportCoordinator(
+                    scope = appScope,
+                    importArchive = {
+                        importEntered.complete(Unit)
+                        releaseImport.await()
+                        BackupImportResult.Imported(0)
+                    },
+                    recover = {},
+                )
+                val startTogether = CountDownLatch(1)
+                val start = pool.submit<Boolean> {
+                    startTogether.await()
+                    coordinator.start(byteArrayOf(1))
+                }
+                val mount = pool.submit<AutoCloseable?> {
+                    startTogether.await()
+                    coordinator.registerReader()
+                }
+                startTogether.countDown()
+                try {
+                    assertTrue(start.get(5, TimeUnit.SECONDS))
+                    val lease = mount.get(5, TimeUnit.SECONDS)
+                    coordinator.readersDisposed()
+                    if (lease != null) {
+                        // The Activity acquired its lease before ClosingReaders. The
+                        // domain cannot be replaced until that exact lease is closed.
+                        assertFalse("Import started with a live Activity reader", importEntered.isCompleted)
+                        lease.close()
+                    }
+                    withTimeout(2000) { importEntered.await() }
+                    releaseImport.complete(Unit)
+                    withTimeout(2000) {
+                        coordinator.state.first { it is HotBackupImportCoordinator.State.Completed }
+                    }
+                } finally {
+                    releaseImport.complete(Unit)
+                    appScope.cancel()
+                }
+            }
+        } finally {
+            pool.shutdownNow()
+        }
+    }
 
     @Test
     fun `late Activity cannot acquire a reader lease after closing begins`() = runBlocking {
