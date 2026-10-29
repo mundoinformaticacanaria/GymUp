@@ -51,3 +51,22 @@ Esto cubre el gate de lectores Compose cooperantes, **no** garantiza que todos
 los accesos DAO directos estén protegidos ni la durabilidad tras muerte real
 del proceso. Permanecen pendientes limpieza recuperable de imágenes, auditoría
 DAO, pruebas instrumentadas de rotación/cancelación y cortes físicos Android 15/16.
+
+## Recreación de pantalla y límites de concurrencia — 2026-10-29 04:10 UTC
+
+Se añaden dos pruebas **JVM del coordinador**, no pruebas instrumentadas de
+rotación de `Activity` ni del árbol Compose: (1) cancelar el scope de una
+pantalla antes de reconocer el desmontaje conserva `ClosingReaders`, impide
+la importación y rechaza duplicados hasta el reconocimiento explícito;
+(2) durante una recuperación suspendida el estado sigue siendo `Recovering`
+y no admite otra importación hasta concluir. Estas pruebas verifican la
+máquina de estados, **no** demuestran que el árbol real haya liberado todos
+sus lectores durante una rotación.
+
+Riesgo adicional para la auditoría: `readersDisposed()` confirma un único
+handshake de composición. La aplicación aún no acredita un recuento global de
+lectores si coexisten varias instancias de `Activity` (por ejemplo, ventanas
+múltiples), ni que no queden trabajos de lectura fuera del ciclo de vida
+de los ViewModels. Antes de cerrar #56, instrumentar rotación/recreación
+real y verificar que ninguna lectura/DAO ni escritura no cooperante cruza
+el reemplazo. No inferir aislamiento completo de la CI JVM.
