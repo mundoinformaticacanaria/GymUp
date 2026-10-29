@@ -51,7 +51,7 @@ class HotBackupImportCoordinatorTest {
     }
 
     @Test
-    fun `cancelling screen scope does not cancel application import`() = runBlocking {
+    fun `cancelling screen scope does not cancel application import`(): Unit = runBlocking {
         val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         try {
             val entered = CompletableDeferred<Unit>()
