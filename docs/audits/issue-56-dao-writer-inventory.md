@@ -83,3 +83,17 @@ pero no lo ejecuta en un dispositivo. La rotación y la concurrencia deben
 probarse físicamente en Android 15/16; siguen pendientes la auditoría global
 de lectores/DAO, durabilidad Room/DataStore/directorios y cortes de proceso.
 #56 permanece abierta y PR #57 en borrador.
+
+## Regresión de recuperación tras cierre de dos Activity — 2026-10-29 19:09 UTC
+
+El test JVM de `HotBackupImportCoordinatorTest` añadido en `4f22890` verifica
+que una importación que fallará y necesitará recuperación no puede empezar
+mientras una segunda Activity conserva su lease de lectura. Un acuse adicional
+de la primera Activity no permite iniciar ni la importación ni el callback
+de recuperación; solo al liberar la última lease se ejecutan ambas fases.
+Tras la recuperación, una nueva generación puede adquirir lectores.
+
+Esta es una prueba determinista de coordinación en memoria, **no** una
+ejecución de dos Activity Android reales, un corte de proceso o una prueba
+de durabilidad. Su CI debe verificarse por separado; se mantienen abiertas
+las puertas de Android 15/16, accesos DAO externos y recuperación física.
