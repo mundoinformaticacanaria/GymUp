@@ -180,7 +180,7 @@ comprobación y el borrado, ni protección entre procesos. Tampoco acredita
 rotación real, durabilidad de fsync en Android 15/16 o cortes de energía.
 Se mantiene #56 abierta y PR #57 draft; sin merge ni APK.
 
-## Coordinación de lectores de varias Activity — 2026-10-29 09:xx UTC
+## Coordinación de lectores de varias Activity — 2026-10-29
 
 Hallazgo: el acuse único de `readersDisposed()` podía iniciar la sustitución
 cuando la primera `Activity` había desmontado su UI, aunque otra `Activity`
