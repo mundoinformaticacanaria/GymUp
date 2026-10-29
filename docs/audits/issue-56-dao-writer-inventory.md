@@ -97,3 +97,18 @@ Esta es una prueba determinista de coordinación en memoria, **no** una
 ejecución de dos Activity Android reales, un corte de proceso o una prueba
 de durabilidad. Su CI debe verificarse por separado; se mantienen abiertas
 las puertas de Android 15/16, accesos DAO externos y recuperación física.
+
+## Reintento de PREPARED en Android real — 2026-10-29 20:12 UTC
+
+El test instrumentado `BackupRecoveryJournalDeviceTest.failedReplayKeepsPreparedJournalForDeviceRetry`
+(commit `08bebd3`) prepara una preimagen en almacenamiento privado, inyecta un
+fallo durante su restauración, reconstruye el coordinador y exige que el
+journal `PREPARED` siga íntegro. El segundo intento debe restaurar una sola
+vez, confirmar y limpiar; un tercer arranque no puede repetir la restauración.
+
+**Estado:** test publicado, pendiente de compilación en CI y de ejecución
+`connectedDebugAndroidTest` sobre Android 15/16. No mata realmente el
+proceso ni simula pérdida de energía: comprueba recuperación tras fallo
+inyectado y reconstrucción de objetos con el filesystem del dispositivo.
+No cierra las puertas de durabilidad Room/DataStore/directorios, auditoría
+de accesos DAO ni regresión física BF-02. #56 y PR #57 siguen abiertas.
