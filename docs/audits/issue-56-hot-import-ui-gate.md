@@ -70,3 +70,34 @@ múltiples), ni que no queden trabajos de lectura fuera del ciclo de vida
 de los ViewModels. Antes de cerrar #56, instrumentar rotación/recreación
 real y verificar que ninguna lectura/DAO ni escritura no cooperante cruza
 el reemplazo. No inferir aislamiento completo de la CI JVM.
+
+## Inventario de accesos Room desde la composición — 2026-10-29 04:12 UTC
+
+Revisión estática en el HEAD `0b9732f` de `AppContainer`, repositorios
+Room, seeder, limpieza, preferencias, imágenes y 15 archivos de pantallas/
+ViewModels/use case de `feature/` y `domain/usecase/`:
+
+| Entrada productiva | Escritura | Protección comprobada |
+| --- | --- | --- |
+| `SessionRepository` / `RoutineRepository` | Sesiones, series, rutinas | `BarrierProtectedSessionRepository` / `BarrierProtectedRoutineRepository` en `DefaultAppContainer` |
+| `ExerciseCatalogRepository` / `CatalogMaintenanceRepository` | Favoritos, maestros, ejercicios | Adaptadores `BarrierProtected*` en `DefaultAppContainer` |
+| `ExerciseImageManager` | Archivo privado y fila Room | `domainWriteBarrier` inyectada en producción |
+| `UserPreferencesRepository` | Tema DataStore | Misma barrera en instancia expuesta; instancia cruda solo para backup |
+| `HistoricalCleanupManager` | Borrado de histórico | `BarrierProtectedHistoricalCleanupStore` |
+| `DatabaseSeeder` | Inserciones iniciales | `BackupStartupGate` bajo exclusión antes de UI |
+| `RoomBackupDataSource` | Reemplazo Room, imágenes, preferencias | Instancia cruda solo dentro de `BarrierProtectedJournaledBackupDataSource` |
+| `RoomMasterCatalogRepository` / `RoomHistoryRepository` | Ninguna en sus interfaces revisadas | Lecturas; no están bajo mutex |
+
+No se encontraron construcciones directas de repositorios Room, `GymUpDatabase`
+ni accesos DAO en los 15 archivos de UI/use case examinados. Esto **no**
+prueba ausencia de todas las rutas de acceso en el proyecto, y las lecturas
+en curso no están protegidas por el mutex de escritores: dependen del gate
+de composición y de su desmontaje.
+
+**Riesgo material confirmado:** `RoomCatalogMaintenanceRepository.deleteExercise`
+confirma Room y solo después retira archivos USER; aunque la operación está
+serializada con importación, un corte en esa ventana deja imágenes huérfanas.
+La recuperación del journal de importación no reconstruye esa limpieza.
+Se requiere protocolo idempotente propio o recolección reconciliable,
+pruebas de corte/reinicio y validación de rutas. No cerrar #56 ni fusionar
+PR #57 por esta auditoría parcial.
