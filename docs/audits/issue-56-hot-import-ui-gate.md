@@ -126,3 +126,31 @@ La comprobación de unicidad es transaccional para la baja de ejercicio, pero
 no sustituye exclusión entre procesos ni garantiza atomicidad de la operación
 completa Room/FS. La validación CI de los nuevos commits está pendiente;
 sin pruebas físicas ni autorización para fusionar o generar APK.
+
+## Reconciliación idempotente de imágenes huérfanas al arranque — 2026-10-29 06:15 UTC
+
+La PR #57 incorpora `UserImageOrphanReconciler` y consulta DAO de claves
+`USER`. `DefaultAppContainer` lo ejecuta mediante `BackupStartupGate`
+**después** de recuperar el journal de backup y sembrar datos, bajo la misma
+barrera exclusiva y **antes** de exponer UI/lectores. Examina únicamente
+nombres de fichero UUID canónicos generados por `ExerciseImageManager`;
+conserva archivos referenciados y nombres legacy/desconocidos. Para cada
+huérfano regular, revalida que Room no tenga referencias, elimina y sincroniza
+el directorio. Rechaza raíz enlazada/no directorio, entradas UUID no regulares
+y fallos de borrado/fsync. Un error mantiene el arranque cerrado y permite
+reintento; la reconciliación es idempotente.
+
+Este mecanismo permite recuperar en el siguiente arranque las imágenes
+huérfanas tras un commit Room seguido de muerte de proceso o fallo parcial de
+limpieza, sin necesitar una segunda transacción Room/FS. **No demuestra**
+durabilidad frente a corte de alimentación ni excluye escrituras de otros
+procesos: la exclusión es local al AppContainer. Tampoco elimina ficheros
+legacy con nombre no UUID ni temporales `.tmp`, ni garantiza limpieza inmediata
+si el proceso continúa después de un error. Los tests Robolectric comprueban
+preservación de referencias, reintento tras fallo de borrado y fallo de fsync;
+una prueba JVM comprueba orden de startup y gate cerrado hasta reconciliar.
+La CI del HEAD debe validarse antes de considerar estas pruebas superadas.
+
+Siguen pendientes auditoría completa de accesos DAO, rotación real/multi-Activity,
+durabilidad y cortes físicos Android 15/16. #56 permanece abierta y PR #57
+en borrador; no se genera APK candidato ni se fusiona.
