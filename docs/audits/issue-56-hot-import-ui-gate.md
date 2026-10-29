@@ -30,3 +30,7 @@ El test JVM `cancelling hot import after mutation restores preimage before relea
 ## Puertas que siguen abiertas
 
 No hay exclusión de lectores/flows durante importación en caliente, limpieza recuperable de imágenes tras baja de ejercicio, auditoría completa de accesos directos DAO, garantía de durabilidad física ni prueba de corte real. #56 y PR #57 deben permanecer abiertas/en borrador. No generar APK ni fusionar por esta evidencia.
+
+## Infraestructura aislada del coordinador — 2026-10-29 02:xx UTC
+
+Se incorpora `HotBackupImportCoordinator` con scope inyectado, handshake explícito de lectores desmontados, estados observables y recuperación no cancelable tras fallo, más cuatro pruebas JVM de espera, cancelación de pantalla, duplicados y reintento tras recuperación fallida. **Todavía no está conectado a `DefaultAppContainer`, `BackupSection` ni `GymUpApp`**: no hay gate productivo de lecturas ni se modifica el flujo actual de importación. El siguiente paso es integrar la propiedad del scope en la aplicación, confirmar el desmontaje real de Compose antes de llamar `readersDisposed` y recrear la navegación/flows tras éxito o recuperación. No declarar esta infraestructura como aislamiento de UI ni cerrar #56.
