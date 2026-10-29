@@ -51,3 +51,19 @@ durabilidad frente a muerte de proceso o corte eléctrico.
 
 **No cerrar #56 ni fusionar PR #57** sin revisión final de llamadas directas,
 ejecución instrumentada Android 15/16, durabilidad y regresión física BF-02.
+
+## Instrumentación de referencias USER compartidas — 2026-10-29 15:10 UTC
+
+Se añade a `UserImageOrphanReconcilerDeviceTest` una prueba Android con
+almacenamiento `filesDir` aislado y Room **en memoria**: dos filas USER
+referencian la misma `storage_key` (la columna no tiene unicidad global),
+mientras un archivo UUID independiente carece de referencias. El reconciliador
+debe conservar íntegro el archivo compartido y las dos filas, eliminar el
+huérfano y sincronizar el directorio real. No toca los datos instalados.
+
+La prueba está **publicada, no ejecutada en dispositivo**. El CI ordinario
+solo compila `androidTest`; un resultado verde no demuestra compatibilidad
+física ni durabilidad tras muerte de proceso. Quedan pendientes ejecución
+Android 15/16, rotación/multi-Activity, revisión completa de lectores y
+pruebas de interrupción de Room/DataStore/filesystem. #56 sigue abierta y
+PR #57 en borrador.
