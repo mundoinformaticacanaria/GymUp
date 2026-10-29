@@ -96,6 +96,27 @@ class UserImageOrphanReconcilerTest {
         }
     }
 
+    @Test fun `canonical orphan symlink is rejected without following its external target`() = runBlocking {
+        val dir = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val external = context.filesDir.resolve("external-" + UUID.randomUUID()).apply {
+            writeText("preserve external bytes")
+        }
+        val link = dir.resolve(UUID.randomUUID().toString())
+        try {
+            java.nio.file.Files.createSymbolicLink(link.toPath(), external.toPath())
+            assertThrows(IOException::class.java) {
+                runBlocking {
+                    UserImageOrphanReconciler(context, database.exerciseDao(), syncDirectory = {}).reconcile()
+                }
+            }
+            assertTrue(java.nio.file.Files.isSymbolicLink(link.toPath()))
+            assertTrue(external.readText() == "preserve external bytes")
+        } finally {
+            java.nio.file.Files.deleteIfExists(link.toPath())
+            external.delete()
+        }
+    }
+
     @Test fun `failed metadata sync is surfaced and retry is idempotent`() = runBlocking {
         val orphan = context.filesDir.resolve("exercise-images").apply { mkdirs() }
             .resolve(UUID.randomUUID().toString()).apply { writeText("fsync") }
