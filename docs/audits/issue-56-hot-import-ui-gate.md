@@ -34,3 +34,20 @@ No hay exclusión de lectores/flows durante importación en caliente, limpieza r
 ## Infraestructura aislada del coordinador — 2026-10-29 02:14 UTC
 
 Se incorpora `HotBackupImportCoordinator` con scope inyectado, handshake explícito de lectores desmontados, estados observables y recuperación no cancelable tras fallo, más cuatro pruebas JVM de espera, cancelación de pantalla, duplicados y reintento tras recuperación fallida. **Todavía no está conectado a `DefaultAppContainer`, `BackupSection` ni `GymUpApp`**: no hay gate productivo de lecturas ni se modifica el flujo actual de importación. El siguiente paso es integrar la propiedad del scope en la aplicación, confirmar el desmontaje real de Compose antes de llamar `readersDisposed` y recrear la navegación/flows tras éxito o recuperación. No declarar esta infraestructura como aislamiento de UI ni cerrar #56.
+
+## Integración del gate de Compose — 2026-10-29 03:11 UTC
+
+La composición productiva conecta el coordinador al `DefaultAppContainer` con scope
+supervisado de aplicación y deriva la importación confirmada de `BackupSection`
+a `HotBackupImportCoordinator.start` (sin `rememberCoroutineScope` para reemplazo).
+`GymUpApp` desmonta el `NavHost` durante `ClosingReaders` y confirma el
+handshake con `SideEffect` después de aplicar el cambio de composición; mantiene
+la interfaz cerrada durante importación, recuperación y fallo persistente.
+Al completar, recrea navegación y ViewModels por generación, y presenta el
+resultado de éxito, rechazo o error. Un nuevo test JVM exige otro handshake
+para una segunda importación. **La CI de este cambio aún debe validarse.**
+
+Esto cubre el gate de lectores Compose cooperantes, **no** garantiza que todos
+los accesos DAO directos estén protegidos ni la durabilidad tras muerte real
+del proceso. Permanecen pendientes limpieza recuperable de imágenes, auditoría
+DAO, pruebas instrumentadas de rotación/cancelación y cortes físicos Android 15/16.

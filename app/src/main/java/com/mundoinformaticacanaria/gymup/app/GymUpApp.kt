@@ -2,11 +2,14 @@ package com.mundoinformaticacanaria.gymup.app
 
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -27,6 +31,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.mundoinformaticacanaria.gymup.core.model.ThemeMode
+import com.mundoinformaticacanaria.gymup.data.backup.BackupImportResult
 import com.mundoinformaticacanaria.gymup.core.ui.GymUpTheme
 import com.mundoinformaticacanaria.gymup.feature.exercises.ExerciseEditorScreen
 import com.mundoinformaticacanaria.gymup.feature.exercises.ExerciseHistoryScreen
@@ -55,6 +60,10 @@ private sealed interface StartupState {
 fun GymUpApp(container: AppContainer) {
     var attempt by remember(container) { mutableIntStateOf(0) }
     var state by remember(container) { mutableStateOf<StartupState>(StartupState.Loading) }
+    val hotImportCoordinator = container.hotBackupImportCoordinator
+    val hotImportState = hotImportCoordinator?.state?.collectAsStateWithLifecycle()?.value
+        ?: HotBackupImportCoordinator.State.Idle
+    var acknowledgedGeneration by rememberSaveable { mutableStateOf(0L) }
 
     LaunchedEffect(container, attempt) {
         state = StartupState.Loading
@@ -69,7 +78,52 @@ fun GymUpApp(container: AppContainer) {
     }
 
     when (val current = state) {
-        StartupState.Ready -> GymUpReadyApp(container)
+        StartupState.Ready -> when (val hot = hotImportState) {
+            HotBackupImportCoordinator.State.Idle -> key(0L) {
+                GymUpReadyApp(container, generation = 0L)
+            }
+            HotBackupImportCoordinator.State.ClosingReaders -> {
+                // SideEffect runs after Compose applies disposal of the previous NavHost.
+                // Never acknowledge from the button or while repository readers remain mounted.
+                SideEffect { hotImportCoordinator?.readersDisposed() }
+                HotBackupGateScreen("Cerrando las vistas antes de importar…")
+            }
+            HotBackupImportCoordinator.State.Importing ->
+                HotBackupGateScreen("Importando y protegiendo los datos…")
+            HotBackupImportCoordinator.State.Recovering ->
+                HotBackupGateScreen("Recuperando los datos anteriores…")
+            is HotBackupImportCoordinator.State.Blocked ->
+                HotBackupGateScreen(
+                    "No se pueden mostrar los datos hasta completar la recuperación. ${hot.message}",
+                    onRetry = { hotImportCoordinator?.retryRecovery() },
+                )
+            is HotBackupImportCoordinator.State.Completed -> {
+                // A fresh composition/nav graph must not reuse stale Room flows or ViewModels.
+                key(hot.generation) { GymUpReadyApp(container, generation = hot.generation) }
+                if (acknowledgedGeneration != hot.generation) {
+                    val message = when (val outcome = hot.outcome) {
+                        is HotBackupImportCoordinator.Outcome.Failed -> outcome.message
+                        is HotBackupImportCoordinator.Outcome.Result -> when (val result = outcome.value) {
+                            is BackupImportResult.Imported ->
+                                "Backup importado correctamente (${result.imageCount} imagen(es))."
+                            is BackupImportResult.Rejected -> result.reason
+                        }
+                    }
+                    GymUpTheme(themeMode = ThemeMode.SYSTEM) {
+                        AlertDialog(
+                            onDismissRequest = { acknowledgedGeneration = hot.generation },
+                            title = { Text("Resultado de la importación") },
+                            text = { Text(message) },
+                            confirmButton = {
+                                Button(onClick = { acknowledgedGeneration = hot.generation }) {
+                                    Text("Aceptar")
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
         StartupState.Loading -> GymUpTheme(themeMode = ThemeMode.SYSTEM) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -98,8 +152,30 @@ fun GymUpApp(container: AppContainer) {
 }
 
 @Composable
-private fun GymUpReadyApp(container: AppContainer) {
+private fun HotBackupGateScreen(message: String, onRetry: (() -> Unit)? = null) {
+    GymUpTheme(themeMode = ThemeMode.SYSTEM) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            if (onRetry == null) {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(16.dp))
+            }
+            Text(message)
+            if (onRetry != null) {
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = onRetry) { Text("Reintentar recuperación") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GymUpReadyApp(container: AppContainer, generation: Long) {
     val appViewModel: AppViewModel = viewModel(
+        key = "gymup-app-$generation",
         factory = AppViewModel.Factory(container.userPreferencesRepository),
     )
     val themeMode by appViewModel.themeMode.collectAsStateWithLifecycle()
@@ -234,6 +310,7 @@ private fun GymUpReadyApp(container: AppContainer) {
                 SettingsScreen(
                     currentMode = themeMode,
                     backupManager = container.backupManager,
+                    onImportConfirmed = { archive -> hotImportCoordinatorStart(container, archive) },
                     historicalCleanupManager = container.historicalCleanupManager,
                     onThemeModeSelected = appViewModel::selectThemeMode,
                     onCatalogMaintenance = { navController.navigate(Routes.CATALOGS) },
@@ -249,6 +326,9 @@ private fun GymUpReadyApp(container: AppContainer) {
         }
     }
 }
+
+private fun hotImportCoordinatorStart(container: AppContainer, archive: ByteArray): Boolean =
+    container.hotBackupImportCoordinator?.start(archive) ?: false
 
 private object Routes {
     const val HOME = "home"

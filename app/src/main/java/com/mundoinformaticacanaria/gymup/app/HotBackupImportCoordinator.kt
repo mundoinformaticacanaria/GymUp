@@ -21,10 +21,10 @@ import kotlinx.coroutines.withContext
  * Activity scope. [readersDisposed] must be called only after the repository-backed UI
  * has actually left composition; until then the import callback cannot run.
  *
- * This primitive is deliberately not wired to GymUpApp yet. Its state alone does not
- * protect readers, and it must never be used without the UI-disposal handshake.
+ * The production UI must close its repository-backed composition before acknowledging
+ * the gate. This protects Compose readers, not other processes or physical power loss.
  */
-internal class HotBackupImportCoordinator(
+class HotBackupImportCoordinator(
     private val scope: CoroutineScope,
     private val importArchive: suspend (ByteArray) -> BackupImportResult,
     private val recover: suspend () -> Unit,

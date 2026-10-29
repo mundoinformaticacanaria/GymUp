@@ -83,6 +83,44 @@ class HotBackupImportCoordinatorTest {
     }
 
     @Test
+    fun `second import requires a new disposal handshake and advances UI generation`() = runBlocking {
+        val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            var imports = 0
+            val coordinator = HotBackupImportCoordinator(
+                scope = appScope,
+                importArchive = {
+                    imports++
+                    BackupImportResult.Imported(imports)
+                },
+                recover = {},
+            )
+            assertTrue(coordinator.start(byteArrayOf(1)))
+            coordinator.readersDisposed()
+            val first = withTimeout(2000) {
+                coordinator.state.first { it is HotBackupImportCoordinator.State.Completed }
+            } as HotBackupImportCoordinator.State.Completed
+            assertEquals(1L, first.generation)
+            assertTrue(coordinator.start(byteArrayOf(2)))
+            assertEquals(HotBackupImportCoordinator.State.ClosingReaders, coordinator.state.value)
+            assertEquals(1, imports)
+            coordinator.readersDisposed()
+            val second = withTimeout(2000) {
+                coordinator.state.first {
+                    it is HotBackupImportCoordinator.State.Completed && it.generation == 2L
+                }
+            } as HotBackupImportCoordinator.State.Completed
+            assertEquals(2, imports)
+            assertEquals(
+                HotBackupImportCoordinator.Outcome.Result(BackupImportResult.Imported(2)),
+                second.outcome,
+            )
+        } finally {
+            appScope.cancel()
+        }
+    }
+
+    @Test
     fun `failed import recovers before readers can reopen and rejects duplicates`() = runBlocking {
         val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         try {

@@ -35,6 +35,9 @@ import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
 import com.mundoinformaticacanaria.gymup.domain.usecase.FilterRoutineExercisesUseCase
 import com.mundoinformaticacanaria.gymup.domain.usecase.SaveRoutineUseCase
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 interface AppContainer {
     /** Must succeed before UI, seeding or other domain access is exposed. */
@@ -51,6 +54,8 @@ interface AppContainer {
     val historyRepository: HistoryRepository
     val historicalCleanupManager: HistoricalCleanupManager
     val backupManager: BackupManager
+    /** Optional for alternate containers; production supplies an application-owned import gate. */
+    val hotBackupImportCoordinator: HotBackupImportCoordinator? get() = null
 }
 
 class DefaultAppContainer(context: Context) : AppContainer {
@@ -110,5 +115,13 @@ class DefaultAppContainer(context: Context) : AppContainer {
     override val backupManager = BackupManager(
         dataSource = guardedBackupDataSource,
         appVersion = BuildConfig.VERSION_NAME,
+    )
+
+    // Owned by the Application container, never by SettingsScreen or Activity composition.
+    private val backupImportScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    override val hotBackupImportCoordinator = HotBackupImportCoordinator(
+        scope = backupImportScope,
+        importArchive = { archive -> backupManager.importReplaceAll(archive) },
+        recover = { guardedBackupDataSource.recoverBeforeDataAccess() },
     )
 }
