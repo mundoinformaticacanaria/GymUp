@@ -5,6 +5,8 @@ import android.content.ContextWrapper
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
+import com.mundoinformaticacanaria.gymup.data.local.ExerciseImageEntity
+import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -37,6 +39,43 @@ class UserImageOrphanReconcilerDeviceTest {
 
         assertFalse(orphan.exists())
         assertEquals("preserve", unknown.readText())
+    }
+
+    @Test
+    fun sharedReferencedImageSurvivesReconciliationWithRealRoom() = withIsolatedStorage { context, root ->
+        val images = File(root, "exercise-images").apply { check(mkdirs()) }
+        val sharedName = UUID.randomUUID().toString()
+        val shared = File(images, sharedName).apply { writeText("referenced bytes") }
+        val orphan = File(images, UUID.randomUUID().toString()).apply { writeText("orphan bytes") }
+
+        withInMemoryDatabase(context) { database ->
+            // Only seed the disposable in-memory database, never the installed app's Room file.
+            DatabaseSeeder(context, database).seedIfNeeded()
+            val exerciseId = database.exerciseDao().getAll().first().id
+            // storage_key has no global UNIQUE constraint; two rows may share one USER file.
+            for (position in 1001..1002) {
+                database.exerciseDao().insertImage(
+                    ExerciseImageEntity(
+                        id = UUID.randomUUID().toString(),
+                        exerciseId = exerciseId,
+                        position = position,
+                        sourceType = "USER",
+                        storageKey = "user:$sharedName",
+                        originalSourceUrl = null,
+                        author = null,
+                        license = null,
+                    ),
+                )
+            }
+            UserImageOrphanReconciler(context, database.exerciseDao()).reconcile()
+            assertEquals(
+                2,
+                database.exerciseDao().countUserImageStorageKeyReferences("user:$sharedName"),
+            )
+        }
+
+        assertEquals("referenced bytes", shared.readText())
+        assertFalse(orphan.exists())
     }
 
     @Test
