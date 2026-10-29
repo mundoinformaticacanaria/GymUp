@@ -68,7 +68,7 @@ class UserImageOrphanReconcilerTest {
     @Test fun `legacy names and pending temporaries survive reconciliation`() = runBlocking {
         val dir = context.filesDir.resolve("exercise-images").apply { mkdirs() }
         val legacy = dir.resolve("legacy-photo.jpg").apply { writeText("legacy") }
-        val temporary = dir.resolve(".\${UUID.randomUUID()}.tmp").apply { writeText("pending") }
+        val temporary = dir.resolve("." + UUID.randomUUID() + ".tmp").apply { writeText("pending") }
         val orphan = dir.resolve(UUID.randomUUID().toString()).apply { writeText("orphan") }
 
         UserImageOrphanReconciler(context, database.exerciseDao(), syncDirectory = {}).reconcile()
@@ -83,13 +83,17 @@ class UserImageOrphanReconcilerTest {
         val unexpectedDirectory = dir.resolve(UUID.randomUUID().toString()).apply { mkdirs() }
         val nested = unexpectedDirectory.resolve("valuable.txt").apply { writeText("keep") }
 
-        assertThrows(IOException::class.java) {
-            runBlocking {
-                UserImageOrphanReconciler(context, database.exerciseDao(), syncDirectory = {}).reconcile()
+        try {
+            assertThrows(IOException::class.java) {
+                runBlocking {
+                    UserImageOrphanReconciler(context, database.exerciseDao(), syncDirectory = {}).reconcile()
+                }
             }
+            assertTrue(unexpectedDirectory.isDirectory)
+            assertTrue(nested.exists())
+        } finally {
+            unexpectedDirectory.deleteRecursively()
         }
-        assertTrue(unexpectedDirectory.isDirectory)
-        assertTrue(nested.exists())
     }
 
     @Test fun `failed metadata sync is surfaced and retry is idempotent`() = runBlocking {
