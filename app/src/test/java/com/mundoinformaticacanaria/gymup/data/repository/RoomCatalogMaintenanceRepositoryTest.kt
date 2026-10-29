@@ -209,6 +209,73 @@ class RoomCatalogMaintenanceRepositoryTest {
     }
 
     @Test
+    fun `exercise deletion reports partial cleanup when a later image cannot be removed`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(
+            customInput(group.id, "Borrado parcial", "Partial image deletion"),
+        )
+        val directory = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val first = directory.resolve("partial-first").apply { writeText("first image") }
+        val second = directory.resolve("partial-second").apply { writeText("second image") }
+        listOf(first, second).forEachIndexed { index, file ->
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = file.name, exerciseId = exerciseId, position = index + 1,
+                    sourceType = "USER", storageKey = "user:${file.name}",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+        }
+        val failing = RoomCatalogMaintenanceRepository(
+            context, database,
+            removeImageFile = { file -> if (file.name == second.name) false else file.delete() },
+            syncImageDirectory = {},
+        )
+
+        assertThrows(IOException::class.java) {
+            runBlocking { failing.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+
+        // Room is already committed and only the first image was removed. A future
+        // restart must reconcile the second orphan; this test is NOT crash recovery.
+        assertNull(maintenance.getExercise(exerciseId))
+        assertFalse(first.exists())
+        assertTrue(second.isFile)
+        assertEquals("second image", second.readText())
+    }
+
+    @Test
+    fun `exercise deletion does not claim success when directory fsync fails`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(
+            customInput(group.id, "Fsync fallido", "Directory sync failure"),
+        )
+        val file = context.filesDir.resolve("exercise-images")
+            .apply { mkdirs() }
+            .resolve("sync-failure")
+            .apply { writeText("image bytes") }
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "sync-failure", exerciseId = exerciseId, position = 1,
+                sourceType = "USER", storageKey = "user:sync-failure",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+        val failing = RoomCatalogMaintenanceRepository(
+            context, database,
+            syncImageDirectory = { throw IOException("Injected directory fsync failure") },
+        )
+
+        assertThrows(IOException::class.java) {
+            runBlocking { failing.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+
+        // A failed metadata sync cannot prove durability even when the file disappeared.
+        assertNull(maintenance.getExercise(exerciseId))
+        assertFalse(file.exists())
+    }
+
+    @Test
     fun `exercise deletion rejects traversal image key before committing Room`() = runBlocking {
         val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
         val exerciseId = maintenance.createExercise(customInput(group.id, "Imagen insegura", "Unsafe image"))
