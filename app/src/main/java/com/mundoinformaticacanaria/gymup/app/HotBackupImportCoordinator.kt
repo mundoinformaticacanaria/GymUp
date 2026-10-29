@@ -88,13 +88,19 @@ class HotBackupImportCoordinator(
 
     /** Reject concurrent imports and imports while recovery is blocked. */
     fun start(archive: ByteArray): Boolean {
-        if (!scope.isActive || mutableState.value is State.Blocked ||
-            !active.compareAndSet(false, true)
-        ) return false
+        // Linearize the transition with registerReader(): a concurrent Activity must
+        // either hold a counted lease before closing starts or be denied the lease.
+        // Do not split the active/gate/state publication across the reader lock.
+        val closed = synchronized(readerLock) {
+            if (!scope.isActive || mutableState.value is State.Blocked ||
+                !active.compareAndSet(false, true)
+            ) return false
 
-        val closed = CompletableDeferred<Unit>()
-        readerGate.set(closed)
-        mutableState.value = State.ClosingReaders
+            CompletableDeferred<Unit>().also { gate ->
+                readerGate.set(gate)
+                mutableState.value = State.ClosingReaders
+            }
+        }
         scope.launch {
             try {
                 closed.await()
