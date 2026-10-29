@@ -58,6 +58,26 @@ class UserImageOrphanReconcilerDeviceTest {
         assertEquals("valuable bytes", external.readText())
     }
 
+    @Test
+    fun symlinkedImageRootFailsClosedOnDevice() = withIsolatedStorage { context, root ->
+        val externalDirectory = File(root, "external-images").apply { check(mkdirs()) }
+        val externalImage = File(externalDirectory, UUID.randomUUID().toString())
+            .apply { writeText("keep external bytes") }
+        val imageRoot = File(root, "exercise-images")
+        Files.createSymbolicLink(imageRoot.toPath(), externalDirectory.toPath())
+
+        withInMemoryDatabase(context) { database ->
+            assertThrows(IOException::class.java) {
+                runBlocking {
+                    UserImageOrphanReconciler(context, database.exerciseDao()).reconcile()
+                }
+            }
+        }
+
+        assertTrue(Files.isSymbolicLink(imageRoot.toPath()))
+        assertEquals("keep external bytes", externalImage.readText())
+    }
+
     private fun withIsolatedStorage(block: suspend (Context, File) -> Unit) = runBlocking {
         val base = ApplicationProvider.getApplicationContext<Context>()
         val root = File(base.cacheDir, "gymup-image-device-test-${UUID.randomUUID()}")
