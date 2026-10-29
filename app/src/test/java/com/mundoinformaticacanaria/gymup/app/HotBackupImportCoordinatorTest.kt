@@ -329,4 +329,48 @@ class HotBackupImportCoordinatorTest {
         }
     }
 
+    @Test
+    fun `blocked recovery and its retry never grant Activity reader leases`() = runBlocking {
+        val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val releaseRetry = CompletableDeferred<Unit>()
+            var recoveryAttempts = 0
+            val coordinator = HotBackupImportCoordinator(
+                scope = appScope,
+                importArchive = { error("injected import failure") },
+                recover = {
+                    recoveryAttempts++
+                    if (recoveryAttempts == 1) error("injected recovery failure")
+                    releaseRetry.await()
+                },
+            )
+            val originalActivity = requireNotNull(coordinator.registerReader())
+            assertTrue(coordinator.start(byteArrayOf(1)))
+            assertNull(coordinator.registerReader())
+            originalActivity.close()
+            withTimeout(2000) {
+                coordinator.state.first { it is HotBackupImportCoordinator.State.Blocked }
+            }
+            // A recreated Activity must not read a partially restored Room/DataStore.
+            assertNull(coordinator.registerReader())
+            assertFalse(coordinator.start(byteArrayOf(2)))
+
+            assertTrue(coordinator.retryRecovery())
+            assertEquals(HotBackupImportCoordinator.State.Recovering, coordinator.state.value)
+            assertNull(coordinator.registerReader())
+            releaseRetry.complete(Unit)
+            val completed = withTimeout(2000) {
+                coordinator.state.first { it is HotBackupImportCoordinator.State.Completed }
+            } as HotBackupImportCoordinator.State.Completed
+            assertEquals(2, recoveryAttempts)
+            assertEquals(
+                HotBackupImportCoordinator.Outcome.Failed("injected import failure"),
+                completed.outcome,
+            )
+            requireNotNull(coordinator.registerReader()).close()
+        } finally {
+            appScope.cancel()
+        }
+    }
+
 }
