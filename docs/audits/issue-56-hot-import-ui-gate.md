@@ -302,3 +302,21 @@ No fusionar ni cerrar #56 con la compilación aislada.
 La prueba instrumentada `sharedImageIsRetiredOnlyAfterLastRoomReferenceDisappearsAndRetryIsIdempotent` (commit `a32fab7`) ejercita en un dispositivo Android, cuando se ejecute, la secuencia de baja de una clave USER compartida por dos filas Room: después de retirar la primera fila, el reconciliador conserva los bytes; después de confirmar la segunda baja, una nueva instancia de reconciliador retira el UUID huérfano y un segundo arranque simulado es idempotente. Un archivo legacy desconocido permanece intacto. La fixture utiliza Room en memoria y un `filesDir` aislado, sin afectar datos reales del usuario.
 
 **Estado de evidencia:** test publicado, pero aún **no ejecutado en Android 15/16**. La CI ordinaria solo compila `androidTest`; su resultado no equivale a ejecución física ni simula muerte real del proceso, persistencia Room en disco o corte de energía. Faltan rotación/multi-Activity instrumentadas, auditoría final de lectores/DAO y pruebas de durabilidad/corte. #56 abierta y PR #57 draft, sin merge ni candidato APK.
+
+## Instrumentación multi-Activity con ciclo de vida real — 2026-10-29 17:15 UTC
+
+La prueba `HotBackupImportActivityDeviceTest` (commit `61d1d52`) abre dos
+`MainActivity` con el mismo contenedor de aplicación, detiene la segunda
+(`Lifecycle.State.CREATED`) sin destruir su composición, inicia una importación
+con ZIP deliberadamente inválido y cierra la primera Activity. Comprueba que
+`readersDisposed()` no libera la importación mientras la segunda conserva
+su lease. Al reanudar la segunda, espera que Compose desmonte los lectores,
+libere el último lease y permita finalizar la validación rechazada, sin
+reemplazar datos. No usa backup válido ni genera candidato APK.
+
+**Evidencia pendiente:** esta prueba está publicada como fuente `androidTest`,
+pero no se ha ejecutado en dispositivo/emulador. La CI ordinaria solo compila
+las fuentes instrumentadas. Su resultado de ejecución y el comportamiento
+ante rotación, muerte real de proceso, fsync de Room/DataStore y cortes de
+energía continúan pendientes de validación Android 15/16. No cerrar #56 ni
+fusionar PR #57 por esta prueba.
