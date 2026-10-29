@@ -154,3 +154,11 @@ La CI del HEAD debe validarse antes de considerar estas pruebas superadas.
 Siguen pendientes auditoría completa de accesos DAO, rotación real/multi-Activity,
 durabilidad y cortes físicos Android 15/16. #56 permanece abierta y PR #57
 en borrador; no se genera APK candidato ni se fusiona.
+
+## Revisión de rutas de UI y regresiones de reconciliación — 2026-10-29 07:14 UTC
+
+Se ha comprobado el árbol completo de fuentes Kotlin de producción del HEAD `4269afe` (83 archivos bajo `app/src/main/java`, sin truncamiento del árbol) y se han inspeccionado directamente **22 archivos adicionales** de `MainActivity`, `app/`, `feature/`, `domain/usecase/` y `data/export/` buscando construcciones de `GymUpDatabase`, accesos DAO, escrituras directas de archivos, mutaciones Room y DataStore fuera del contenedor. No se detectaron accesos directos a DAO/Room en esas entradas; `AndroidSessionReportFiles` escribe un JSON de informe, no muta el dominio. La inspección es estática y parcial respecto a la totalidad de caminos de ejecución; **no demuestra ausencia de lectores vivos durante multi-Activity ni barrera entre procesos**.
+
+Se añaden dos pruebas Robolectric a `UserImageOrphanReconcilerTest`: (1) conservar nombres legacy y temporales desconocidos mientras se retira un huérfano UUID, y (2) fallar cerrado ante un directorio huérfano con nombre UUID, sin eliminar su contenido. Se aísla la segunda fixture para no contaminar otras pruebas. Commits `44bd8a8` y `f79033d`; **CI del nuevo HEAD pendiente de resultado** al registrar esta sección. La CI anterior [#40828152370](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/40828152370) terminó SUCCESS para `4269afe` (código previo).
+
+Continúan sin verificarse las rutas de lectura fuera de Compose, la rotación y multi-Activity reales, la compatibilidad de fsync de directorios en Android 15/16, la durabilidad Room/DataStore frente a interrupción y los cortes físicos. #56 abierta, PR #57 draft sobre #50; no merge, APK ni release.
