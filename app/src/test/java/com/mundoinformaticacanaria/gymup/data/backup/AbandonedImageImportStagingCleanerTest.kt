@@ -190,4 +190,58 @@ class AbandonedImageImportStagingCleanerTest {
             cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
         )
     }
+
+    @Test
+    fun `empty or oversized staging image is preserved while a safe sibling is removed`() {
+        active()
+        val safe = stage()
+        val empty = temp.newFolder("exercise-images-import-66666666-6666-4666-8666-666666666666")
+        val emptyImage = File(empty, imageName).apply { createNewFile() }
+        val oversized = temp.newFolder("exercise-images-import-77777777-7777-4777-8777-777777777777")
+        val oversizedImage = File(oversized, otherName)
+        java.io.RandomAccessFile(oversizedImage, "rw").use {
+            it.setLength(10L * 1024 * 1024 + 1)
+        }
+
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(1, 2),
+            cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
+        )
+        assertFalse(safe.exists())
+        assertTrue(emptyImage.exists())
+        assertEquals(0L, emptyImage.length())
+        assertTrue(oversizedImage.exists())
+        assertEquals(10L * 1024 * 1024 + 1, oversizedImage.length())
+    }
+
+    @Test
+    fun `invalid active image sizes preserve all staging until the root is repaired`() {
+        val root = active()
+        val staging = stage()
+        val activeImage = File(root, imageName)
+        activeImage.writeBytes(byteArrayOf())
+
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(0, 1),
+            cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
+        )
+        assertTrue(staging.exists())
+
+        java.io.RandomAccessFile(activeImage, "rw").use {
+            it.setLength(10L * 1024 * 1024 + 1)
+        }
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(0, 1),
+            cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
+        )
+        assertTrue(staging.exists())
+
+        activeImage.writeBytes(byteArrayOf(1, 2, 3))
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(1, 0),
+            cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
+        )
+        assertFalse(staging.exists())
+    }
+
 }
