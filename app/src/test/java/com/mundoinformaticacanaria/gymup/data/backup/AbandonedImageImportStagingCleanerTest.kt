@@ -244,4 +244,40 @@ class AbandonedImageImportStagingCleanerTest {
         assertFalse(staging.exists())
     }
 
+
+    @Test
+    fun `noncanonical but backup accepted staging image is retained conservatively`() {
+        active()
+        val safe = stage()
+        val noncanonical = temp.newFolder("exercise-images-import-88888888-8888-4888-8888-888888888888")
+        // BackupDataCodec and stageReplacement currently accept upper-case hex in
+        // USER keys. The conservative cleaner intentionally does not infer that
+        // such a file is disposable: this leaves a retention gap, not data loss.
+        val upperCaseName = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
+        val image = File(noncanonical, upperCaseName).apply { writeBytes(byteArrayOf(7, 4)) }
+
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(1, 1),
+            cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
+        )
+        assertFalse(safe.exists())
+        assertTrue(noncanonical.exists())
+        assertArrayEquals(byteArrayOf(7, 4), image.readBytes())
+    }
+
+    @Test
+    fun `noncanonical active USER reference prevents any staging deletion`() {
+        val root = active()
+        val staging = stage()
+        val upperCaseName = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
+        File(root, upperCaseName).writeBytes(byteArrayOf(5))
+
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(0, 1),
+            cleaner().cleanupAfterRecovery(setOf("user:$upperCaseName")),
+        )
+        assertTrue(staging.exists())
+        assertArrayEquals(byteArrayOf(5), File(root, upperCaseName).readBytes())
+    }
+
 }
