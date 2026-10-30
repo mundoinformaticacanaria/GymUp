@@ -157,3 +157,9 @@ Se añaden tres pruebas JVM en `AbandonedImageImportStagingCleanerTest` (commit 
 ## Regresión mixta de staging y enlace simbólico — 2026-10-30 03:07 UTC
 
 El commit `7de7120` añade una prueba JVM para dos directorios de staging simultáneos: uno plano y seguro y otro con un fichero UUID que es un enlace simbólico hacia un archivo externo. La limpieza aislada debe retirar únicamente el primero, conservar el segundo y su enlace, no modificar los bytes externos, preservar `exercise-images-previous-*` y permitir un segundo intento idempotente. Esta cobertura amplía la prevalidación de selectividad; **no demuestra ausencia de carreras TOCTOU, integridad de bytes ni durabilidad ante cortes**. La primitiva sigue sin conectarse a producción y su CI debe validarse para el HEAD exacto.
+
+## Límites de tamaño en limpieza conservadora — 2026-10-30 04:15 UTC
+
+La prueba JVM añadida en `6966cd0` verifica dos precondiciones que evitan borrar copias potencialmente recuperables: (1) con staging seguro y otros dos candidatos, los que contienen un fichero de cero bytes o uno mayor de 10 MiB se preservan mientras el seguro se elimina; (2) si una imagen USER referenciada en la raíz activa está vacía o excede 10 MiB, no se retira ningún staging hasta reparar esa imagen. Los casos ejercitan el límite estricto y la reevaluación en el reintento, no prueban la integridad del contenido.
+
+**Estado al publicar:** pruebas añadidas, pendiente confirmar CI para el nuevo HEAD. El limpiador sigue aislado, sin uso en producción. No se ha demostrado ausencia de TOCTOU, durabilidad tras corte, recuperación de `-previous-`, ejecución API 35/36 ni regresión física BF-02; la PR debe permanecer DRAFT.
