@@ -315,4 +315,43 @@ class AbandonedImageImportStagingCleanerTest {
         assertArrayEquals(byteArrayOf(4, 5, 6), File(staging, otherName).readBytes())
     }
 
+    @Test
+    fun `symlinked private files root is rejected before inspecting staging`() {
+        val actualFiles = temp.newFolder("actual-files")
+        val active = File(actualFiles, "exercise-images").apply { mkdir() }
+        File(active, imageName).writeBytes(byteArrayOf(1, 2, 3))
+        val staging = File(actualFiles, stageName).apply { mkdir() }
+        val stagedImage = File(staging, otherName).apply { writeBytes(byteArrayOf(4, 5, 6)) }
+        val linkedFiles = File(temp.root, "linked-files")
+        Files.createSymbolicLink(linkedFiles.toPath(), actualFiles.toPath())
+
+        val failure = runCatching {
+            AbandonedImageImportStagingCleaner(linkedFiles, syncParent = {})
+                .cleanupAfterRecovery(setOf("user:$imageName"))
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertTrue(Files.isSymbolicLink(linkedFiles.toPath()))
+        assertTrue(staging.exists())
+        assertArrayEquals(byteArrayOf(4, 5, 6), stagedImage.readBytes())
+    }
+
+    @Test
+    fun `previous image directory symlink is never traversed or removed`() {
+        active()
+        val staging = stage()
+        val outside = temp.newFolder("previous-outside")
+        val recoverable = File(outside, otherName).apply { writeBytes(byteArrayOf(9, 8, 7)) }
+        val previousLink = File(temp.root, previousName)
+        Files.createSymbolicLink(previousLink.toPath(), outside.toPath())
+
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(1, 0),
+            cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
+        )
+        assertFalse(staging.exists())
+        assertTrue(Files.isSymbolicLink(previousLink.toPath()))
+        assertArrayEquals(byteArrayOf(9, 8, 7), recoverable.readBytes())
+    }
+
 }
