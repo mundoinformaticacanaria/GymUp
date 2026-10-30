@@ -286,6 +286,48 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `backup export rejects image root swapped to symlink after preflight`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val originalBytes = byteArrayOf(1, 2, 3)
+        val image = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, originalBytes)
+        val root = context.filesDir.resolve("exercise-images")
+        val savedRoot = context.filesDir.resolve("saved-backup-images-${UUID.randomUUID()}")
+        val outside = context.filesDir.resolve("external-backup-images-${UUID.randomUUID()}")
+            .apply { mkdirs() }
+        val sentinel = byteArrayOf(81, 82, 83, 84)
+        val externalFile = outside.resolve(image.storageKey.removePrefix("user:"))
+            .apply { writeBytes(sentinel) }
+        var injected = false
+        val source = RoomBackupDataSource(
+            context, database, preferences,
+            beforeRequiredImageRead = { file ->
+                assertEquals(root.resolve(image.storageKey.removePrefix("user:")).absolutePath,
+                    file.absolutePath)
+                assertTrue(root.renameTo(savedRoot))
+                Files.createSymbolicLink(root.toPath(), outside.toPath())
+                injected = true
+            },
+        )
+        try {
+            val failure = runCatching { source.exportSnapshot() }.exceptionOrNull()
+            assertTrue("Export must reject a root swapped after validation",
+                failure is IllegalStateException)
+            assertTrue(injected)
+            assertArrayEquals(sentinel, externalFile.readBytes())
+            assertTrue(database.exerciseDao().getImages(exercise.id).any { it.id == image.id })
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+        } finally {
+            Files.deleteIfExists(root.toPath())
+            if (savedRoot.exists()) assertTrue(savedRoot.renameTo(root))
+            outside.deleteRecursively()
+        }
+        assertArrayEquals(originalBytes,
+            RoomBackupDataSource(context, database, preferences)
+                .exportSnapshot().images.getValue(image.storageKey))
+    }
+
+    @Test
     fun `backup export rejects oversized persisted image without changing Room or theme`() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val image = ExerciseImageManager(context, database.exerciseDao())
