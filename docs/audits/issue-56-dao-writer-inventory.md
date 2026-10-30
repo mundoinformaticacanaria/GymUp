@@ -232,3 +232,9 @@ limpieza de staging o cerrar #56. La CI del HEAD anterior `9872a3f`
 ([run 41025008009](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41025008009))
 terminó SUCCESS con JVM/Robolectric, lint, debug y compilación androidTest,
 0 artefactos; **no ejecutó pruebas instrumentadas**.
+
+## Diagnóstico aislado de referencias USER — 2026-10-30 10:14 UTC
+
+Se incorpora `UserImageReferenceIntegrityInspector` como **diagnóstico de solo lectura, no conectado al arranque**. A diferencia de `UserImageOrphanReconciler`, recorre las claves USER de Room incluso cuando no existe `exercise-images` y devuelve las referencias con archivo ausente, no regular, enlazado, vacío, excesivo o nombre no admitido por ZIP v1. Abre el archivo final con `NOFOLLOW_LINKS` para consultar tamaño; no borra, restaura, modifica Room ni bloquea la UI. La raíz enlazada o no-directorio provoca error en lugar de seguir rutas externas.
+
+Tres pruebas Robolectric con Room en memoria y directorio privado aislado cubren raíz ausente con referencia, mezcla de imagen válida en mayúsculas / ausente / vacía / enlazada y ausencia legítima de raíz sin referencias. **No se afirma que el arranque ya detecte estos casos**: el inspector sigue deliberadamente desconectado hasta resolver el tratamiento de imágenes históricas ausentes, el journal y las preimágenes `-previous-*`. No comprueba hash/contenido de imagen ni excluye carreras TOCTOU, otros procesos o cortes reales; necesita barrera y recuperación previa para uso futuro. CI del HEAD nuevo pendiente de verificación; Android 15/16 y regresión BF-02 siguen pendientes.
