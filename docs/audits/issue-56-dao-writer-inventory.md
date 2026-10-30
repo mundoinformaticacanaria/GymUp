@@ -449,3 +449,30 @@ TOCTOU entre la última comprobación y la apertura, ni demuestra aislamiento
 de otros procesos, durabilidad tras corte o ejecución Android API 35/36.
 No se activa limpieza de staging ni se toca `exercise-images-previous-*`.
 Mantener #56 abierta y PR #57 DRAFT hasta completar los gates.
+
+## Revalidación del directorio de staging durante escritura — 2026-10-30 23:10 UTC
+
+La inspección de `UserExerciseImageStore.stageReplacement()` identificó una ventana
+determinista: tras crear `exercise-images-import-<UUID>`, el seam
+`beforeStagedImageWrite` podía sustituir **el directorio staging** por un
+symlink a otro árbol. `FileChannel.open(target, CREATE_NEW, NOFOLLOW_LINKS)`
+protege el fichero final, pero **no** los componentes intermedios y podía
+crear bytes en ese árbol externo. Es un riesgo estático reproducible mediante
+inyección, **sin incidente observado en un dispositivo real**.
+
+El commit `eb85577` añade `requireSafeStaging`: comprueba que tanto
+`filesDir` como el directorio staging siguen siendo directorios reales
+(`NOFOLLOW_LINKS`) después del seam, después de sincronizar cada imagen
+y antes de sincronizar las entradas de directorio. El commit `0a62342`
+añade una regresión Robolectric que cambia el staging por un enlace antes
+de abrir el fichero y exige fallo cerrado, sin crear bytes externos ni
+alterar Room, preferencias o imágenes anteriores. El enlace de prueba se
+retira explícitamente sin seguirlo; la limpieza de producción mantiene
+su rechazo conservador ante staging sustituido.
+
+**Estado:** CI del nuevo HEAD por confirmar. Las comprobaciones por ruta
+siguen siendo vulnerables a carreras TOCTOU entre el último chequeo y la
+apertura; no sustituyen aislamiento por descriptores, exclusión entre
+procesos, pruebas de durabilidad/cortes ni ejecución instrumentada API35/36.
+No activar el limpiador aislado ni borrar `exercise-images-previous-*`.
+#56 continúa abierta y PR #57 en DRAFT, pendiente también de BF-02 física.
