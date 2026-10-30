@@ -327,6 +327,9 @@ private class UserExerciseImageStore(
     private val MAX_USER_IMAGE_BYTES = 10 * 1024 * 1024
 
     fun readRequired(storageKey: String): ByteArray {
+        // A safe final image and root are insufficient if filesDir is a symlink.
+        // Reject the substituted private parent before reading any image bytes.
+        requireSafePrivateParent()
         // A corrupted Room reference must not turn an export (or recovery pre-image)
         // into a read outside the private image store. Do not follow symlinks, even
         // dangling ones, and reject the image directory itself if it is a symlink.
@@ -364,6 +367,9 @@ private class UserExerciseImageStore(
     }
 
     fun stageReplacement(images: Map<String, ByteArray>): StagedImageReplacement {
+        // Staging creates directories and writes bytes under filesDir; never traverse
+        // a substituted symlink parent even when exercise-images itself is regular.
+        requireSafePrivateParent()
         // Reject an unsafe current store before staging. Files.exists follows links and
         // would otherwise allow replacing a symlink (including a dangling one).
         check(!Files.isSymbolicLink(rootDir.toPath()) && (!rootDir.exists() || rootDir.isDirectory)) {
@@ -443,6 +449,12 @@ private class UserExerciseImageStore(
         // Files.delete removes the link itself, never the file it points to.
         entries.forEach { Files.delete(it.toPath()) }
         Files.delete(path)
+    }
+
+    private fun requireSafePrivateParent() {
+        check(Files.isDirectory(parentDir.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El directorio privado de imágenes no es seguro"
+        }
     }
 
     private fun fileFor(directory: File, storageKey: String): File =
