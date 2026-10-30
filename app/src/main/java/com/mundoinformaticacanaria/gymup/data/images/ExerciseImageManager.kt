@@ -45,7 +45,15 @@ class ExerciseImageManager internal constructor(
     // Deterministic seam: inject an unsafe temporary path just before descriptor creation.
     private val beforeUserImageWrite: (File) -> Unit = {},
 ) {
-    private val imageDirectory = File(context.applicationContext.filesDir, DIRECTORY)
+    private val filesDirectory = context.applicationContext.filesDir
+    private val imageDirectory = File(filesDirectory, DIRECTORY)
+
+    private fun hasSafePrivateParent(): Boolean =
+        Files.isDirectory(filesDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)
+
+    private fun requireSafePrivateParent() {
+        check(hasSafePrivateParent()) { "El directorio privado de imágenes no es seguro" }
+    }
 
     fun observeImages(exerciseId: String): Flow<List<ExerciseImageItem>> =
         exerciseDao.observeImages(exerciseId).map { images -> images.map(::toItem) }
@@ -65,6 +73,9 @@ class ExerciseImageManager internal constructor(
         val position = (1..MAX_IMAGES_PER_EXERCISE).first { candidate ->
             existing.none { it.position == candidate }
         }
+        // A linked filesDir parent would redirect even a regular image root outside
+        // app-private storage. Reject it before creating directories or files.
+        requireSafePrivateParent()
         // A linked image root (including a dangling link) must never redirect writes
         // outside the app's private image directory.
         check(!Files.isSymbolicLink(imageDirectory.toPath()) &&
@@ -117,6 +128,7 @@ class ExerciseImageManager internal constructor(
                     "La imagen temporal cambió después de sincronizarse"
                 }
             }
+            requireSafePrivateParent()
             check(temporaryFile.renameTo(finalFile)) { "No se pudo activar la imagen guardada" }
             val entity = ExerciseImageEntity(
                 id = id,
@@ -156,7 +168,8 @@ class ExerciseImageManager internal constructor(
                             }
                         }
                     }
-                    if (safeToRemoveFile && finalFile.exists()) {
+                    if (safeToRemoveFile && hasSafePrivateParent() &&
+                        Files.isRegularFile(finalFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                         if (!finalFile.delete()) {
                             error.addSuppressed(IllegalStateException("No se pudo retirar la imagen sin registrar"))
                         } else {
@@ -168,7 +181,10 @@ class ExerciseImageManager internal constructor(
             }
             return toItem(entity)
         } finally {
-            temporaryFile.delete()
+            if (hasSafePrivateParent() &&
+                Files.isRegularFile(temporaryFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                temporaryFile.delete()
+            }
         }
     }
 
@@ -198,6 +214,9 @@ class ExerciseImageManager internal constructor(
         // journal/startup protocol and a shared domain write barrier (Issue #56).
         exerciseDao.deleteImage(image)
         val failure = try {
+            // Recheck the parent after Room mutation, before touching file bytes.
+            // Failure restores the row while leaving external paths untouched.
+            requireSafePrivateParent()
             if (file.exists()) {
                 when {
                     !removeUserImageFile(file) -> IOException("No se pudo eliminar el archivo de imagen")
@@ -229,6 +248,7 @@ class ExerciseImageManager internal constructor(
     }
 
     private fun validatedUserImageFile(storageKey: String): File {
+        requireSafePrivateParent()
         require(!Files.isSymbolicLink(imageDirectory.toPath())) {
             "El directorio de imágenes es un enlace simbólico"
         }
@@ -255,6 +275,7 @@ class ExerciseImageManager internal constructor(
         // Bound reads even if a persisted file was corrupted or replaced.
         return try {
             beforeUserImageRead(file)
+            if (!hasSafePrivateParent()) return null
             Files.newByteChannel(
                 file.toPath(),
                 setOf<OpenOption>(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
@@ -297,7 +318,8 @@ class ExerciseImageManager internal constructor(
         val name = storageKey.removePrefix("user:")
         if (name.isBlank() || name == "." || name == ".." ||
             name.any { it == '/' || it == '\\' || it == '\u0000' }) return null
-        if (Files.isSymbolicLink(imageDirectory.toPath()) || !imageDirectory.isDirectory) return null
+        if (!hasSafePrivateParent() ||
+            !Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)) return null
         val file = File(imageDirectory, name)
         return file.takeIf { !Files.isSymbolicLink(it.toPath()) && it.isFile }
     }
