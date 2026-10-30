@@ -112,3 +112,34 @@ proceso ni simula pérdida de energía: comprueba recuperación tras fallo
 inyectado y reconstrucción de objetos con el filesystem del dispositivo.
 No cierra las puertas de durabilidad Room/DataStore/directorios, auditoría
 de accesos DAO ni regresión física BF-02. #56 y PR #57 siguen abiertas.
+
+## Hallazgo de residuos de importación fuera de la raíz activa — 2026-10-30
+
+Inspección estática de `RoomBackupDataSource.kt`, `BackupStartupGate.kt` y
+`UserImageOrphanReconciler.kt` en PR #57 (HEAD previo `1363029`):
+
+- `UserExerciseImageStore.stageReplacement` crea directorios hermanos
+  `exercise-images-import-<UUID>`; `StagedImageReplacement` aparta la raíz
+  anterior como `exercise-images-previous-<UUID>`.
+- `StagedImageReplacement.complete()` ignora el `false` de
+  `deleteFlatImageDirectoryNoFollow(previous)` y marca `finished = true`.
+  Una caída entre renames/limpieza también puede dejar estos directorios.
+- La reconciliación actual de arranque examina **solo**
+  `filesDir/exercise-images` y sus ficheros UUID huérfanos. No recorre los
+  hermanos `-import-`/`-previous-`; `BackupRecoveryJournal` retira sus
+  propios artefactos, no los de `StagedImageReplacement`.
+
+**Consecuencia potencial, no observada en dispositivo:** copias antiguas de
+imágenes USER o staging podrían quedar retenidas sin limpieza posterior,
+consumiendo espacio y conservando datos que el usuario cree sustituidos.
+Esto no demuestra pérdida de referencias Room ni autoriza borrar los residuos
+sin más: un directorio `-previous-` puede ser la última copia recuperable
+si el journal o la raíz activa están dañados.
+
+**Trabajo técnico pendiente en #56:** diseñar y probar reconciliación de
+residuos después de resolver `PREPARED` y confirmar la raíz/refs autoritativas;
+limitarla a nombres generados con UUID, sin seguir symlinks ni borrar rutas
+inesperadas; preservar datos ante raíz ausente/corrupta; sincronizar metadatos
+del padre; cubrir caída/limpieza parcial/reintento y comprobar API 35/36.
+No se ha aplicado una limpieza automática en esta revisión para evitar
+eliminaciones irreversibles sin estas garantías. La PR permanece DRAFT.
