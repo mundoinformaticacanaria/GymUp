@@ -1,6 +1,7 @@
 package com.mundoinformaticacanaria.gymup.data.images
 
 import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Bitmap
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -9,7 +10,9 @@ import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
 import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
 import com.mundoinformaticacanaria.gymup.feature.exercises.decodeUserImageBitmap
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.nio.file.Files
+import java.util.UUID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -198,5 +201,51 @@ class ExerciseImageSafeReadTest {
         assertTrue(item.localFile?.isFile == true)
         assertArrayEquals(bytes, manager.readBytes(item))
         assertArrayEquals(bytes, manager.readBytes(saved))
+    }
+
+    @Test
+    fun linkedPrivateParentRejectsImageWritesReadsAndDeletionWithoutChangingRoom() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val linkedParent = context.filesDir.resolve("linked-gallery-parent-${UUID.randomUUID()}")
+        val outside = context.filesDir.resolve("outside-gallery-parent-${UUID.randomUUID()}")
+        val externalRoot = outside.resolve("exercise-images").apply { mkdirs() }
+        val sentinel = byteArrayOf(91, 92, 93, 94)
+        val externalImage = externalRoot.resolve("legacy-image").apply { writeBytes(sentinel) }
+        Files.createSymbolicLink(linkedParent.toPath(), outside.toPath())
+        val linkedContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = linkedParent
+        }
+
+        try {
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = "linked-parent-image", exerciseId = exercise.id, position = 1,
+                    sourceType = "USER", storageKey = "user:legacy-image",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+            val manager = ExerciseImageManager(linkedContext, database.exerciseDao())
+            val item = manager.observeImages(exercise.id).first().single()
+            assertNull(item.localFile)
+            assertNull(manager.readBytes(item.copy(localFile = externalImage)))
+
+            val addFailure = runCatching {
+                manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+            }.exceptionOrNull()
+            assertTrue(addFailure is IllegalStateException)
+
+            val deleteFailure = runCatching {
+                manager.deleteUserImage(item.id)
+            }.exceptionOrNull()
+            assertTrue(deleteFailure is IllegalStateException)
+
+            assertArrayEquals(sentinel, externalImage.readBytes())
+            assertTrue(database.exerciseDao().getImageById(item.id) != null)
+            assertTrue(database.exerciseDao().getImages(exercise.id).size == 1)
+        } finally {
+            Files.deleteIfExists(linkedParent.toPath())
+            outside.deleteRecursively()
+        }
     }
 }
