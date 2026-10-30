@@ -195,3 +195,40 @@ La [CI #41018696669](https://github.com/mundoinformaticacanaria/GymUp/actions/ru
 El commit `15fa283` añade dos regresiones JVM adicionales para la primitiva de limpieza **aislada**: (1) si el propio `filesDir` recibido es un enlace simbólico, la operación falla antes de inspeccionar/borrar staging; (2) un `exercise-images-previous-*` enlazado a una carpeta externa nunca se recorre ni se elimina, aunque se retire un staging seguro. Los tests no implican conexión a producción y **requieren CI del nuevo HEAD** antes de declararse validados.
 
 Quedan abiertos los mismos gates: AVD desechable Android 15/16, prueba de muerte real de proceso y durabilidad, revisión de lectores/DAO y manifiesto fusionado, recuperación segura de `-previous-*`, carreras TOCTOU y regresión física BF-02. No fusionar PR #57 ni cerrar #56 por estas pruebas.
+
+## Comprobación de referencias USER al arrancar — 2026-10-30 09:14 UTC
+
+Revisión estática de `UserImageOrphanReconciler.reconcile()`,
+`BackupStartupGate.awaitReady()`, `DefaultAppContainer`,
+`ExerciseImageManager.safeReadableUserImageFile()` y
+`app/src/main/AndroidManifest.xml` en PR #57:
+
+- Si `filesDir/exercise-images` no existe, el reconciliador retorna antes
+  de consultar `getAllUserImageStorageKeys()`. Por tanto, una base Room con
+  referencias `user:` y raíz de imágenes ausente puede superar el gate de
+  arranque sin que se compruebe la integridad referencial de esas imágenes.
+- Si la raíz existe, el reconciliador enumera huérfanos y conserva las
+  referencias conocidas, pero tampoco comprueba que **cada referencia**
+  corresponda a un archivo regular presente, legible y no vacío. El lector
+  `ExerciseImageManager` rechaza rutas inseguras y puede devolver `null`,
+  lo que evita seguir enlaces pero no detecta de forma global la inconsistencia.
+- El manifiesto **fuente** declara una `MainActivity` y un `FileProvider`,
+  sin atributos `android:process`; esto no sustituye inspeccionar el
+  manifiesto **fusionado** de la variante ni descarta otros procesos externos.
+
+**Alcance del hallazgo:** es una laguna de validación por lectura del código,
+no una pérdida de datos observada ni evidencia de que la recuperación del
+journal falle. La ausencia puede provenir de corrupción previa o de una
+interrupción fuera de las ventanas ya cubiertas. No se modifica el arranque:
+una política de bloqueo por imágenes ausentes podría impedir acceder a
+sesiones históricas y requiere valorar el comportamiento antes de adoptarla.
+
+**Siguiente trabajo técnico:** crear fixtures aisladas con Room que contenga
+referencias USER y raíz ausente, imagen ausente y enlace simbólico; comprobar
+el comportamiento real del gate y definir una comprobación fail-closed o
+recuperación que no destruya las últimas copias. Validar en Android 15/16
+junto con journal PREPARED/COMMITTED y `-previous-*`, antes de habilitar
+limpieza de staging o cerrar #56. La CI del HEAD anterior `9872a3f`
+([run 41025008009](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41025008009))
+terminó SUCCESS con JVM/Robolectric, lint, debug y compilación androidTest,
+0 artefactos; **no ejecutó pruebas instrumentadas**.
