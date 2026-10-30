@@ -1,6 +1,7 @@
 package com.mundoinformaticacanaria.gymup.data.repository
 
 import android.content.Context
+import android.content.ContextWrapper
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mundoinformaticacanaria.gymup.core.model.LoadMode
@@ -16,6 +17,7 @@ import com.mundoinformaticacanaria.gymup.domain.repository.SessionSource
 import java.io.IOException
 import java.nio.file.Files
 import java.time.LocalDate
+import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -457,6 +459,49 @@ class RoomCatalogMaintenanceRepositoryTest {
             assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
         } finally {
             Files.deleteIfExists(root.toPath())
+        }
+    }
+
+    @Test
+    fun `exercise deletion rejects a symlinked private parent before committing Room`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(
+            customInput(group.id, "Padre enlazado", "Linked private parent"),
+        )
+        val outside = context.cacheDir.resolve("external-parent-" + UUID.randomUUID())
+            .apply { check(mkdirs()) }
+        val images = outside.resolve("exercise-images").apply { check(mkdirs()) }
+        val valuable = images.resolve("external-image").apply { writeText("preserve external bytes") }
+        val linkedParent = context.cacheDir.resolve("linked-parent-" + UUID.randomUUID())
+        try {
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = "linked-parent-image", exerciseId = exerciseId, position = 1,
+                    sourceType = "USER", storageKey = "user:external-image",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+            Files.createSymbolicLink(linkedParent.toPath(), outside.toPath())
+            val linkedContext = object : ContextWrapper(context) {
+                override fun getApplicationContext(): Context = this
+                override fun getFilesDir(): java.io.File = linkedParent
+            }
+            val linkedMaintenance = RoomCatalogMaintenanceRepository(
+                linkedContext, database, syncImageDirectory = {},
+            )
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { linkedMaintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+            }
+            assertTrue(maintenance.getExercise(exerciseId) != null)
+            assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+            assertEquals("preserve external bytes", valuable.readText())
+            assertTrue(Files.isSymbolicLink(linkedParent.toPath()))
+        } finally {
+            Files.deleteIfExists(linkedParent.toPath())
+            valuable.delete()
+            images.delete()
+            outside.delete()
         }
     }
 
