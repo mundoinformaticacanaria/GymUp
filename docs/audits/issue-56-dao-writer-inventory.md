@@ -143,3 +143,9 @@ inesperadas; preservar datos ante raíz ausente/corrupta; sincronizar metadatos
 del padre; cubrir caída/limpieza parcial/reintento y comprobar API 35/36.
 No se ha aplicado una limpieza automática en esta revisión para evitar
 eliminaciones irreversibles sin estas garantías. La PR permanece DRAFT.
+
+## Preparación conservadora de limpieza de staging — 2026-10-30 01:12 UTC
+
+Los commits `bb29692` y `5efe425` incorporan **una primitiva aislada, no conectada al arranque**: `AbandonedImageImportStagingCleaner`. Se limita a directorios `exercise-images-import-<UUID>` generados por el importador. No borra nunca `exercise-images-previous-<UUID>`, que podría contener la última copia recuperable. Solo considera un staging para retirada si la raíz activa es un directorio plano seguro, todas las referencias USER suministradas están presentes como ficheros regulares no vacíos y el staging contiene únicamente imágenes UUID regulares; rechaza enlaces y subdirectorios sin seguirlos. Sin raíz activa o con referencias ausentes, conserva íntegro el staging. Sincroniza el padre tras cada retirada y permite reintentar. Las pruebas JVM cubren limpieza selectiva, idempotencia, raíz ausente/enlazada, referencia ausente, staging enlazado y contenido anidado.
+
+**No confundir esta implementación de laboratorio con una corrección de producción.** El método requiere que el llamador haya resuelto el journal y mantenga la barrera exclusiva; no se ha cableado en `DefaultAppContainer` ni `BackupStartupGate`. La validación estructural no acredita integridad de bytes, durabilidad física, ausencia de carreras TOCTOU ni exclusión entre procesos. El borrado de `-previous-` permanece expresamente prohibido hasta demostrar qué raíz es autoritativa incluso tras corte real. Las pruebas nuevas deben superar CI; siguen pendientes Android 15/16, cortes y auditoría final. PR #57 permanece DRAFT.
