@@ -21,6 +21,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.StandardOpenOption
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -34,7 +35,8 @@ class RoomCatalogMaintenanceRepository(
     private val syncImageDirectory: (File) -> Unit = ::syncDirectoryMetadata,
 ) : CatalogMaintenanceRepository {
     private val dao: CatalogMaintenanceDao = database.catalogMaintenanceDao()
-    private val imageDirectory = File(context.applicationContext.filesDir, "exercise-images")
+    private val filesDirectory = context.applicationContext.filesDir
+    private val imageDirectory = File(filesDirectory, "exercise-images")
 
     override fun observeMasters(kind: MasterCatalogKind): Flow<List<MasterMaintenanceItem>> = when (kind) {
         MasterCatalogKind.SESSION_TYPE -> dao.observeSessionTypes().map { items ->
@@ -226,6 +228,12 @@ class RoomCatalogMaintenanceRepository(
     }
 
     private fun requireSafeImageDirectory() {
+        // A safe final exercise-images path is insufficient when filesDir itself
+        // is a symlink: deleting an image could otherwise reach external bytes.
+        // Check before the Room transaction commits and again before each delete.
+        require(Files.isDirectory(filesDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El directorio privado de la aplicación no es seguro: baja cancelada"
+        }
         require(!Files.isSymbolicLink(imageDirectory.toPath())) {
             "El directorio de imágenes es un enlace simbólico: baja cancelada"
         }
