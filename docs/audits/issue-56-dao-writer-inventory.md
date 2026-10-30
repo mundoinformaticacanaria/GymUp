@@ -177,3 +177,13 @@ La CI [#41007565955](https://github.com/mundoinformaticacanaria/GymUp/actions/ru
 La prueba `3a5d969` sustituye las expectativas históricas de retención por limpieza compatible para nombres con hexadecimales mayúsculos, y añade un caso de 36 caracteres hex/guion no canónico admitido por ZIP v1. Los casos existentes de referencia malformada, symlink, archivo extraño, tamaño inválido y directorio `-previous-` conservado siguen como límites de seguridad. **La nueva CI debe validar estos cambios**; no atribuirles el SUCCESS del HEAD anterior.
 
 Esta compatibilidad solo resuelve la discrepancia de formato en el limpiador **no conectado a producción**. No constituye autorización para ejecutar limpieza automática: faltan pruebas instrumentadas API 35/36, durabilidad ante corte, auditoría de lectores/DAO y demostración de que la raíz activa y el journal permiten descartar staging sin perder la última copia recuperable. `exercise-images-previous-*` continúa intocable. PR #57 DRAFT y #56 abierta.
+
+## Revisión de CI y protección de imágenes activas — 2026-10-30 07:12 UTC
+
+La [Android CI #41012586650](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41012586650) finalizó **SUCCESS** para el HEAD exacto `9b08677` (job `verify`: tests JVM/Robolectric, lint, compilación debug y compilación de fuentes `androidTest`). No equivale a ejecutar pruebas instrumentadas ni acredita durabilidad frente a cortes.
+
+La inspección del `AndroidManifest.xml` de esta rama muestra una sola `MainActivity` y un `FileProvider` no exportado, sin atributo `android:process` explícito en esos componentes; `android:allowBackup="false"` sigue vigente. Esto solo caracteriza el manifiesto fuente, **no** demuestra ausencia de componentes añadidos por el manifest merger ni garantiza exclusión de otros procesos o lectores externos.
+
+El commit `70f70e4` añade una regresión JVM de una **imagen USER activa que es symlink** a un archivo externo: la limpieza aislada debe conservar staging y bytes externos, sin seguir el enlace. El commit `76b0a77` corrige saltos de línea literales en el KDoc del limpiador, sin alterar su lógica. **Estos commits nuevos requieren CI del HEAD exacto** antes de declararse validados.
+
+El limpiador sigue desconectado de producción; `exercise-images-previous-*` permanece intocable. Continúan abiertos los gates de integridad de bytes, carreras TOCTOU, manifest fusionado/procesos, auditoría de lectores fuera de Compose, Android API 35/36 y cortes reales de Room/DataStore/filesystem, así como la regresión BF-02.
