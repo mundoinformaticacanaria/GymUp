@@ -857,6 +857,59 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `staging directory swapped to symlink before file open cannot write outside filesDir`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val image = manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val original = RoomBackupDataSource(context, database, preferences).exportSnapshot()
+        val data = BackupDataCodec.decode(original.data.decodeToString()).getOrThrow()
+        val replacement = BackupSnapshot(
+            data = BackupDataCodec.encode(
+                data.copy(preferences = BackupPreferences(ThemeMode.LIGHT.name)),
+            ).encodeToByteArray(),
+            images = mapOf(image.storageKey to byteArrayOf(4, 5, 6)),
+        )
+        val outside = File(context.cacheDir, "outside-staging-dir-${UUID.randomUUID()}")
+            .apply { assertTrue(mkdirs()) }
+        val sentinelBytes = byteArrayOf(91, 92, 93)
+        val sentinel = outside.resolve("sentinel").apply { writeBytes(sentinelBytes) }
+        var movedStaging: File? = null
+        var stagedLink: File? = null
+        var injected = false
+        try {
+            val unsafe = RoomBackupDataSource(
+                context, database, preferences,
+                beforeStagedImageWrite = { target ->
+                    val staging = target.parentFile!!
+                    val saved = File(staging.parentFile, "saved-staging-${UUID.randomUUID()}")
+                    assertTrue(staging.renameTo(saved))
+                    movedStaging = saved
+                    stagedLink = staging
+                    Files.createSymbolicLink(staging.toPath(), outside.toPath())
+                    injected = true
+                },
+            )
+            val failure = runCatching { unsafe.replaceAll(replacement) }.exceptionOrNull()
+            assertTrue("Staging directory substitution must fail closed", failure is IllegalStateException)
+            assertTrue(injected)
+            assertEquals(listOf("sentinel"), outside.listFiles()!!.map { it.name })
+            assertArrayEquals(sentinelBytes, sentinel.readBytes())
+            assertArrayEquals(original.data,
+                RoomBackupDataSource(context, database, preferences).exportSnapshot().data)
+            assertArrayEquals(byteArrayOf(1, 2, 3), manager.readBytes(image))
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+            assertEquals(1, database.exerciseDao().getImages(exercise.id).size)
+        } finally {
+            stagedLink?.let { Files.deleteIfExists(it.toPath()) }
+            movedStaging?.deleteRecursively()
+            outside.deleteRecursively()
+        }
+        assertTrue(context.filesDir.listFiles().orEmpty().none {
+            it.name.startsWith("exercise-images-import-")
+        })
+    }
+
+    @Test
     fun `staging same size corruption after fsync aborts before Room mutation`() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val manager = ExerciseImageManager(context, database.exerciseDao())
