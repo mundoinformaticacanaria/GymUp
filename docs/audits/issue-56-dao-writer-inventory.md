@@ -366,3 +366,28 @@ TOCTOU por sustitución posterior del padre/raíz, fallo de fsync o corte real.
 Siguen pendientes validación instrumentada Android 15/16, recuperación
 física, auditoría restante y regresión BF-02. No activar el limpiador aislado
 ni fusionar PR #57 por esta sola protección.
+
+## Exportación y staging de backup: padre privado enlazado — 2026-10-30 18:09 UTC
+
+La inspección de `UserExerciseImageStore.readRequired()` y `stageReplacement()`
+en `RoomBackupDataSource.kt` detectó que ambos validaban la raíz
+`exercise-images` o el archivo final, pero **no** comprobaban que
+`context.filesDir` fuese un directorio real sin enlaces. Un `filesDir`
+sustituido por un symlink podía permitir que la exportación leyera bytes
+fuera de la raíz privada prevista, o que la importación creara staging en
+un árbol externo. Es un riesgo estático, **sin incidente real confirmado**.
+
+El commit `c2bd3ce` añade una precondición `NOFOLLOW_LINKS` al padre
+antes de leer imágenes requeridas y antes de crear staging; `919127d`
+incorpora dos pruebas Robolectric con `ContextWrapper` que simulan el
+padre enlazado y verifican rechazo, conservación de referencias Room,
+preferencias y bytes externos. La prueba de importación exige además que
+no se cree staging en el destino enlazado. **La CI del HEAD nuevo debe
+confirmarse** antes de declarar estas pruebas superadas.
+
+La comprobación de preflight **no** elimina carreras TOCTOU de sustitución
+posterior del padre, ni demuestra aislamiento por descriptores de todos
+los ancestros, durabilidad tras corte o comportamiento Android 15/16.
+El inspector y limpiador de staging continúan desconectados de producción;
+`exercise-images-previous-*` se preserva. PR #57 permanece DRAFT y
+#56 abierta hasta los gates físicos y de recuperación pendientes.
