@@ -17,7 +17,10 @@ import java.nio.file.StandardOpenOption
  * A candidate is removed only if the active image root exists, is a safe flat directory,
  * and contains every referenced USER image as a nonempty regular file. This is a
  * structural check, NOT a proof of byte-level integrity or power-loss durability.
- * Image names use the same legacy-safe character set accepted by ZIP v1\n * (36 ASCII hex/hyphen characters, including upper-case and noncanonical UUIDs).\n * This is a filename-safety check, not UUID validity or byte-integrity proof.\n * Unknown names, links and nested directories are preserved without traversal.
+ * Image names use the same legacy-safe character set accepted by ZIP v1
+ * (36 ASCII hex/hyphen characters, including upper-case and noncanonical UUIDs).
+ * This is a filename-safety check, not UUID validity or byte-integrity proof.
+ * Unknown names, links and nested directories are preserved without traversal.
  */
 internal class AbandonedImageImportStagingCleaner(
     private val filesDir: File,
