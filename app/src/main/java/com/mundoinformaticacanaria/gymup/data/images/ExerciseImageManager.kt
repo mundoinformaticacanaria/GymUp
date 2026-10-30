@@ -181,8 +181,14 @@ class ExerciseImageManager internal constructor(
             }
             return toItem(entity)
         } finally {
+            // A failed write or post-sync check can leave a temporary symlink.
+            // Unlink that entry itself (never its target), but only while both
+            // parent directories are still real directories. The old cleanup
+            // skipped symlinks and left unsafe temporary entries behind.
             if (hasSafePrivateParent() &&
-                Files.isRegularFile(temporaryFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                (Files.isRegularFile(temporaryFile.toPath(), LinkOption.NOFOLLOW_LINKS) ||
+                    Files.isSymbolicLink(temporaryFile.toPath()))) {
                 temporaryFile.delete()
             }
         }
