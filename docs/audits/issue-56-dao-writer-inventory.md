@@ -344,3 +344,25 @@ La [Android CI #41078963399](https://github.com/mundoinformaticacanaria/GymUp/ac
 Se añade `MergedManifestProcessIsolationTest` en `app/src/test/.../app/` (commits `b17ace8` y `5882846`). Consulta el `PackageManager` de Robolectric para la variante **debug** y comprueba que la aplicación, Activity, servicios, receptores y proveedores declarados compartan el proceso por defecto. Exige encontrar `MainActivity` y `FileProvider` para evitar un éxito vacuo sin componentes. Su propósito es detectar regresiones de `android:process` introducidas por el manifiesto propio o dependencias, ya que el journal y la barrera de escritores solo protegen el proceso local.
 
 **Límites:** el test nuevo necesita CI del HEAD exacto; una ejecución JVM no demuestra que el manifiesto fusionado de release coincida ni que Android 15/16 no exponga procesos externos, lectores vivos o carreras. Es un guardarraíl estático de debug, no evidencia de aislamiento real, corte de proceso, fsync durable o recuperación de `exercise-images-previous-*`. Mantener #56 abierta, PR #57 DRAFT, inspector y limpiador de staging desconectados, y no fusionar ni publicar APK sin las puertas pendientes.
+
+## Baja de ejercicio: padre privado enlazado — 2026-10-30 17:15 UTC
+
+La revisión de `RoomCatalogMaintenanceRepository.deleteExercise()` encontró una
+asimetría respecto de `UserImageOrphanReconciler`: el primero validaba la
+raíz `exercise-images` y el archivo final, pero no el propio `filesDir`.
+Si el padre privado se sustituía por un symlink a otro árbol, la baja podía
+confirmar Room y después intentar eliminar una imagen fuera de ese árbol
+privado. Es un riesgo deducido del código, **no una pérdida observada**.
+
+En `ab63cc0` se exige `Files.isDirectory(filesDir, NOFOLLOW_LINKS)` antes
+de confirmar la transacción Room y antes de cada eliminación, con rechazo
+fail-closed. En `dfc82b6` se añade una regresión Robolectric con
+`ContextWrapper` que entrega un padre privado enlazado, y comprueba
+conservación de la fila, su referencia y los bytes externos. **CI del nuevo
+HEAD pendiente de comprobación**; no atribuirle el éxito anterior.
+
+La corrección no convierte la baja Room+filesystem en atómica ni elimina
+TOCTOU por sustitución posterior del padre/raíz, fallo de fsync o corte real.
+Siguen pendientes validación instrumentada Android 15/16, recuperación
+física, auditoría restante y regresión BF-02. No activar el limpiador aislado
+ni fusionar PR #57 por esta sola protección.
