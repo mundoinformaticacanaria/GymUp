@@ -1,6 +1,7 @@
 package com.mundoinformaticacanaria.gymup.data.images
 
 import android.content.Context
+import android.content.ContextWrapper
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mundoinformaticacanaria.gymup.data.local.ExerciseImageEntity
@@ -142,6 +143,37 @@ class UserImageOrphanReconcilerTest {
             if (hadRoot) java.nio.file.Files.move(parked.toPath(), root.toPath())
             valuable.delete()
             external.delete()
+        }
+    }
+
+
+    @Test fun `symlinked private parent fails closed and preserves external canonical images`() = runBlocking {
+        val outside = context.cacheDir.resolve("external-parent-" + UUID.randomUUID())
+            .apply { check(mkdirs()) }
+        val images = outside.resolve("exercise-images").apply { check(mkdirs()) }
+        val valuable = images.resolve(UUID.randomUUID().toString())
+            .apply { writeText("external image bytes must survive") }
+        val linkedParent = context.cacheDir.resolve("linked-files-" + UUID.randomUUID())
+        try {
+            java.nio.file.Files.createSymbolicLink(linkedParent.toPath(), outside.toPath())
+            val linkedContext = object : ContextWrapper(context) {
+                override fun getApplicationContext(): Context = this
+                override fun getFilesDir(): java.io.File = linkedParent
+            }
+            assertThrows(IOException::class.java) {
+                runBlocking {
+                    UserImageOrphanReconciler(
+                        linkedContext, database.exerciseDao(), syncDirectory = {},
+                    ).reconcile()
+                }
+            }
+            assertTrue(java.nio.file.Files.isSymbolicLink(linkedParent.toPath()))
+            assertTrue(valuable.readText() == "external image bytes must survive")
+        } finally {
+            java.nio.file.Files.deleteIfExists(linkedParent.toPath())
+            valuable.delete()
+            images.delete()
+            outside.delete()
         }
     }
 
