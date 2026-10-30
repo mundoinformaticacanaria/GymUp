@@ -395,6 +395,9 @@ private class UserExerciseImageStore(
                 // redirecting or truncating an external file. Sync bytes before publication.
                 // Directory rename metadata still requires Android durability validation.
                 beforeStagedImageWrite(target)
+                // The staging directory itself may be swapped for a symlink after preflight.
+                // NOFOLLOW_LINKS on the target file does not protect intermediate directories.
+                requireSafeStaging(staging)
                 FileChannel.open(
                     target.toPath(),
                     StandardOpenOption.CREATE_NEW,
@@ -405,6 +408,7 @@ private class UserExerciseImageStore(
                     channel.force(true)
                 }
                 afterStagedImageSync(storageKey)
+                requireSafeStaging(staging)
                 // Reopen the final staging component without following symlinks. A path
                 // replaced after fsync must not be published as an imported user image.
                 check(Files.isRegularFile(target.toPath(), LinkOption.NOFOLLOW_LINKS)) {
@@ -429,6 +433,7 @@ private class UserExerciseImageStore(
             }
             // Persist the staging directory entries and its parent before activation.
             // File byte fsync alone does not make newly created image names durable.
+            requireSafeStaging(staging)
             syncDirectory(staging)
             syncDirectory(parentDir)
         } catch (error: Throwable) {
@@ -461,6 +466,13 @@ private class UserExerciseImageStore(
     private fun requireSafePrivateParent() {
         check(Files.isDirectory(parentDir.toPath(), LinkOption.NOFOLLOW_LINKS)) {
             "El directorio privado de imágenes no es seguro"
+        }
+    }
+
+    private fun requireSafeStaging(staging: File) {
+        requireSafePrivateParent()
+        check(Files.isDirectory(staging.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El staging de imágenes cambió a una ruta insegura"
         }
     }
 
