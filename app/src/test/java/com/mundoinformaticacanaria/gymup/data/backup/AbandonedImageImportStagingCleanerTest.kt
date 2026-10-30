@@ -115,4 +115,54 @@ class AbandonedImageImportStagingCleanerTest {
         assertTrue(payload.exists())
         assertTrue(unrelated.exists())
     }
+
+    @Test
+    fun `unexpected file in active root prevents irreversible staging cleanup`() {
+        val root = active()
+        val staging = stage()
+        File(root, ".unrecognized.tmp").writeBytes(byteArrayOf(42))
+
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(0, 1),
+            cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
+        )
+        assertTrue(staging.exists())
+        assertArrayEquals(byteArrayOf(4, 5, 6), File(staging, otherName).readBytes())
+    }
+
+    @Test
+    fun `malformed persisted storage key preserves staging even with valid active root`() {
+        active()
+        val staging = stage()
+
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(0, 1),
+            cleaner().cleanupAfterRecovery(setOf("user:../$imageName")),
+        )
+        assertTrue(staging.exists())
+    }
+
+    @Test
+    fun `directory sync failure is reported and subsequent cleanup is idempotent`() {
+        active()
+        val staging = stage()
+        val failure = runCatching {
+            AbandonedImageImportStagingCleaner(temp.root, syncParent = {
+                throw java.io.IOException("simulated parent fsync failure")
+            }).cleanupAfterRecovery(setOf("user:$imageName"))
+        }.exceptionOrNull()
+
+        assertTrue(failure is java.io.IOException)
+        // This is not a durability guarantee: after a failed fsync, power-loss
+        // recovery still requires validation on the actual Android filesystem.
+        assertFalse(staging.exists())
+        assertArrayEquals(
+            byteArrayOf(1, 2, 3),
+            File(temp.root, "exercise-images/$imageName").readBytes(),
+        )
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(0, 0),
+            cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
+        )
+    }
 }
