@@ -24,9 +24,16 @@ internal class UserImageOrphanReconciler(
     private val removeFile: (File) -> Boolean = File::delete,
     private val syncDirectory: (File) -> Unit = ::syncDirectoryMetadata,
 ) {
-    private val directory = File(context.applicationContext.filesDir, "exercise-images")
+    private val filesDirectory = context.applicationContext.filesDir
+    private val directory = File(filesDirectory, "exercise-images")
 
     suspend fun reconcile() {
+        // Reject a substituted private parent before inspecting or deleting orphans.
+        // Checking only the final exercise-images component could traverse a symlinked
+        // filesDir and delete an unrelated external file with a canonical UUID name.
+        if (!Files.isDirectory(filesDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            throw IOException("Directorio privado de imágenes no seguro")
+        }
         val root = directory.toPath()
         if (Files.isSymbolicLink(root)) throw IOException("Directorio de imágenes enlazado")
         if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS)) return
