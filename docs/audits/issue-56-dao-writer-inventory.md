@@ -416,3 +416,13 @@ Las comprobaciones de ruta no son una defensa atómica ante sustitución
 concurrente de ancestros (TOCTOU); no acreditan durabilidad ni exclusión
 entre procesos. No conectar limpieza aislada, no fusionar PR #57 ni cerrar
 #56 sin Android 15/16, cortes reales, auditoría completa y regresión BF-02.
+
+## Galería: sustitución de la raíz después de la observación — 2026-10-30 21:11 UTC
+
+[Android CI #41120661583](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41120661583) terminó **SUCCESS** para el commit exacto `1eb6d8f`, incluida la corrección de los dos fallos de limpieza de temporales symlink del run #41113415805. Este resultado corresponde a pruebas JVM/Robolectric, lint, ensamblado debug y compilación de androidTest; no acredita ejecución instrumentada ni durabilidad real.
+
+Nueva revisión estática de `ExerciseImageManager.readBytes()`: `safeReadableUserImageFile()` rechazaba una raíz `exercise-images` enlazada en el momento de observar, pero la ruta de lectura solo volvía a verificar `filesDir` tras `beforeUserImageRead`. Como `NOFOLLOW_LINKS` del descriptor solo protege el componente **final**, sustituir la raíz intermedia por un symlink antes de abrir permitía leer bytes externos del mismo nombre. Es un riesgo reproducible por inyección controlada, **no una exposición observada en un dispositivo real**.
+
+El commit `3c47f81` revalida que `exercise-images` sea un directorio real con `NOFOLLOW_LINKS` inmediatamente antes de abrir. El test Robolectric `swappedImageRootSymlinkBeforeOpenCannotReadExternalBytes` (`8371795`) mueve temporalmente la raíz legítima, instala un symlink a un árbol externo con bytes centinela y exige que `readBytes` devuelva `null` sin alterar Room ni el archivo externo; restaura el árbol en `finally`. **La nueva CI debe comprobarse para el HEAD de estos cambios**, no se extrapola el SUCCESS anterior.
+
+Esta defensa no es atómica frente a un adversario que cambie el directorio entre la nueva comprobación y `newByteChannel`. Siguen pendientes auditoría global de lectores/DAO y carreras TOCTOU, Android API 35/36, muerte de proceso/cortes, tratamiento seguro de `-previous-*` y regresión física BF-02. Mantener inspector/limpiador desconectados y PR #57 DRAFT.
