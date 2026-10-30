@@ -336,3 +336,11 @@ No se conecta el inspector ni el limpiador de staging, no se eliminan
 `exercise-images-previous-*` y no se cambia el contrato funcional.
 Permanecen las puertas de Android 15/16, durabilidad ante cortes,
 auditoría completa de lectores/procesos/manifiesto fusionado y BF-02 física.
+
+## Guardia automatizada del proceso en manifiesto debug — 2026-10-30 16:10 UTC
+
+La [Android CI #41078963399](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41078963399) terminó **SUCCESS** para `f9ed9ef`, incluida la regresión de nombres USER heredados. Solo ejecutó JVM/Robolectric, lint y compilación; **no** Android 15/16 instrumentado ni pruebas de durabilidad.
+
+Se añade `MergedManifestProcessIsolationTest` en `app/src/test/.../app/` (commits `b17ace8` y `5882846`). Consulta el `PackageManager` de Robolectric para la variante **debug** y comprueba que la aplicación, Activity, servicios, receptores y proveedores declarados compartan el proceso por defecto. Exige encontrar `MainActivity` y `FileProvider` para evitar un éxito vacuo sin componentes. Su propósito es detectar regresiones de `android:process` introducidas por el manifiesto propio o dependencias, ya que el journal y la barrera de escritores solo protegen el proceso local.
+
+**Límites:** el test nuevo necesita CI del HEAD exacto; una ejecución JVM no demuestra que el manifiesto fusionado de release coincida ni que Android 15/16 no exponga procesos externos, lectores vivos o carreras. Es un guardarraíl estático de debug, no evidencia de aislamiento real, corte de proceso, fsync durable o recuperación de `exercise-images-previous-*`. Mantener #56 abierta, PR #57 DRAFT, inspector y limpiador de staging desconectados, y no fusionar ni publicar APK sin las puertas pendientes.
