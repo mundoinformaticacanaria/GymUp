@@ -261,3 +261,22 @@ El inspector continúa **desconectado de producción** y no define política de
 bloqueo para imágenes históricas ausentes. `exercise-images-previous-*`
 permanece preservado; PR #57 sigue DRAFT hasta Android 15/16, durabilidad,
 auditoría de lectores/DAO y regresión BF-02.
+
+## Comprobación de raíz USER no válida — 2026-10-30 12:07 UTC
+
+La [CI #41046655556](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41046655556)
+finalizó **SUCCESS** para el HEAD anterior `8e6153c`: job `verify`
+(JVM/Robolectric, lint, debug y compilación androidTest), sin artefactos
+publicados ni ejecución instrumentada en Android 15/16.
+
+Se añaden dos regresiones Robolectric en `UserImageReferenceIntegrityInspectorTest`
+(commit `a43c680`): raíz activa `exercise-images` enlazada a otro directorio
+con bytes externos, y ruta de raíz ocupada por un archivo ordinario. En ambos
+casos el inspector aislado debe fallar cerrado sin alterar referencias Room
+ni archivos externos. Estas pruebas complementan la guardia previa sobre
+`filesDir`, **sin cambiar código productivo**.
+
+La CI del nuevo HEAD requiere confirmación. El inspector y el limpiador
+siguen desconectados de producción; no se borran `-previous-*`.
+No se ha demostrado durabilidad tras corte, ausencia de TOCTOU ni
+ejecución física de instrumentación API 35/36. La PR #57 permanece DRAFT.
