@@ -1,6 +1,7 @@
 package com.mundoinformaticacanaria.gymup.data.backup
 
 import android.content.Context
+import android.content.ContextWrapper
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mundoinformaticacanaria.gymup.core.model.LoadMode
@@ -184,6 +185,72 @@ class RoomBackupDataSourceTest {
         } finally {
             Files.deleteIfExists(imageFile.toPath())
             outside.delete()
+        }
+    }
+
+    @Test
+    fun `backup export rejects symlinked private parent without reading external bytes`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val image = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val linkedParent = context.filesDir.resolve("linked-backup-parent-${UUID.randomUUID()}")
+        val outside = context.filesDir.resolve("outside-backup-parent-${UUID.randomUUID()}")
+        val externalImages = outside.resolve("exercise-images").apply { mkdirs() }
+        val sentinel = byteArrayOf(91, 92, 93, 94)
+        val externalImage = externalImages.resolve(image.storageKey.removePrefix("user:"))
+            .apply { writeBytes(sentinel) }
+        Files.createSymbolicLink(linkedParent.toPath(), outside.toPath())
+        val linkedContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = linkedParent
+        }
+
+        try {
+            val failure = runCatching {
+                RoomBackupDataSource(linkedContext, database, preferences).exportSnapshot()
+            }.exceptionOrNull()
+            assertTrue("Export must reject a symlinked filesDir parent", failure is IllegalStateException)
+            assertArrayEquals(sentinel, externalImage.readBytes())
+            assertTrue(database.exerciseDao().getImages(exercise.id).any { it.id == image.id })
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+        } finally {
+            Files.deleteIfExists(linkedParent.toPath())
+            outside.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `backup import rejects symlinked private parent before staging or Room mutation`() = runBlocking {
+        val source = RoomBackupDataSource(context, database, preferences)
+        val before = source.exportSnapshot()
+        val replacementData = BackupDataCodec.decode(before.data.decodeToString()).getOrThrow()
+            .copy(preferences = BackupPreferences(ThemeMode.LIGHT.name))
+        val replacement = BackupSnapshot(
+            data = BackupDataCodec.encode(replacementData).encodeToByteArray(),
+            images = before.images,
+        )
+        val linkedParent = context.filesDir.resolve("linked-import-parent-${UUID.randomUUID()}")
+        val outside = context.filesDir.resolve("outside-import-parent-${UUID.randomUUID()}")
+            .apply { mkdirs() }
+        val sentinel = outside.resolve("sentinel").apply { writeBytes(byteArrayOf(41, 42, 43)) }
+        Files.createSymbolicLink(linkedParent.toPath(), outside.toPath())
+        val linkedContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = linkedParent
+        }
+
+        try {
+            val failure = runCatching {
+                RoomBackupDataSource(linkedContext, database, preferences).replaceAll(replacement)
+            }.exceptionOrNull()
+            assertTrue("Import must reject a symlinked filesDir before staging", failure is IllegalStateException)
+            assertEquals(listOf("sentinel"), outside.listFiles()!!.map { it.name })
+            assertArrayEquals(byteArrayOf(41, 42, 43), sentinel.readBytes())
+            assertArrayEquals(before.data, source.exportSnapshot().data)
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+        } finally {
+            Files.deleteIfExists(linkedParent.toPath())
+            outside.deleteRecursively()
         }
     }
 
