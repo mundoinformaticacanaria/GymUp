@@ -153,3 +153,7 @@ Los commits `bb29692` y `5efe425` incorporan **una primitiva aislada, no conecta
 ## Regresiones adicionales de limpieza fail-closed — 2026-10-30 02:10 UTC
 
 Se añaden tres pruebas JVM en `AbandonedImageImportStagingCleanerTest` (commit `07780d3`): (1) un archivo inesperado en la raíz activa impide retirar staging; (2) una `storage_key` USER malformada impide cualquier borrado; (3) un fallo inyectado de `syncParent` se propaga y un segundo intento resulta idempotente, sin alterar la imagen activa. Estas pruebas verifican únicamente el comportamiento controlado del limpiador aislado. **No demuestran durabilidad física tras fsync fallido** ni habilitan su conexión al arranque. El nuevo HEAD debe superar CI; permanecen pendientes Android 15/16, muerte real de proceso, recuperación segura de `-previous-`, revisión DAO y BF-02 física.
+
+## Regresión mixta de staging y enlace simbólico — 2026-10-30 03:07 UTC
+
+El commit `7de7120` añade una prueba JVM para dos directorios de staging simultáneos: uno plano y seguro y otro con un fichero UUID que es un enlace simbólico hacia un archivo externo. La limpieza aislada debe retirar únicamente el primero, conservar el segundo y su enlace, no modificar los bytes externos, preservar `exercise-images-previous-*` y permitir un segundo intento idempotente. Esta cobertura amplía la prevalidación de selectividad; **no demuestra ausencia de carreras TOCTOU, integridad de bytes ni durabilidad ante cortes**. La primitiva sigue sin conectarse a producción y su CI debe validarse para el HEAD exacto.
