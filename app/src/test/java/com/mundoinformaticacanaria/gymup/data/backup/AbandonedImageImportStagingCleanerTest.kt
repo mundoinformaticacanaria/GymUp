@@ -295,4 +295,24 @@ class AbandonedImageImportStagingCleanerTest {
         assertArrayEquals(byteArrayOf(5, 4, 3), legacyImage.readBytes())
     }
 
+    @Test
+    fun `symlinked active USER image preserves staging and external bytes`() {
+        val root = temp.newFolder("exercise-images")
+        val external = File(temp.root, "external-image").apply {
+            writeBytes(byteArrayOf(9, 8, 7))
+        }
+        val linked = File(root, imageName)
+        Files.createSymbolicLink(linked.toPath(), external.toPath())
+        val staging = stage()
+
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(0, 1),
+            cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
+        )
+        assertTrue(staging.exists())
+        assertTrue(Files.isSymbolicLink(linked.toPath()))
+        assertArrayEquals(byteArrayOf(9, 8, 7), external.readBytes())
+        assertArrayEquals(byteArrayOf(4, 5, 6), File(staging, otherName).readBytes())
+    }
+
 }
