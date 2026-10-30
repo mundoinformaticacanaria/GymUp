@@ -315,3 +315,24 @@ El inspector y el limpiador siguen desconectados de producción. La
 auditoría de call sites y procesos no está cerrada; no activar limpieza
 automática ni fusionar PR #57 hasta cumplir API 35/36, cortes reales,
 manifiesto fusionado y regresión física BF-02.
+
+## Reconciliación de huérfanos: directorio privado padre — 2026-10-30 14:15 UTC
+
+La auditoría comparada de `UserImageReferenceIntegrityInspector` y
+`UserImageOrphanReconciler` detectó que el reconciliador, **conectado al
+arranque**, rechazaba symlinks en `exercise-images` y en los ficheros
+huérfanos, pero no en su `filesDir` padre. Un padre sustituido por enlace
+podía dirigir el borrado de un huérfano con nombre UUID canónico a un árbol
+externo. Es un riesgo estático; **no consta pérdida de datos real**.
+
+En PR #57, `c01a19c` exige que el padre sea un directorio real mediante
+`Files.isDirectory(..., NOFOLLOW_LINKS)` **antes** de enumerar o eliminar
+huérfanos. `1ebde61` añade una regresión Robolectric aislada con un padre
+simbólico, archivo externo de nombre canónico y comprobación de que sus bytes
+se preservan. La prueba no demuestra ausencia de carreras TOCTOU ni protección
+de todos los ancestros, y debe validarse por CI del HEAD correspondiente.
+
+No se conecta el inspector ni el limpiador de staging, no se eliminan
+`exercise-images-previous-*` y no se cambia el contrato funcional.
+Permanecen las puertas de Android 15/16, durabilidad ante cortes,
+auditoría completa de lectores/procesos/manifiesto fusionado y BF-02 física.
