@@ -187,3 +187,11 @@ La inspección del `AndroidManifest.xml` de esta rama muestra una sola `MainActi
 El commit `70f70e4` añade una regresión JVM de una **imagen USER activa que es symlink** a un archivo externo: la limpieza aislada debe conservar staging y bytes externos, sin seguir el enlace. El commit `76b0a77` corrige saltos de línea literales en el KDoc del limpiador, sin alterar su lógica. **Estos commits nuevos requieren CI del HEAD exacto** antes de declararse validados.
 
 El limpiador sigue desconectado de producción; `exercise-images-previous-*` permanece intocable. Continúan abiertos los gates de integridad de bytes, carreras TOCTOU, manifest fusionado/procesos, auditoría de lectores fuera de Compose, Android API 35/36 y cortes reales de Room/DataStore/filesystem, así como la regresión BF-02.
+
+## CI del HEAD previo y dos regresiones de enlaces — 2026-10-30 08:13 UTC
+
+La [CI #41018696669](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41018696669) terminó **SUCCESS** para el HEAD exacto `e3d4794`, incluido el job `verify` (tests JVM/Robolectric, lint, build debug y compilación de fuentes androidTest). Esto valida la regresión de symlink de imagen USER activa publicada en `70f70e4`; **no ejecuta androidTest en dispositivo**.
+
+El commit `15fa283` añade dos regresiones JVM adicionales para la primitiva de limpieza **aislada**: (1) si el propio `filesDir` recibido es un enlace simbólico, la operación falla antes de inspeccionar/borrar staging; (2) un `exercise-images-previous-*` enlazado a una carpeta externa nunca se recorre ni se elimina, aunque se retire un staging seguro. Los tests no implican conexión a producción y **requieren CI del nuevo HEAD** antes de declararse validados.
+
+Quedan abiertos los mismos gates: AVD desechable Android 15/16, prueba de muerte real de proceso y durabilidad, revisión de lectores/DAO y manifiesto fusionado, recuperación segura de `-previous-*`, carreras TOCTOU y regresión física BF-02. No fusionar PR #57 ni cerrar #56 por estas pruebas.
