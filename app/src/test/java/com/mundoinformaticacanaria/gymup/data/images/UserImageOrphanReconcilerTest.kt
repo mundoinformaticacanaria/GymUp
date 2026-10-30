@@ -79,6 +79,24 @@ class UserImageOrphanReconcilerTest {
         assertFalse(orphan.exists())
     }
 
+    @Test fun `legacy ZIP v1 USER filenames are preserved by orphan cleanup`() = runBlocking {
+        val dir = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        // ZIP v1 accepts uppercase hex and 36-character noncanonical hex/hyphen keys.
+        // The reconciler may delete only lowercase canonical UUID filenames generated
+        // by the current image manager, never infer that legacy files are orphans.
+        val uppercase = dir.resolve("ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB")
+            .apply { writeText("uppercase legacy image") }
+        val noncanonical = dir.resolve("123456789012345678901234567890123456")
+            .apply { writeText("noncanonical legacy image") }
+
+        UserImageOrphanReconciler(context, database.exerciseDao(), syncDirectory = {}).reconcile()
+
+        assertTrue(uppercase.exists())
+        assertTrue(noncanonical.exists())
+        assertTrue(uppercase.readText() == "uppercase legacy image")
+        assertTrue(noncanonical.readText() == "noncanonical legacy image")
+    }
+
     @Test fun `non regular canonical orphan fails closed without removing it`() = runBlocking {
         val dir = context.filesDir.resolve("exercise-images").apply { mkdirs() }
         val unexpectedDirectory = dir.resolve(UUID.randomUUID().toString()).apply { mkdirs() }
