@@ -24,12 +24,18 @@ internal class UserImageReferenceIntegrityInspector(
     context: Context,
     private val exerciseDao: ExerciseDao,
 ) {
-    private val directory = File(context.applicationContext.filesDir, "exercise-images")
+    private val filesDirectory = context.applicationContext.filesDir
+    private val directory = File(filesDirectory, "exercise-images")
 
     suspend fun missingOrUnsafeStorageKeys(): Set<String> {
         val referenced = exerciseDao.getAllUserImageStorageKeys().toSet()
         if (referenced.isEmpty()) return emptySet()
 
+        // Do not inspect files through a substituted parent symlink, even if the
+        // final exercise-images component itself appears to be a regular directory.
+        if (!Files.isDirectory(filesDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            throw IOException("Directorio privado de imágenes no seguro")
+        }
         val root = directory.toPath()
         if (Files.isSymbolicLink(root)) throw IOException("Directorio de imágenes enlazado")
         if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS)) return referenced
