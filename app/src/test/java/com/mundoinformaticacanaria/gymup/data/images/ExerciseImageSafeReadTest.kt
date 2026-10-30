@@ -138,6 +138,43 @@ class ExerciseImageSafeReadTest {
     }
 
     @Test
+    fun swappedImageRootSymlinkBeforeOpenCannotReadExternalBytes() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val ordinaryManager = ExerciseImageManager(context, database.exerciseDao())
+        val saved = ordinaryManager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val root = context.filesDir.resolve("exercise-images")
+        val originalRoot = context.filesDir.resolve("image-root-original-${UUID.randomUUID()}")
+        val outsideRoot = context.filesDir.resolve("image-root-target").apply { mkdirs() }
+        val outsideBytes = byteArrayOf(9, 8, 7, 6)
+        val outsideImage = outsideRoot.resolve(saved.storageKey.removePrefix("user:")).apply {
+            writeBytes(outsideBytes)
+        }
+        val manager = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            beforeUserImageRead = {
+                // Simulate the ancestor being replaced after the gallery's first check.
+                Files.move(root.toPath(), originalRoot.toPath())
+                Files.createSymbolicLink(root.toPath(), outsideRoot.toPath())
+            },
+        )
+        val item = manager.observeImages(exercise.id).first().single()
+
+        try {
+            assertNull(manager.readBytes(item))
+            assertTrue(Files.isSymbolicLink(root.toPath()))
+            assertArrayEquals(outsideBytes, outsideImage.readBytes())
+            assertNotNull(database.exerciseDao().getImageById(saved.id))
+        } finally {
+            // Never let the test's linked root leak into the next Robolectric case.
+            if (Files.isSymbolicLink(root.toPath())) Files.delete(root.toPath())
+            if (Files.exists(originalRoot.toPath())) {
+                Files.move(originalRoot.toPath(), root.toPath())
+            }
+        }
+    }
+
+    @Test
     fun oversizedPersistedImageCannotBeReadIntoMemory() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val manager = ExerciseImageManager(context, database.exerciseDao())
