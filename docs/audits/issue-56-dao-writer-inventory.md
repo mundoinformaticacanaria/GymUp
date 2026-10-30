@@ -426,3 +426,26 @@ Nueva revisión estática de `ExerciseImageManager.readBytes()`: `safeReadableUs
 El commit `3c47f81` revalida que `exercise-images` sea un directorio real con `NOFOLLOW_LINKS` inmediatamente antes de abrir. El test Robolectric `swappedImageRootSymlinkBeforeOpenCannotReadExternalBytes` (`8371795`) mueve temporalmente la raíz legítima, instala un symlink a un árbol externo con bytes centinela y exige que `readBytes` devuelva `null` sin alterar Room ni el archivo externo; restaura el árbol en `finally`. **La nueva CI debe comprobarse para el HEAD de estos cambios**, no se extrapola el SUCCESS anterior.
 
 Esta defensa no es atómica frente a un adversario que cambie el directorio entre la nueva comprobación y `newByteChannel`. Siguen pendientes auditoría global de lectores/DAO y carreras TOCTOU, Android API 35/36, muerte de proceso/cortes, tratamiento seguro de `-previous-*` y regresión física BF-02. Mantener inspector/limpiador desconectados y PR #57 DRAFT.
+
+## Revalidación de raíz durante exportación de backup — 2026-10-30 22:07 UTC
+
+La inspección de `UserExerciseImageStore.readRequired()` encontró otra ventana
+determinista: tras validar `exercise-images` y el archivo USER, el seam
+`beforeRequiredImageRead` permitía sustituir la **raíz** por un enlace
+simbólico antes de `Files.newInputStream(file, NOFOLLOW_LINKS)`. Esa opción
+solo impide seguir el enlace del último componente, no el directorio
+intermedio; la exportación podía leer bytes externos sin modificar Room.
+
+En PR #57, `e681f84` revalida `filesDir` y exige que la raíz siga siendo
+un directorio real (`NOFOLLOW_LINKS`) inmediatamente antes de abrir el
+descriptor. `e686e35` añade una regresión Robolectric que aparta
+temporalmente la raíz, la sustituye por un enlace a un directorio con bytes
+externos y exige fallo cerrado, preservación de los bytes externos,
+referencias Room y preferencias; después restaura el fixture original.
+
+**Estado:** commits publicados, CI del nuevo HEAD todavía por confirmar.
+La revalidación reduce una ventana reproducible pero no elimina una carrera
+TOCTOU entre la última comprobación y la apertura, ni demuestra aislamiento
+de otros procesos, durabilidad tras corte o ejecución Android API 35/36.
+No se activa limpieza de staging ni se toca `exercise-images-previous-*`.
+Mantener #56 abierta y PR #57 DRAFT hasta completar los gates.
