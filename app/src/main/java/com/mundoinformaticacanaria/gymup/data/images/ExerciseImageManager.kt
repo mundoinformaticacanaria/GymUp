@@ -281,7 +281,12 @@ class ExerciseImageManager internal constructor(
         // Bound reads even if a persisted file was corrupted or replaced.
         return try {
             beforeUserImageRead(file)
-            if (!hasSafePrivateParent()) return null
+            // The image root can be replaced after the initial gallery validation.
+            // NOFOLLOW_LINKS on the final file does not protect a linked parent.
+            // This closes the deterministic substitution window; concurrent ancestor
+            // swaps still require separate process/filesystem isolation validation.
+            if (!hasSafePrivateParent() ||
+                !Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)) return null
             Files.newByteChannel(
                 file.toPath(),
                 setOf<OpenOption>(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
