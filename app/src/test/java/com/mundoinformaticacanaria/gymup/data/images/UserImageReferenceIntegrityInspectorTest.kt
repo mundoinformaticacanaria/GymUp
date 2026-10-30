@@ -159,4 +159,40 @@ class UserImageReferenceIntegrityInspectorTest {
         assertEquals(10L * 1024 * 1024 + 1, oversizedFile.length())
         assertEquals(3, database.exerciseDao().getAllUserImageStorageKeys().size)
     }
+
+    @Test fun `symlinked image root is rejected without reading its target`() = runBlocking {
+        val key = "user:${UUID.randomUUID()}"
+        insertUserImage(key, 1001)
+        val outside = isolatedRoot.resolve("outside-images").apply { check(mkdirs()) }
+        val externalFile = outside.resolve(key.removePrefix("user:"))
+            .apply { writeText("external bytes remain unchanged") }
+        symlink = isolatedRoot.resolve("exercise-images")
+        Files.createSymbolicLink(symlink!!.toPath(), outside.toPath())
+
+        val failure = runCatching {
+            UserImageReferenceIntegrityInspector(isolatedContext, database.exerciseDao())
+                .missingOrUnsafeStorageKeys()
+        }.exceptionOrNull()
+
+        assertTrue(failure is java.io.IOException)
+        assertEquals("external bytes remain unchanged", externalFile.readText())
+        assertTrue(Files.isSymbolicLink(symlink!!.toPath()))
+        assertEquals(1, database.exerciseDao().countUserImageStorageKeyReferences(key))
+    }
+
+    @Test fun `regular file in place of image root is rejected without modifying Room`() = runBlocking {
+        val key = "user:${UUID.randomUUID()}"
+        insertUserImage(key, 1001)
+        val invalidRoot = isolatedRoot.resolve("exercise-images")
+            .apply { writeText("not an image directory") }
+
+        val failure = runCatching {
+            UserImageReferenceIntegrityInspector(isolatedContext, database.exerciseDao())
+                .missingOrUnsafeStorageKeys()
+        }.exceptionOrNull()
+
+        assertTrue(failure is java.io.IOException)
+        assertEquals("not an image directory", invalidRoot.readText())
+        assertEquals(1, database.exerciseDao().countUserImageStorageKeyReferences(key))
+    }
 }
