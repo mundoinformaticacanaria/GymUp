@@ -238,3 +238,26 @@ terminó SUCCESS con JVM/Robolectric, lint, debug y compilación androidTest,
 Se incorpora `UserImageReferenceIntegrityInspector` como **diagnóstico de solo lectura, no conectado al arranque**. A diferencia de `UserImageOrphanReconciler`, recorre las claves USER de Room incluso cuando no existe `exercise-images` y devuelve las referencias con archivo ausente, no regular, enlazado, vacío, excesivo o nombre no admitido por ZIP v1. Abre el archivo final con `NOFOLLOW_LINKS` para consultar tamaño; no borra, restaura, modifica Room ni bloquea la UI. La raíz enlazada o no-directorio provoca error en lugar de seguir rutas externas.
 
 Tres pruebas Robolectric con Room en memoria y directorio privado aislado cubren raíz ausente con referencia, mezcla de imagen válida en mayúsculas / ausente / vacía / enlazada y ausencia legítima de raíz sin referencias. **No se afirma que el arranque ya detecte estos casos**: el inspector sigue deliberadamente desconectado hasta resolver el tratamiento de imágenes históricas ausentes, el journal y las preimágenes `-previous-*`. No comprueba hash/contenido de imagen ni excluye carreras TOCTOU, otros procesos o cortes reales; necesita barrera y recuperación previa para uso futuro. CI del HEAD nuevo pendiente de verificación; Android 15/16 y regresión BF-02 siguen pendientes.
+
+## Inspección USER: ruta privada enlazada y referencias corruptas — 2026-10-30 11:14 UTC
+
+La nueva primitiva `UserImageReferenceIntegrityInspector` de solo lectura comprobaba
+la raíz final `exercise-images` con `NOFOLLOW_LINKS`, pero no rechazaba un
+`filesDir` padre que fuese un enlace simbólico. En ese caso la lectura podía
+atravesar el enlace padre aunque el último componente fuese regular.
+El commit `aa249bd` exige ahora que `filesDir` sea un directorio real
+(`NOFOLLOW_LINKS`) antes de inspeccionar las referencias; falla cerrado sin
+reparar ni eliminar nada.
+
+El commit `d7e9b18` incorpora dos regresiones Robolectric con Room en memoria:
+padre privado enlazado a un árbol externo, preservando sus bytes, y mezcla de
+referencia USER válida, archivo superior a 10 MiB y clave de ruta malformada.
+La inspección debe informar únicamente las referencias inseguras y conservar
+filas y archivos. **Pendiente confirmar CI del HEAD exacto**; no son pruebas
+instrumentadas ni prueban ausencia de TOCTOU en componentes ancestros, otros
+procesos, durabilidad de journal o recuperación tras corte real.
+
+El inspector continúa **desconectado de producción** y no define política de
+bloqueo para imágenes históricas ausentes. `exercise-images-previous-*`
+permanece preservado; PR #57 sigue DRAFT hasta Android 15/16, durabilidad,
+auditoría de lectores/DAO y regresión BF-02.
