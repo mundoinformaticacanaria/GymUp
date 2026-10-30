@@ -106,4 +106,57 @@ class UserImageReferenceIntegrityInspectorTest {
         assertTrue(inspector.missingOrUnsafeStorageKeys().isEmpty())
         assertFalse(isolatedRoot.resolve("exercise-images").exists())
     }
+
+    @Test fun `symlinked private files directory is rejected without reading external images`() = runBlocking {
+        val key = "user:${UUID.randomUUID()}"
+        insertUserImage(key, 1001)
+        val outside = isolatedRoot.resolve("external-parent").apply { check(mkdirs()) }
+        val externalImages = outside.resolve("exercise-images").apply { check(mkdirs()) }
+        val externalFile = externalImages.resolve(key.removePrefix("user:"))
+            .apply { writeText("external bytes must remain private") }
+        val linkedParent = isolatedRoot.resolve("linked-files")
+        Files.createSymbolicLink(linkedParent.toPath(), outside.toPath())
+        try {
+            val base = ApplicationProvider.getApplicationContext<Context>()
+            val linkedContext = object : ContextWrapper(base) {
+                override fun getApplicationContext(): Context = this
+                override fun getFilesDir(): java.io.File = linkedParent
+            }
+            val failure = runCatching {
+                UserImageReferenceIntegrityInspector(linkedContext, database.exerciseDao())
+                    .missingOrUnsafeStorageKeys()
+            }.exceptionOrNull()
+            assertTrue(failure is java.io.IOException)
+            assertEquals("external bytes must remain private", externalFile.readText())
+            assertEquals(1, database.exerciseDao().countUserImageStorageKeyReferences(key))
+        } finally {
+            Files.deleteIfExists(linkedParent.toPath())
+        }
+    }
+
+    @Test fun `oversized and malformed references are reported while safe files remain untouched`() = runBlocking {
+        val images = isolatedRoot.resolve("exercise-images").apply { check(mkdirs()) }
+        val goodName = UUID.randomUUID().toString().uppercase()
+        val oversizedName = UUID.randomUUID().toString()
+        val goodFile = images.resolve(goodName).apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        val oversizedFile = images.resolve(oversizedName)
+        java.io.RandomAccessFile(oversizedFile, "rw").use {
+            it.setLength(10L * 1024 * 1024 + 1)
+        }
+        val goodKey = "user:$goodName"
+        val oversizedKey = "user:$oversizedName"
+        val malformedKey = "user:../invalid"
+        listOf(goodKey, oversizedKey, malformedKey).forEachIndexed { index, key ->
+            insertUserImage(key, 1001 + index)
+        }
+
+        val inspector = UserImageReferenceIntegrityInspector(isolatedContext, database.exerciseDao())
+        assertEquals(
+            setOf(oversizedKey, malformedKey),
+            inspector.missingOrUnsafeStorageKeys(),
+        )
+        assertEquals(listOf<Byte>(1, 2, 3), goodFile.readBytes().toList())
+        assertEquals(10L * 1024 * 1024 + 1, oversizedFile.length())
+        assertEquals(3, database.exerciseDao().getAllUserImageStorageKeys().size)
+    }
 }
