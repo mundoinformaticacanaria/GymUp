@@ -143,6 +143,31 @@ class AbandonedImageImportStagingCleanerTest {
     }
 
     @Test
+    fun `mixed staging candidates remove only safe directory and preserve linked payload`() {
+        active()
+        val safe = stage()
+        val unsafe = temp.newFolder("exercise-images-import-55555555-5555-4555-8555-555555555555")
+        val outside = File(temp.root, "outside-image").apply { writeBytes(byteArrayOf(9, 7, 5)) }
+        val linked = File(unsafe, imageName)
+        Files.createSymbolicLink(linked.toPath(), outside.toPath())
+        val previous = temp.newFolder(previousName)
+        val recoverable = File(previous, otherName).apply { writeBytes(byteArrayOf(6, 4)) }
+
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(1, 1),
+            cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
+        )
+        assertFalse(safe.exists())
+        assertTrue(Files.isSymbolicLink(linked.toPath()))
+        assertArrayEquals(byteArrayOf(9, 7, 5), outside.readBytes())
+        assertArrayEquals(byteArrayOf(6, 4), recoverable.readBytes())
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(0, 1),
+            cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
+        )
+    }
+
+    @Test
     fun `directory sync failure is reported and subsequent cleanup is idempotent`() {
         active()
         val staging = stage()
