@@ -246,38 +246,53 @@ class AbandonedImageImportStagingCleanerTest {
 
 
     @Test
-    fun `noncanonical but backup accepted staging image is retained conservatively`() {
+    fun `uppercase backup accepted staging image can be cleaned when active root is safe`() {
         active()
         val safe = stage()
         val noncanonical = temp.newFolder("exercise-images-import-88888888-8888-4888-8888-888888888888")
-        // BackupDataCodec and stageReplacement currently accept upper-case hex in
-        // USER keys. The conservative cleaner intentionally does not infer that
-        // such a file is disposable: this leaves a retention gap, not data loss.
+        // ZIP v1 accepts uppercase hexadecimal keys; the cleaner must use the
+        // same safe filename character set without requiring canonical UUIDs.
         val upperCaseName = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
         val image = File(noncanonical, upperCaseName).apply { writeBytes(byteArrayOf(7, 4)) }
 
         assertEquals(
-            AbandonedImageImportStagingCleaner.Result(1, 1),
+            AbandonedImageImportStagingCleaner.Result(2, 0),
             cleaner().cleanupAfterRecovery(setOf("user:$imageName")),
         )
         assertFalse(safe.exists())
-        assertTrue(noncanonical.exists())
-        assertArrayEquals(byteArrayOf(7, 4), image.readBytes())
+        assertFalse(noncanonical.exists())
+        assertFalse(image.exists())
     }
 
     @Test
-    fun `noncanonical active USER reference prevents any staging deletion`() {
+    fun `uppercase backup accepted active USER reference allows safe staging cleanup`() {
         val root = active()
         val staging = stage()
         val upperCaseName = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
         File(root, upperCaseName).writeBytes(byteArrayOf(5))
 
         assertEquals(
-            AbandonedImageImportStagingCleaner.Result(0, 1),
+            AbandonedImageImportStagingCleaner.Result(1, 0),
             cleaner().cleanupAfterRecovery(setOf("user:$upperCaseName")),
         )
-        assertTrue(staging.exists())
+        assertFalse(staging.exists())
         assertArrayEquals(byteArrayOf(5), File(root, upperCaseName).readBytes())
+    }
+
+    @Test
+    fun `legacy noncanonical 36 character hex hyphen filename matches ZIP v1 safely`() {
+        val root = active()
+        val legacyName = "A".repeat(35) + "-"
+        val legacyImage = File(root, legacyName).apply { writeBytes(byteArrayOf(5, 4, 3)) }
+        val staging = temp.newFolder("exercise-images-import-99999999-9999-4999-8999-999999999999")
+        File(staging, legacyName).writeBytes(byteArrayOf(8, 7))
+
+        assertEquals(
+            AbandonedImageImportStagingCleaner.Result(1, 0),
+            cleaner().cleanupAfterRecovery(setOf("user:$legacyName")),
+        )
+        assertFalse(staging.exists())
+        assertArrayEquals(byteArrayOf(5, 4, 3), legacyImage.readBytes())
     }
 
 }
