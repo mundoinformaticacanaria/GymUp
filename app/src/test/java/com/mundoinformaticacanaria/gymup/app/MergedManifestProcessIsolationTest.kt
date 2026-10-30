@@ -36,18 +36,18 @@ class MergedManifestProcessIsolationTest {
         val activities = packageInfo.activities.orEmpty()
         val providers = packageInfo.providers.orEmpty()
         assertTrue("No MainActivity found in the test merged manifest", activities.any {
-            it.name == "$"+"{packageName}.MainActivity"
+            it.name == "${packageName}.MainActivity"
         })
         assertTrue("No FileProvider found in the test merged manifest", providers.any {
             it.name == "androidx.core.content.FileProvider"
         })
 
-        val components = activities.map { "Activity "+ "$"+"{it.name}" to it.processName } +
-            packageInfo.services.orEmpty().map { "Service "+ "$"+"{it.name}" to it.processName } +
-            packageInfo.receivers.orEmpty().map { "Receiver "+ "$"+"{it.name}" to it.processName } +
-            providers.map { "Provider "+ "$"+"{it.name}" to it.processName }
+        val components = activities.map { "Activity ${it.name}" to it.processName } +
+            packageInfo.services.orEmpty().map { "Service ${it.name}" to it.processName } +
+            packageInfo.receivers.orEmpty().map { "Receiver ${it.name}" to it.processName } +
+            providers.map { "Provider ${it.name}" to it.processName }
         components.forEach { (label, process) ->
-            assertEquals("$"+"label must share the default process", packageName, process ?: packageName)
+            assertEquals("$label must share the default process", packageName, process ?: packageName)
         }
     }
 }
