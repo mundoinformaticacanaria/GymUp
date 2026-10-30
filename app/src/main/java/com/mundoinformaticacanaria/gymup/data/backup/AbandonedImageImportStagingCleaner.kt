@@ -17,7 +17,7 @@ import java.nio.file.StandardOpenOption
  * A candidate is removed only if the active image root exists, is a safe flat directory,
  * and contains every referenced USER image as a nonempty regular file. This is a
  * structural check, NOT a proof of byte-level integrity or power-loss durability.
- * Unknown names, links and nested directories are preserved without traversal.
+ * Image names use the same legacy-safe character set accepted by ZIP v1\n * (36 ASCII hex/hyphen characters, including upper-case and noncanonical UUIDs).\n * This is a filename-safety check, not UUID validity or byte-integrity proof.\n * Unknown names, links and nested directories are preserved without traversal.
  */
 internal class AbandonedImageImportStagingCleaner(
     private val filesDir: File,
@@ -89,8 +89,11 @@ internal class AbandonedImageImportStagingCleaner(
         const val MAX_IMAGE_BYTES = 10L * 1024 * 1024
         const val UUID_PATTERN =
             "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-        val IMAGE_FILE = Regex("^$UUID_PATTERN$")
-        val USER_KEY = Regex("^user:$UUID_PATTERN$")
+        // BackupDataCodec and UserExerciseImageStore accept legacy noncanonical USER keys.
+        // Keep parity so valid imported images do not indefinitely retain staging.
+        // Slash, backslash, dot and all other path-control characters remain excluded.
+        val IMAGE_FILE = Regex("^[0-9a-fA-F-]{36}$")
+        val USER_KEY = Regex("^user:[0-9a-fA-F-]{36}$")
         val STAGING_DIRECTORY = Regex("^exercise-images-import-$UUID_PATTERN$")
     }
 }
