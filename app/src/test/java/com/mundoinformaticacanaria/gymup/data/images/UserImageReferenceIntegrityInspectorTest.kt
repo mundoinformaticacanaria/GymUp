@@ -101,6 +101,37 @@ class UserImageReferenceIntegrityInspectorTest {
         assertEquals(4, database.exerciseDao().getAllUserImageStorageKeys().size)
     }
 
+    @Test fun `shared missing USER image is reported once without dropping either Room reference`() = runBlocking {
+        val key = "user:${UUID.randomUUID()}"
+        insertUserImage(key, 1001)
+        insertUserImage(key, 1002)
+
+        val inspector = UserImageReferenceIntegrityInspector(isolatedContext, database.exerciseDao())
+        assertEquals(setOf(key), inspector.missingOrUnsafeStorageKeys())
+        assertEquals(2, database.exerciseDao().countUserImageStorageKeyReferences(key))
+        assertFalse(isolatedRoot.resolve("exercise-images").exists())
+    }
+
+    @Test fun `image size boundary is inclusive at ten MiB and rejects one extra byte`() = runBlocking {
+        val images = isolatedRoot.resolve("exercise-images").apply { check(mkdirs()) }
+        val acceptedName = UUID.randomUUID().toString()
+        val rejectedName = UUID.randomUUID().toString()
+        val acceptedFile = images.resolve(acceptedName)
+        val rejectedFile = images.resolve(rejectedName)
+        java.io.RandomAccessFile(acceptedFile, "rw").use { it.setLength(10L * 1024 * 1024) }
+        java.io.RandomAccessFile(rejectedFile, "rw").use { it.setLength(10L * 1024 * 1024 + 1) }
+        val acceptedKey = "user:$acceptedName"
+        val rejectedKey = "user:$rejectedName"
+        insertUserImage(acceptedKey, 1001)
+        insertUserImage(rejectedKey, 1002)
+
+        val inspector = UserImageReferenceIntegrityInspector(isolatedContext, database.exerciseDao())
+        assertEquals(setOf(rejectedKey), inspector.missingOrUnsafeStorageKeys())
+        assertEquals(10L * 1024 * 1024, acceptedFile.length())
+        assertEquals(10L * 1024 * 1024 + 1, rejectedFile.length())
+        assertEquals(2, database.exerciseDao().getAllUserImageStorageKeys().size)
+    }
+
     @Test fun `missing root without USER references is not an integrity defect`() = runBlocking {
         val inspector = UserImageReferenceIntegrityInspector(isolatedContext, database.exerciseDao())
         assertTrue(inspector.missingOrUnsafeStorageKeys().isEmpty())
