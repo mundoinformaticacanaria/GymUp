@@ -346,6 +346,13 @@ private class UserExerciseImageStore(
         // Preflight alone has a TOCTOU window. Open the final component without
         // following symlinks so a replacement after validation cannot leak other bytes.
         beforeRequiredImageRead(file)
+        // The image root may be swapped after preflight. NOFOLLOW_LINKS on the
+        // final file alone does not prevent traversal through a linked parent.
+        // Reject the substituted root before opening any image bytes.
+        requireSafePrivateParent()
+        check(Files.isDirectory(rootDir.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El directorio de imágenes personalizadas cambió a una ruta insegura"
+        }
         return try {
             Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS).use { input ->
                 val output = java.io.ByteArrayOutputStream()
