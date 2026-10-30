@@ -280,3 +280,38 @@ La CI del nuevo HEAD requiere confirmación. El inspector y el limpiador
 siguen desconectados de producción; no se borran `-previous-*`.
 No se ha demostrado durabilidad tras corte, ausencia de TOCTOU ni
 ejecución física de instrumentación API 35/36. La PR #57 permanece DRAFT.
+
+## Lectores observables y referencias compartidas — 2026-10-30 13:14 UTC
+
+Revisión estática adicional de `DefaultAppContainer`, `GymUpApp`,
+`RoomHistoryRepository`, `RoomCatalogRepositories`,
+`AppViewModel` y `UserPreferencesRepository`:
+
+- `RoomHistoryRepository` consulta directamente `trainingDao`,
+  `routineDao` y `exerciseDao`, incluyendo dos `Flow` observables y
+  `getExerciseHistory` con transacción de lectura. No utiliza la barrera
+  de escritores; no se observó mutación en ese adaptador.
+- `RoomMasterCatalogRepository` expone tres `Flow` de lectura de DAO
+  sin adquirir la barrera. Esto es coherente con el diseño actual solo
+  mientras **todos** los lectores UI permanezcan bajo leases y sean
+  desmontados antes del replace-all.
+- `GymUpReadyApp` adquiere el lease mediante `registerReader()` antes
+  de construir el `AppViewModel` y el `NavHost`; su
+  `ReaderViewModelOwner` limpia el `ViewModelStore` antes de liberar el
+  lease. El `AppViewModel` colecciona DataStore desde ese store. La
+  inspección de código no demuestra el comportamiento real con dos
+  Activity, recreación, procesos externos ni lectores futuros.
+
+Se publican dos pruebas Robolectric **solo del inspector aislado** en
+`UserImageReferenceIntegrityInspectorTest` (commit `1eb3e4d`):
+(1) dos filas Room que comparten la misma clave USER ausente deben
+informarse como una sola clave insegura, conservando ambas referencias;
+(2) el límite de 10 MiB es inclusivo y un byte adicional se informa
+como inseguro, sin alterar archivos ni filas. **Pendiente CI del HEAD
+nuevo**; no son pruebas Android instrumentadas ni acreditan durabilidad,
+integridad de contenido o seguridad ante cortes.
+
+El inspector y el limpiador siguen desconectados de producción. La
+auditoría de call sites y procesos no está cerrada; no activar limpieza
+automática ni fusionar PR #57 hasta cumplir API 35/36, cortes reales,
+manifiesto fusionado y regresión física BF-02.
