@@ -391,3 +391,28 @@ los ancestros, durabilidad tras corte o comportamiento Android 15/16.
 El inspector y limpiador de staging continúan desconectados de producción;
 `exercise-images-previous-*` se preserva. PR #57 permanece DRAFT y
 #56 abierta hasta los gates físicos y de recuperación pendientes.
+
+## Protección del padre privado en galería y mutaciones USER — 2026-10-30 19:12 UTC
+
+La revisión estática de `ExerciseImageManager` encontró que `addUserImage`,
+`validatedUserImageFile` (borrado) y `safeReadableUserImageFile`
+(galería/`readBytes`) validaban `exercise-images` y la entrada final, pero
+no que su padre `filesDir` fuera un directorio real sin enlaces simbólicos.
+Un `Context` con `filesDir` enlazado podía redirigir altas, lecturas o
+borrados a un árbol ajeno. Es un **riesgo estático**, no un incidente observado.
+
+La rama incorpora comprobación fail-closed del padre con
+`Files.isDirectory(..., NOFOLLOW_LINKS)` antes de crear imágenes, antes de
+validar un borrado y otra vez antes de tocar bytes después de mutar Room;
+la galería oculta la referencia y `readBytes` rechaza el padre enlazado.
+La compensación y la limpieza de temporales también evitan operar sobre
+entradas no regulares cuando el padre ya no es seguro. La prueba Robolectric
+`linkedPrivateParentRejectsImageWritesReadsAndDeletionWithoutChangingRoom`
+usa `ContextWrapper`, Room en memoria y un árbol externo con bytes
+centinela para verificar rechazo de alta/lectura/baja y conservación de
+referencias y bytes. **CI del HEAD nuevo por verificar**.
+
+Las comprobaciones de ruta no son una defensa atómica ante sustitución
+concurrente de ancestros (TOCTOU); no acreditan durabilidad ni exclusión
+entre procesos. No conectar limpieza aislada, no fusionar PR #57 ni cerrar
+#56 sin Android 15/16, cortes reales, auditoría completa y regresión BF-02.
