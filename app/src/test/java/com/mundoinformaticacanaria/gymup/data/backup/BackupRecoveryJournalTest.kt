@@ -146,7 +146,7 @@ class BackupRecoveryJournalTest {
     fun `journal syncs directory entries before reporting prepared and committed`() {
         val directory = File(temp.root, "recovery")
         val seen = mutableListOf<String>()
-        val journal = BackupRecoveryJournal(directory) { seen += it.canonicalPath }
+        val journal = BackupRecoveryJournal(directory, syncDirectory = { seen += it.canonicalPath })
 
         journal.prepare(byteArrayOf(1, 2, 3))
         assertEquals(
@@ -174,11 +174,11 @@ class BackupRecoveryJournalTest {
         val directory = File(temp.root, "recovery")
         val previous = byteArrayOf(4, 5, 6)
         var parentSyncs = 0
-        val journal = BackupRecoveryJournal(directory) { parent ->
+        val journal = BackupRecoveryJournal(directory, syncDirectory = { parent ->
             if (parent.canonicalPath == temp.root.canonicalPath && ++parentSyncs == 2) {
                 error("Simulated failure syncing published PREPARED directory")
             }
-        }
+        })
 
         assertTrue(runCatching { journal.prepare(previous) }.isFailure)
         assertEquals(2, parentSyncs)
@@ -194,11 +194,11 @@ class BackupRecoveryJournalTest {
     fun `failure to sync committed marker is reported and retains verifiable journal`() {
         val directory = File(temp.root, "recovery")
         var failOnCommit = false
-        val journal = BackupRecoveryJournal(directory) { parent ->
+        val journal = BackupRecoveryJournal(directory, syncDirectory = { parent ->
             if (failOnCommit && parent.canonicalPath == directory.canonicalPath) {
                 error("Simulated directory metadata sync failure")
             }
-        }
+        })
         journal.prepare(byteArrayOf(7, 8, 9))
         failOnCommit = true
 
@@ -213,11 +213,11 @@ class BackupRecoveryJournalTest {
         val directory = File(temp.root, "recovery")
         val preparing = File(temp.root, "recovery.preparing")
         val original = byteArrayOf(12, 13, 14)
-        val journal = BackupRecoveryJournal(directory) { synced ->
+        val journal = BackupRecoveryJournal(directory, syncDirectory = { synced ->
             if (synced.canonicalPath == temp.root.canonicalPath) {
                 error("Simulated parent fsync failure immediately after mkdir")
             }
-        }
+        })
 
         assertTrue(runCatching { journal.prepare(original) }.isFailure)
         assertFalse(directory.exists())
@@ -245,11 +245,11 @@ class BackupRecoveryJournalTest {
         val directory = File(temp.root, "recovery")
         val preparing = File(temp.root, "recovery.preparing")
         val original = byteArrayOf(15, 16, 17)
-        val journal = BackupRecoveryJournal(directory) { synced ->
+        val journal = BackupRecoveryJournal(directory, syncDirectory = { synced ->
             if (synced.canonicalPath == preparing.canonicalPath) {
                 error("Simulated fsync failure after staged archive rename")
             }
-        }
+        })
 
         assertTrue(runCatching { journal.prepare(original) }.isFailure)
         assertFalse(directory.exists())
