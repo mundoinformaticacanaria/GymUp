@@ -737,3 +737,17 @@ La composición de producción `DefaultAppContainer` invoca `BackupStartupGate.a
 La corrección `14e0095` marca `recoveryRequired` al entrar en la sección exclusiva de `BackupStartupGate` y solo lo retira tras recuperar, sembrar y reconciliar correctamente. La regresión `161306c` actualiza la expectativa previa que daba por válido un writer tras un replay fallido y añade escenarios de fallo de seed y reconciliación; comprueba bloqueo hasta un reintento completo. **CI del HEAD nuevo pendiente de comprobar**: no atribuir éxito a estas pruebas hasta verificar su ejecución.
 
 Esto protege solo a escritores que usan la barrera compartida. No demuestra protección de acceso directo a DAO, lectores ya montados, otros procesos, durabilidad ante corte ni TOCTOU atómico. Se mantienen PR #57 DRAFT sobre #50, #56 abierta y gates Android API35/36, cortes reales y regresión física BF-02. No habilitar limpiadores aislados ni borrar `exercise-images-previous-*`.
+
+## Cancelación de arranque y barrera compartida — 2026-10-31 18:12 UTC
+
+La suite `BarrierProtectedBackupStartupGateTest` incorpora dos regresiones JVM
+(commit `1ac394a`): cancelación de la corrutina durante recuperación y durante
+reconciliación de imágenes. Tras cancelar y liberar el mutex, los escritores
+cooperantes deben seguir rechazados; un nuevo `awaitReady()` debe repetir la
+secuencia completa y abrir la barrera solo al terminar correctamente.
+
+**Estado:** pruebas publicadas, pendiente verificar CI del HEAD que las contiene.
+No simulan terminación del proceso ni cortes de energía; no sustituyen Android
+API 35/36 instrumentado, auditoría de accesos DAO/lectores y regresión física
+BF-02. Mantener #56 abierta y PR #57 en borrador. No activar el limpiador de
+staging ni eliminar `exercise-images-previous-*`.
