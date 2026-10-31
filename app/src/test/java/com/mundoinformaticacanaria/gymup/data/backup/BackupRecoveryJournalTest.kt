@@ -753,6 +753,73 @@ class BackupRecoveryJournalTest {
     }
 
     @Test
+    fun `retired cleanup refuses root swapped to external symlink after preflight`() {
+        val directory = File(temp.root, "recovery")
+        val retired = File(temp.root, "recovery.retired")
+        val saved = File(temp.root, "saved-retired-cleanup")
+        val external = temp.newFolder("external-retired-cleanup")
+        val externalArchive = File(external, "previous.zip").apply { writeText("outside archive") }
+        val externalMarker = File(external, "state").apply { writeText("outside marker") }
+        var swapped = false
+        val journal = BackupRecoveryJournal(
+            directory,
+            beforeArtifactDelete = {
+                if (!swapped) {
+                    assertTrue(retired.renameTo(saved))
+                    Files.createSymbolicLink(retired.toPath(), external.toPath())
+                    swapped = true
+                }
+            },
+        )
+        val previous = byteArrayOf(71, 72, 73)
+        journal.prepare(previous)
+        journal.markCommitted()
+
+        assertTrue(runCatching { journal.cleanupCommitted() }.isFailure)
+        assertTrue(swapped)
+        assertTrue(Files.isSymbolicLink(retired.toPath()))
+        assertEquals("outside archive", externalArchive.readText())
+        assertEquals("outside marker", externalMarker.readText())
+        assertArrayEquals(previous, File(saved, "previous.zip").readBytes())
+
+        assertTrue(retired.delete())
+        assertTrue(saved.renameTo(retired))
+        BackupRecoveryJournal(directory).cleanupRetired()
+        assertFalse(retired.exists())
+        assertEquals("outside archive", externalArchive.readText())
+    }
+
+    @Test
+    fun `retired cleanup refuses entry replaced by directory after preflight`() {
+        val directory = File(temp.root, "recovery")
+        val retired = File(temp.root, "recovery.retired")
+        val saved = File(temp.root, "saved-retired-entry")
+        var swappedEntry: File? = null
+        val journal = BackupRecoveryJournal(
+            directory,
+            beforeArtifactDelete = { entry ->
+                if (swappedEntry == null) {
+                    assertTrue(entry.renameTo(saved))
+                    assertTrue(entry.mkdir())
+                    swappedEntry = entry
+                }
+            },
+        )
+        journal.prepare(byteArrayOf(74, 75, 76))
+        journal.markCommitted()
+
+        assertTrue(runCatching { journal.cleanupCommitted() }.isFailure)
+        val entry = swappedEntry ?: error("No se ejecutó el seam de limpieza")
+        assertTrue(entry.isDirectory)
+        assertTrue(saved.isFile)
+        assertTrue(retired.isDirectory)
+        assertTrue(entry.delete())
+        assertTrue(saved.renameTo(entry))
+        BackupRecoveryJournal(directory).cleanupRetired()
+        assertFalse(retired.exists())
+    }
+
+    @Test
     fun `linked private parent cannot create an external journal staging directory`() {
         val external = temp.newFolder("external-journal-parent")
         val linkedParent = File(temp.root, "linked-private-parent")
