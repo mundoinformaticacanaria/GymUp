@@ -553,3 +553,13 @@ de rutas no son atómicas frente a un adversario que cambie ancestros entre
 la comprobación y la operación (TOCTOU); tampoco acreditan exclusión entre
 procesos. No conectar limpiadores, no borrar `exercise-images-previous-*`
 ni fusionar PR #57 hasta cumplir los gates de #56.
+
+## Alta de imagen USER: sustitución de raíz entre preparación y publicación — 2026-10-31 05:09 UTC
+
+[Android CI #41167341834](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41167341834) terminó **SUCCESS** para el HEAD previo `9023332` (JVM/Robolectric, lint y compilaciones, sin instrumentación Android ni prueba de corte real).
+
+La auditoría de `ExerciseImageManager.addUserImageUnprotected()` detectó que, tras comprobar la raíz `exercise-images`, la ruta de alta abría un temporal con `NOFOLLOW_LINKS` únicamente en el componente final. El seam `beforeUserImageWrite` permitía sustituir la **raíz intermedia** por un symlink antes de abrirlo. Asimismo, `afterUserImageSync` permitía intercambiar esa raíz antes de validar/publicar la imagen y su referencia Room. Son ventanas reproducibles con fixtures controladas; no se ha observado incidente real.
+
+El commit `31ed962` añade `requireSafeImageDirectory()` después de ambos seams y alrededor de la publicación/sincronización, rechazando raíces sustituidas o enlazadas. `a7a0430` incorpora dos regresiones Robolectric con raíz intercambiada antes de abrir el descriptor y después del fsync; exigen que no se cree referencia Room ni se modifique el árbol externo. **La CI de este HEAD todavía debe verificarse**; el SUCCESS anterior no valida estos cambios.
+
+Estas verificaciones de ruta **no resuelven TOCTOU atómico** entre la última comprobación y apertura/rename, ni acreditan durabilidad en Android API 35/36, exclusión entre procesos o cortes de energía. No conectar el limpiador aislado, no eliminar `exercise-images-previous-*`, mantener #56 abierta y PR #57 en DRAFT. Se requiere ejecución instrumentada y regresión física BF-02 antes de integrar.
