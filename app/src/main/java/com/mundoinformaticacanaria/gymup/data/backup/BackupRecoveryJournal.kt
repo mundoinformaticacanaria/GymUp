@@ -81,6 +81,13 @@ internal class BackupRecoveryJournal(
         writeSynced(File(preparingDirectory, ARCHIVE_FILE), previousArchive)
         val digest = sha256(previousArchive)
         writeSynced(File(preparingDirectory, STATE_FILE), "$VERSION PREPARED $digest\n".toByteArray(Charsets.US_ASCII))
+        // Directory fsync can be followed by a root swap before publication. Never
+        // promote a symlink (or replace an unexpected active entry) as PREPARED.
+        requireSafeJournalDirectory(preparingDirectory)
+        requireNotSymlink(directory)
+        check(!Files.exists(directory.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "Apareció un journal activo durante la preparación"
+        }
         check(preparingDirectory.renameTo(directory)) { "No se pudo publicar el journal preparado" }
         // Persist the PREPARED directory entry before any caller can mutate domain data.
         syncDirectory(directory.parentFile)
