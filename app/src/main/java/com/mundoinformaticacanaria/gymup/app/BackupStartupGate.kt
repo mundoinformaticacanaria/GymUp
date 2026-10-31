@@ -33,12 +33,15 @@ internal class BackupStartupGate(
                 seed()
                 reconcileImages()
             } else {
-                // Hold one lock across BOTH phases: a writer cannot interleave between
-                // restoring the previous state and seeding the recovered database.
+                // Hold the same barrier across recovery, seeding and reconciliation.
+                // A failed or cancelled startup must keep cooperating writers blocked:
+                // awaiting the UI gate is not a guarantee for callers holding repositories.
                 writeBarrier.withExclusiveBackup {
+                    writeBarrier.markRecoveryRequired()
                     recover()
                     seed()
                     reconcileImages()
+                    writeBarrier.markRecovered()
                 }
             }
             ready = true
