@@ -170,6 +170,8 @@ internal class BackupRecoveryJournal(
             "Archivo de recuperación ausente o de tamaño inválido: ${file.name}"
         }
         beforeTrustedRead(file)
+        // NOFOLLOW_LINKS on the final file does not protect an intermediate journal root.
+        requireSafeJournalDirectory(file.parentFile)
         Files.newByteChannel(
             file.toPath(),
             setOf(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
@@ -194,6 +196,9 @@ internal class BackupRecoveryJournal(
         // CREATE_NEW plus NOFOLLOW_LINKS prevents a symlink injected after preflight
         // from redirecting journal bytes to another file. Never truncate an existing temp.
         beforeTrustedWrite(temp)
+        // Recheck after test hooks and before opening: the journal directory itself
+        // may have been replaced by a symlink while the final temp name remains safe.
+        requireSafeJournalDirectory(temp.parentFile)
         FileChannel.open(
             temp.toPath(),
             StandardOpenOption.WRITE,
@@ -211,6 +216,20 @@ internal class BackupRecoveryJournal(
         }
         // fsync(file) alone does not persist the rename/creation of its directory entry.
         syncDirectory(target.parentFile)
+    }
+
+    /**
+     * Reject a linked private parent or journal subdirectory before accessing bytes.
+     * This narrows deterministic directory swaps; path checks are not an atomic
+     * defence against concurrent ancestor replacement (TOCTOU).
+     */
+    private fun requireSafeJournalDirectory(path: File) {
+        check(Files.isDirectory(path.parentFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "Directorio padre de journal inseguro"
+        }
+        check(Files.isDirectory(path.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "Directorio de journal inseguro: ${path.name}"
+        }
     }
 
     /** Reject even dangling links: File.exists() follows links and can hide them. */
