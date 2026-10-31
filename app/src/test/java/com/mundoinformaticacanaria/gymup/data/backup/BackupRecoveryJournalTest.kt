@@ -520,4 +520,68 @@ class BackupRecoveryJournalTest {
         )
     }
 
+
+    @Test
+    fun `journal read rejects root swapped to symlink after file preflight`() {
+        val directory = File(temp.root, "recovery")
+        val previous = byteArrayOf(21, 22, 23)
+        BackupRecoveryJournal(directory).prepare(previous)
+        val outside = File(temp.root, "external-recovery")
+        BackupRecoveryJournal(outside).prepare(previous)
+        val saved = File(temp.root, "saved-recovery")
+        var swapped = false
+        val reader = BackupRecoveryJournal(
+            directory,
+            beforeTrustedRead = { file ->
+                if (file.name == "state" && !swapped) {
+                    assertTrue(directory.renameTo(saved))
+                    Files.createSymbolicLink(directory.toPath(), outside.toPath())
+                    swapped = true
+                }
+            },
+        )
+
+        assertTrue(runCatching { reader.inspect() }.isFailure)
+        assertTrue(swapped)
+        assertTrue(Files.isSymbolicLink(directory.toPath()))
+        assertArrayEquals(
+            previous,
+            (BackupRecoveryJournal(outside).inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
+        )
+        assertArrayEquals(
+            previous,
+            (BackupRecoveryJournal(saved).inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
+        )
+    }
+
+    @Test
+    fun `journal preparation refuses staging root swapped to symlink before temp open`() {
+        val directory = File(temp.root, "recovery")
+        val preparing = File(temp.root, "recovery.preparing")
+        val saved = File(temp.root, "saved-preparing")
+        val outside = File(temp.root, "external-staging")
+        assertTrue(outside.mkdir())
+        val sentinel = File(outside, "keep.txt")
+        sentinel.writeText("preserve")
+        var swapped = false
+        val journal = BackupRecoveryJournal(
+            directory,
+            beforeTrustedWrite = { file ->
+                if (file.name == "previous.zip.tmp" && !swapped) {
+                    assertTrue(preparing.renameTo(saved))
+                    Files.createSymbolicLink(preparing.toPath(), outside.toPath())
+                    swapped = true
+                }
+            },
+        )
+
+        assertTrue(runCatching { journal.prepare(byteArrayOf(31, 32)) }.isFailure)
+        assertTrue(swapped)
+        assertFalse(directory.exists())
+        assertTrue(Files.isSymbolicLink(preparing.toPath()))
+        assertFalse(File(outside, "previous.zip.tmp").exists())
+        assertEquals("preserve", sentinel.readText())
+        assertTrue(saved.isDirectory)
+    }
+
 }
