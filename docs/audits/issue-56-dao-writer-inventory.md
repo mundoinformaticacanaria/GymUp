@@ -751,3 +751,23 @@ No simulan terminación del proceso ni cortes de energía; no sustituyen Android
 API 35/36 instrumentado, auditoría de accesos DAO/lectores y regresión física
 BF-02. Mantener #56 abierta y PR #57 en borrador. No activar el limpiador de
 staging ni eliminar `exercise-images-previous-*`.
+
+## Escritor en cola entre fallo de arranque y reintento concurrente — 2026-10-31 20:15 UTC
+
+La secuencia de producción `BackupStartupGate.awaitReady()` mantiene el
+`BackupDomainWriteBarrier` durante recuperación, seeding y reconciliación.
+Se añadió la regresión JVM
+`BackupStartupConcurrentFailureBarrierTest.queued writer fails closed between failed startup and concurrent retry`
+(commit `77daeb1`) para comprobar una ventana de concurrencia distinta
+de los fallos secuenciales: un escritor ya en cola detrás de una recuperación
+que falla **debe ser rechazado**, incluso si otra Activity está esperando
+para reintentar el arranque. Solo después de un reintento completo se permite
+una nueva escritura. El test usa `CompletableDeferred` y
+`CoroutineStart.UNDISPATCHED`, sin esperas por reloj.
+
+**Estado al publicar:** test añadido, pendiente de CI para el HEAD que lo
+contiene. La prueba no demuestra acceso DAO fuera de los adaptadores,
+exclusión entre procesos, durabilidad Room/DataStore/filesystem, ausencia
+de TOCTOU ni compatibilidad real Android 15/16. No conectar el limpiador
+aislado ni borrar `exercise-images-previous-*`; #56 permanece abierta,
+PR #57 en DRAFT sobre #50 y BF-02 pendiente de regresión física.
