@@ -477,7 +477,7 @@ procesos, pruebas de durabilidad/cortes ni ejecución instrumentada API35/36.
 No activar el limpiador aislado ni borrar `exercise-images-previous-*`.
 #56 continúa abierta y PR #57 en DRAFT, pendiente también de BF-02 física.
 
-## Activación de staging tras sincronización — 2026-10-31 00:17 UTC
+## Activación de staging tras sincronización — 2026-10-31 00:14 UTC
 
 La [CI #41142922249](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41142922249) finalizó **SUCCESS** para el HEAD anterior `9213e6d`: job `verify` (JVM/Robolectric, lint, debug y compilación de androidTest); **no ejecuta pruebas Android instrumentadas**.
 
