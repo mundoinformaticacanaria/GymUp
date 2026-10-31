@@ -652,4 +652,64 @@ class BackupRecoveryJournalTest {
         assertArrayEquals(previous, File(saved, "previous.zip").readBytes())
         assertTrue(File(saved, "state").isFile)
     }
+
+    @Test
+    fun `prepared preimage rejects temporary symlink swapped after file sync`() {
+        val directory = File(temp.root, "recovery")
+        val preparing = File(temp.root, "recovery.preparing")
+        val outside = File(temp.root, "outside-synced-preimage")
+        outside.writeBytes(byteArrayOf(90, 91, 92))
+        val saved = File(temp.root, "saved-synced-preimage")
+        var injected = false
+        val journal = BackupRecoveryJournal(
+            directory,
+            beforeTrustedPublish = { temporary ->
+                if (temporary.name == "previous.zip.tmp" && !injected) {
+                    assertTrue(temporary.renameTo(saved))
+                    Files.createSymbolicLink(temporary.toPath(), outside.toPath())
+                    injected = true
+                }
+            },
+        )
+
+        assertTrue(runCatching { journal.prepare(byteArrayOf(1, 2, 3)) }.isFailure)
+        assertTrue(injected)
+        assertFalse(directory.exists())
+        assertTrue(Files.isSymbolicLink(File(preparing, "previous.zip.tmp").toPath()))
+        assertArrayEquals(byteArrayOf(90, 91, 92), outside.readBytes())
+        assertArrayEquals(byteArrayOf(1, 2, 3), saved.readBytes())
+    }
+
+    @Test
+    fun `committed marker rejects temporary symlink swapped after file sync`() {
+        val directory = File(temp.root, "recovery")
+        val outside = File(temp.root, "outside-synced-marker")
+        outside.writeText("external state remains unchanged")
+        val saved = File(temp.root, "saved-synced-marker")
+        val previous = byteArrayOf(4, 5, 6)
+        var commitPhase = false
+        var injected = false
+        val journal = BackupRecoveryJournal(
+            directory,
+            beforeTrustedPublish = { temporary ->
+                if (commitPhase && temporary.name == "state.tmp" && !injected) {
+                    assertTrue(temporary.renameTo(saved))
+                    Files.createSymbolicLink(temporary.toPath(), outside.toPath())
+                    injected = true
+                }
+            },
+        )
+        journal.prepare(previous)
+        commitPhase = true
+
+        assertTrue(runCatching { journal.markCommitted() }.isFailure)
+        assertTrue(injected)
+        assertTrue(Files.isSymbolicLink(File(directory, "state.tmp").toPath()))
+        assertEquals("external state remains unchanged", outside.readText())
+        assertTrue(saved.isFile)
+        assertArrayEquals(
+            previous,
+            (BackupRecoveryJournal(directory).inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
+        )
+    }
 }
