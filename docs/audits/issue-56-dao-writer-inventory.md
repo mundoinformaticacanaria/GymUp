@@ -625,3 +625,26 @@ reproducción determinista preparada; **no se confirma incidente real**.
   real, auditoría exhaustiva DAO/lectores/procesos y regresión física BF-02.
   Mantener #56 abierta, PR #57 DRAFT sobre #50, limpiador/inspector
   aislados y `exercise-images-previous-*` preservado.
+
+## Recuperación fallida en arranque y reapertura accidental del barrier — 2026-10-31 09:08 UTC
+
+Revisión de `BarrierProtectedJournaledBackupDataSource.recoverBeforeDataAccess()`:
+antes de esta corrección, solo se invocaba `markRecovered()` tras el replay,
+pero el `BackupDomainWriteBarrier` se inicializa con `recoveryRequired = false`.
+Si el replay de un journal PREPARED fallaba antes de que la app quedara
+habilitada, la barrera **por sí sola** permitía a escritores cooperantes
+reanudar mutaciones; la puerta de arranque de `DefaultAppContainer` seguía
+siendo la protección principal, pero no debía asumirse como única defensa.
+Es un fallo de defensa en profundidad, no una pérdida de datos confirmada.
+
+`8f044f0` marca la recuperación como requerida **antes** de invocar el
+replay, dentro del mismo mutex exclusivo; solo un replay exitoso la libera.
+`1e9e6ac` añade una regresión JVM con journal PREPARED y fallo de
+restauración simulado: verifica que las escrituras y exportaciones quedan
+bloqueadas y que un reintento correcto restaura el estado y abre la barrera.
+La nueva CI del HEAD debe verificarse antes de declarar el test validado.
+
+Esto no sustituye la puerta de arranque, el aislamiento entre procesos,
+el control de lectores ya compuestos, las pruebas de durabilidad/corte
+real ni la instrumentación Android API35/36. Mantener #56 abierta,
+PR #57 DRAFT sobre #50 y las restricciones sobre limpieza y BF-02.
