@@ -525,3 +525,9 @@ corte de energía. Mantener #56 abierta, PR #57 DRAFT sobre #50,
 inspector/limpiador desconectados y `exercise-images-previous-*`
 preservados. Siguen pendientes API35/36 instrumentado, cortes reales,
 auditoría global de DAO/lectores/procesos y BF-02 física.
+
+## Publicación segura de temporales de journal — 2026-10-31 03:10 UTC
+
+La [CI #41159132133](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41159132133) terminó **SUCCESS** para el HEAD anterior `6bc3a4b` (verificación JVM/Robolectric, lint y compilación; no ejecuta Android instrumentado). En la revisión de `BackupRecoveryJournal.writeSynced()` se identificó otra ventana determinista: el descriptor `CREATE_NEW + NOFOLLOW_LINKS` asegura la escritura del temporal, pero después de su `force(true)` el `renameTo` publica de nuevo la ruta, que podía haberse sustituido por un enlace simbólico. Esto podía promocionar un enlace como `previous.zip` o `state` y bloquear una recuperación posterior; no hay incidente real confirmado.
+
+El commit `3607441` añade una revalidación fail-closed del directorio, temporal regular sin seguir enlaces y destino no enlazado justo antes de publicar; `8dcfb91` añade dos pruebas JVM de sustitución después del fsync, antes de publicar PREPARED y COMMITTED, con preservación de los bytes externos y del PREPARED previo. **Estos cambios requieren CI del HEAD nuevo; no se atribuye el SUCCESS anterior.** Las comprobaciones por ruta siguen sin resolver la carrera TOCTOU atómica, y tampoco prueban durabilidad ante corte, Android 15/16 ni ausencia de accesos DAO directos. PR #57 permanece DRAFT, #56 abierta; no conectar limpiador ni borrar `exercise-images-previous-*`.
