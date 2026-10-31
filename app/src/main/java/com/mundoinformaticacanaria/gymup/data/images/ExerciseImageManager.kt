@@ -38,6 +38,8 @@ class ExerciseImageManager internal constructor(
     private val removeUserImageFile: (File) -> Boolean = File::delete,
     // Deterministic seam: an error/cancellation can happen after Room accepted the new row.
     private val afterImageRowInsert: suspend (ExerciseImageEntity) -> Unit = {},
+    // Test seam: a directory swap may occur after Room deletes the row but before file removal.
+    private val afterImageRowDelete: suspend (ExerciseImageEntity) -> Unit = {},
     // Production supplies the AppContainer-wide barrier; tests may omit it.
     private val domainWriteBarrier: BackupDomainWriteBarrier? = null,
     // Deterministic seam for a file replaced between validation and descriptor open.
@@ -232,12 +234,21 @@ class ExerciseImageManager internal constructor(
         // journal/startup protocol and a shared domain write barrier (Issue #56).
         exerciseDao.deleteImage(image)
         val failure = try {
-            // Recheck the parent after Room mutation, before touching file bytes.
-            // Failure restores the row while leaving external paths untouched.
-            requireSafePrivateParent()
+            afterImageRowDelete(image)
+            // The image root can change after Room commits the deletion. A safe filesDir
+            // alone is insufficient: reject a linked/non-directory intermediate root.
+            requireSafeImageRootForDeletion()
+            check(!Files.isSymbolicLink(file.toPath())) {
+                "La imagen fue sustituida por un enlace simbólico antes del borrado"
+            }
             if (file.exists()) {
+                check(Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                    "La imagen dejó de ser un archivo regular antes del borrado"
+                }
                 when {
                     !removeUserImageFile(file) -> IOException("No se pudo eliminar el archivo de imagen")
+                    runCatching { requireSafeImageRootForDeletion() }.isFailure ->
+                        IOException("El directorio de imágenes cambió durante el borrado")
                     file.exists() -> IOException("El archivo de imagen sigue presente tras el borrado")
                     else -> {
                         // Persist the directory removal before reporting a successful deletion.
@@ -257,11 +268,25 @@ class ExerciseImageManager internal constructor(
                 // A deletion hook can remove the bytes and then throw (for example, after
                 // an I/O side effect). Never recreate a Room reference to a missing file.
                 // If the bytes still exist, compensate the metadata as before.
-                if (file.isFile) {
+                // If the root was swapped/removed before the file was touched, retain
+                // metadata for recovery rather than irreversibly dropping the reference.
+                // When the root is safe, never recreate a row for already-missing bytes.
+                val rootSafe = hasSafePrivateParent() &&
+                    Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)
+                if (!rootSafe || Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                     runCatching { exerciseDao.insertImage(image) }.onFailure(failure::addSuppressed)
                 }
             }
             throw failure
+        }
+    }
+
+    private fun requireSafeImageRootForDeletion() {
+        requireSafePrivateParent()
+        check(!Files.isSymbolicLink(imageDirectory.toPath()) &&
+            (!Files.exists(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS) ||
+                Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS))) {
+            "El directorio de imágenes no es seguro para borrar"
         }
     }
 
