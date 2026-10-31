@@ -1051,6 +1051,61 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `staging swapped after preserving old root restores original on rollback`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val image = manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val original = RoomBackupDataSource(context, database, preferences).exportSnapshot()
+        val data = BackupDataCodec.decode(original.data.decodeToString()).getOrThrow()
+        val replacement = BackupSnapshot(
+            data = BackupDataCodec.encode(
+                data.copy(preferences = BackupPreferences(ThemeMode.LIGHT.name)),
+            ).encodeToByteArray(),
+            images = mapOf(image.storageKey to byteArrayOf(4, 5, 6)),
+        )
+        val outside = File(context.cacheDir, "outside-preserved-root-${UUID.randomUUID()}")
+            .apply { assertTrue(mkdirs()) }
+        val sentinel = outside.resolve("sentinel").apply { writeBytes(byteArrayOf(91, 92, 93)) }
+        var savedStaging: File? = null
+        var stagingLink: File? = null
+        var parentSyncs = 0
+
+        try {
+            val unsafe = RoomBackupDataSource(
+                context, database, preferences,
+                imageDirectorySync = { directory ->
+                    if (directory.absolutePath == context.filesDir.absolutePath) {
+                        parentSyncs++
+                        if (parentSyncs == 2) {
+                            val staging = context.filesDir.listFiles().orEmpty().single {
+                                it.name.startsWith("exercise-images-import-")
+                            }
+                            val saved = File(context.filesDir, "saved-staging-${UUID.randomUUID()}")
+                            assertTrue(staging.renameTo(saved))
+                            savedStaging = saved
+                            stagingLink = staging
+                            Files.createSymbolicLink(staging.toPath(), outside.toPath())
+                        }
+                    }
+                },
+            )
+            val failure = runCatching { unsafe.replaceAll(replacement) }.exceptionOrNull()
+            assertTrue("A post-preservation staging swap must abort", failure is IllegalStateException)
+            assertEquals(3, parentSyncs)
+            assertArrayEquals(byteArrayOf(91, 92, 93), sentinel.readBytes())
+            assertArrayEquals(original.data,
+                RoomBackupDataSource(context, database, preferences).exportSnapshot().data)
+            assertArrayEquals(byteArrayOf(1, 2, 3), manager.readBytes(image))
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+            assertEquals(1, database.exerciseDao().getImages(exercise.id).size)
+        } finally {
+            stagingLink?.let { Files.deleteIfExists(it.toPath()) }
+            savedStaging?.deleteRecursively()
+            outside.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `oversized staged image fails before Room and preserves previous data`() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val manager = ExerciseImageManager(context, database.exerciseDao())
