@@ -28,6 +28,8 @@ internal class BackupRecoveryJournal(
     private val beforeInterruptedCommitCleanup: (File) -> Unit = {},
     // Injected by tests to verify ordering/fail-closed behavior; production syncs metadata.
     private val syncDirectory: (File) -> Unit = ::syncDirectoryMetadata,
+    // Deterministic seam: replace a retired/preparing root after preflight, before deletion.
+    private val beforeArtifactDelete: (File) -> Unit = {},
 ) {
     /** Stable in-process identity shared by coordinator instances for this journal path. */
     internal val lockKey: String = directory.canonicalPath
@@ -178,8 +180,14 @@ internal class BackupRecoveryJournal(
             }
         }
         entries.forEach { entry ->
-            // Recheck ancestors before each destructive operation; still not atomic TOCTOU.
+            // The root or a preflighted entry can change before the destructive operation.
+            beforeArtifactDelete(entry)
             requireSafeJournalDirectory(path)
+            requireNotSymlink(entry)
+            check(Files.isRegularFile(entry.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                "Artefacto de journal inseguro antes del borrado: ${entry.name}"
+            }
+            // Path checks narrow deterministic swaps, but do not provide atomic TOCTOU safety.
             check(entry.delete()) { "No se pudo eliminar el archivo de journal: ${entry.name}" }
         }
         requireSafeJournalDirectory(path)
