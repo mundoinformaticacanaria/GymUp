@@ -42,12 +42,14 @@ internal class BackupRecoveryJournal(
 
     /** Fail closed on unsafe recovery artifacts before best-effort cleanup can suppress errors. */
     internal fun verifyPathSafety() {
+        requireSafeJournalParent()
         requireNotSymlink(directory)
         requireNotSymlink(preparingDirectory)
         requireNotSymlink(retiredDirectory)
     }
 
     fun inspect(): State {
+        requireSafeJournalParent()
         requireNotSymlink(directory)
         if (!directory.exists()) return State.Absent
         check(directory.isDirectory) { "El journal no es un directorio" }
@@ -67,6 +69,8 @@ internal class BackupRecoveryJournal(
     }
 
     fun prepare(previousArchive: ByteArray) {
+        // mkdirs() must never create staging through a linked private parent.
+        requireSafeJournalParent()
         requireNotSymlink(directory)
         requireNotSymlink(retiredDirectory)
         requireNotSymlink(preparingDirectory)
@@ -120,6 +124,7 @@ internal class BackupRecoveryJournal(
         check(inspect() is State.Committed) { "No se puede eliminar un journal pendiente" }
         requireNotSymlink(retiredDirectory)
         check(!retiredDirectory.exists()) { "Queda una limpieza anterior pendiente" }
+        requireSafeJournalDirectory(directory)
         check(directory.renameTo(retiredDirectory)) { "No se pudo retirar el journal confirmado" }
         syncDirectory(directory.parentFile)
         cleanupRetired()
@@ -149,6 +154,7 @@ internal class BackupRecoveryJournal(
      * This is still not an atomic defence against a concurrent filesystem attacker (TOCTOU).
      */
     private fun cleanupJournalArtifacts(path: File) {
+        requireSafeJournalDirectory(path)
         requireNotSymlink(path)
         check(path.isDirectory) { "La ruta de limpieza no es un directorio de journal" }
         val entries = path.listFiles() ?: error("No se pudo inspeccionar el directorio de journal")
@@ -160,8 +166,11 @@ internal class BackupRecoveryJournal(
             }
         }
         entries.forEach { entry ->
+            // Recheck ancestors before each destructive operation; still not atomic TOCTOU.
+            requireSafeJournalDirectory(path)
             check(entry.delete()) { "No se pudo eliminar el archivo de journal: ${entry.name}" }
         }
+        requireSafeJournalDirectory(path)
         check(path.delete()) { "No se pudo eliminar el directorio de journal" }
         syncDirectory(path.parentFile)
     }
@@ -242,6 +251,12 @@ internal class BackupRecoveryJournal(
      * This narrows deterministic directory swaps; path checks are not an atomic
      * defence against concurrent ancestor replacement (TOCTOU).
      */
+    private fun requireSafeJournalParent() {
+        check(Files.isDirectory(directory.parentFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "Directorio privado padre de journal inseguro"
+        }
+    }
+
     private fun requireSafeJournalDirectory(path: File) {
         check(Files.isDirectory(path.parentFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
             "Directorio padre de journal inseguro"
