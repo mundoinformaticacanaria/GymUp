@@ -439,4 +439,64 @@ class ExerciseImageDurabilityTest {
             outside.delete()
         }
     }
+
+    @Test
+    fun `swapped image root before descriptor cannot write outside private storage`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val root = context.filesDir.resolve("exercise-images")
+        val parked = context.filesDir.resolve("exercise-images-parked-before-write")
+        val outside = context.filesDir.resolve("outside-root-before-write").apply { mkdirs() }
+        val marker = outside.resolve("marker").apply { writeText("untouched") }
+        try {
+            val manager = ExerciseImageManager(
+                context = context,
+                exerciseDao = database.exerciseDao(),
+                beforeUserImageWrite = {
+                    Files.move(root.toPath(), parked.toPath())
+                    Files.createSymbolicLink(root.toPath(), outside.toPath())
+                },
+            )
+            val failure = runCatching {
+                manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+            }.exceptionOrNull()
+            assertTrue(failure is IllegalStateException)
+            assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+            assertEquals("untouched", marker.readText())
+            assertEquals(listOf("marker"), outside.listFiles().orEmpty().map { it.name })
+        } finally {
+            if (Files.isSymbolicLink(root.toPath())) Files.delete(root.toPath())
+            if (parked.exists()) Files.move(parked.toPath(), root.toPath())
+            outside.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `swapped image root after fsync cannot publish image or Room reference`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val root = context.filesDir.resolve("exercise-images")
+        val parked = context.filesDir.resolve("exercise-images-parked-after-sync")
+        val outside = context.filesDir.resolve("outside-root-after-sync").apply { mkdirs() }
+        val marker = outside.resolve("marker").apply { writeText("untouched") }
+        try {
+            val manager = ExerciseImageManager(
+                context = context,
+                exerciseDao = database.exerciseDao(),
+                afterUserImageSync = {
+                    Files.move(root.toPath(), parked.toPath())
+                    Files.createSymbolicLink(root.toPath(), outside.toPath())
+                },
+            )
+            val failure = runCatching {
+                manager.addUserImage(exercise.id, byteArrayOf(4, 5, 6))
+            }.exceptionOrNull()
+            assertTrue(failure is IllegalStateException)
+            assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+            assertEquals("untouched", marker.readText())
+            assertEquals(listOf("marker"), outside.listFiles().orEmpty().map { it.name })
+        } finally {
+            if (Files.isSymbolicLink(root.toPath())) Files.delete(root.toPath())
+            if (parked.exists()) Files.move(parked.toPath(), root.toPath())
+            outside.deleteRecursively()
+        }
+    }
 }
