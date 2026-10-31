@@ -22,6 +22,8 @@ internal class BackupRecoveryJournal(
     private val beforeTrustedRead: (File) -> Unit = {},
     // Deterministic seam: swap a validated temporary file before its descriptor is opened.
     private val beforeTrustedWrite: (File) -> Unit = {},
+    // Deterministic seam: replace a synced temporary entry before its publication rename.
+    private val beforeTrustedPublish: (File) -> Unit = {},
     // Injected by tests to verify ordering/fail-closed behavior; production syncs metadata.
     private val syncDirectory: (File) -> Unit = ::syncDirectoryMetadata,
 ) {
@@ -215,6 +217,16 @@ internal class BackupRecoveryJournal(
             Channels.newOutputStream(channel).write(bytes)
             channel.force(true)
         }
+        // A synced temporary entry can be swapped before its rename. NOFOLLOW_LINKS
+        // protected the write descriptor, but not the later path-based publication.
+        // Reject a linked temp, a swapped journal root, or a linked target instead
+        // of promoting an untrusted entry into PREPARED/COMMITTED.
+        beforeTrustedPublish(temp)
+        requireSafeJournalDirectory(temp.parentFile)
+        check(Files.isRegularFile(temp.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "Temporal de journal inseguro antes de publicarlo: ${temp.name}"
+        }
+        requireNotSymlink(target)
         if (replace) {
             // Do not remove PREPARED before COMMITTED is ready: keep the old marker if rename fails.
             check(temp.renameTo(target)) { "No se pudo confirmar el journal" }
