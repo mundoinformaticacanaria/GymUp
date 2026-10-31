@@ -620,4 +620,36 @@ class BackupRecoveryJournalTest {
         )
     }
 
+
+    @Test
+    fun `prepared journal refuses staging root swapped after final directory sync`() {
+        val directory = File(temp.root, "recovery")
+        val preparing = File(temp.root, "recovery.preparing")
+        val saved = File(temp.root, "saved-prepared")
+        val outside = File(temp.root, "outside-prepared")
+        assertTrue(outside.mkdir())
+        val sentinel = File(outside, "keep.txt")
+        sentinel.writeText("preserve")
+        val previous = byteArrayOf(81, 82, 83)
+        var stagingSyncs = 0
+        val journal = BackupRecoveryJournal(
+            directory,
+            syncDirectory = { parent ->
+                if (parent.absolutePath == preparing.absolutePath && ++stagingSyncs == 2) {
+                    // Both journal files were synced, but publication has not happened.
+                    assertTrue(preparing.renameTo(saved))
+                    Files.createSymbolicLink(preparing.toPath(), outside.toPath())
+                }
+            },
+        )
+
+        assertTrue(runCatching { journal.prepare(previous) }.isFailure)
+        assertEquals(2, stagingSyncs)
+        assertFalse(directory.exists())
+        assertTrue(Files.isSymbolicLink(preparing.toPath()))
+        assertEquals("preserve", sentinel.readText())
+        assertFalse(File(outside, "previous.zip").exists())
+        assertArrayEquals(previous, File(saved, "previous.zip").readBytes())
+        assertTrue(File(saved, "state").isFile)
+    }
 }
