@@ -2,6 +2,7 @@ package com.mundoinformaticacanaria.gymup.app
 
 import com.mundoinformaticacanaria.gymup.data.backup.BackupDomainWriteBarrier
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -151,6 +152,69 @@ class BarrierProtectedBackupStartupGateTest {
         assertTrue(runCatching { barrier.withDomainWrite { "unsafe" } }.isFailure)
         gate.awaitReady()
         assertEquals(2, cleanupAttempts)
+        assertEquals("ready", barrier.withDomainWrite { "ready" })
+    }
+
+
+    @Test
+    fun `cancelled recovery keeps cooperating writers blocked until startup retry`() = runBlocking {
+        val barrier = BackupDomainWriteBarrier()
+        val enteredRecovery = CompletableDeferred<Unit>()
+        val waitForever = CompletableDeferred<Unit>()
+        var recoveries = 0
+        var seeds = 0
+        val gate = BackupStartupGate(
+            recover = {
+                if (++recoveries == 1) {
+                    enteredRecovery.complete(Unit)
+                    waitForever.await()
+                }
+            },
+            seed = { seeds++ },
+            writeBarrier = barrier,
+        )
+
+        val first = launch { gate.awaitReady() }
+        enteredRecovery.await()
+        first.cancelAndJoin()
+
+        assertEquals(0, seeds)
+        assertTrue(runCatching { barrier.withDomainWrite { "unsafe" } }.isFailure)
+        gate.awaitReady()
+        assertEquals(2, recoveries)
+        assertEquals(1, seeds)
+        assertEquals("ready", barrier.withDomainWrite { "ready" })
+    }
+
+    @Test
+    fun `cancelled reconciliation keeps cooperating writers blocked until full retry`() = runBlocking {
+        val barrier = BackupDomainWriteBarrier()
+        val enteredReconciliation = CompletableDeferred<Unit>()
+        val waitForever = CompletableDeferred<Unit>()
+        var recoveries = 0
+        var seeds = 0
+        var reconciliations = 0
+        val gate = BackupStartupGate(
+            recover = { recoveries++ },
+            seed = { seeds++ },
+            reconcileImages = {
+                if (++reconciliations == 1) {
+                    enteredReconciliation.complete(Unit)
+                    waitForever.await()
+                }
+            },
+            writeBarrier = barrier,
+        )
+
+        val first = launch { gate.awaitReady() }
+        enteredReconciliation.await()
+        first.cancelAndJoin()
+
+        assertTrue(runCatching { barrier.withDomainWrite { "unsafe" } }.isFailure)
+        gate.awaitReady()
+        assertEquals(2, recoveries)
+        assertEquals(2, seeds)
+        assertEquals(2, reconciliations)
         assertEquals("ready", barrier.withDomainWrite { "ready" })
     }
 
