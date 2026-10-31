@@ -648,3 +648,15 @@ Esto no sustituye la puerta de arranque, el aislamiento entre procesos,
 el control de lectores ya compuestos, las pruebas de durabilidad/corte
 real ni la instrumentación Android API35/36. Mantener #56 abierta,
 PR #57 DRAFT sobre #50 y las restricciones sobre limpieza y BF-02.
+
+## Cancelación del replay de arranque — 2026-10-31 10:13 UTC
+
+Se añade una regresión JVM en `BarrierProtectedJournaledBackupDataSourceTest`
+(commit `04ab8aa`) para cancelar el primer replay de un journal `PREPARED`
+cuando el adaptador todavía está suspendido. Comprueba que el journal sigue
+`PREPARED`, el dominio parcial no se exporta, los escritores cooperantes
+permanecen bloqueados y un segundo replay completo restablece los datos y
+reabre la barrera. El test usa una suspensión determinista en memoria; **no
+simula muerte de proceso, corte de energía ni Android real**. No acredita
+cobertura de escritores ajenos a la barrera ni resuelve TOCTOU o los gates
+físicos API 35/36. PR #57 continúa DRAFT y #56 abierta.
