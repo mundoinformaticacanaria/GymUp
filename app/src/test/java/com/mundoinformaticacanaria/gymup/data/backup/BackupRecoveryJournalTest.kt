@@ -856,4 +856,41 @@ class BackupRecoveryJournalTest {
         assertTrue(preparing.isDirectory)
     }
 
+
+    @Test
+    fun `failed fsync after retiring committed journal is retryable without restoring old data`() {
+        val directory = File(temp.root, "recovery")
+        val retired = File(temp.root, "recovery.retired")
+        var failedOnce = false
+        val journal = BackupRecoveryJournal(directory, syncDirectory = { parent ->
+            if (!failedOnce &&
+                parent.canonicalPath == temp.root.canonicalPath &&
+                retired.isDirectory &&
+                !directory.exists()
+            ) {
+                failedOnce = true
+                error("Simulated parent fsync failure after retiring COMMITTED")
+            }
+        })
+        journal.prepare(byteArrayOf(4, 8, 12))
+        journal.markCommitted()
+
+        assertTrue(runCatching { journal.cleanupCommitted() }.isFailure)
+        assertTrue(failedOnce)
+        assertFalse(directory.exists())
+        assertTrue(retired.isDirectory)
+
+        // The COMMITTED marker was retired before the failed fsync. Startup must
+        // clean only the retired artifacts, never replay the old pre-image.
+        var replayed = false
+        kotlinx.coroutines.runBlocking {
+            BackupRecoveryCoordinator(BackupRecoveryJournal(directory)).recoverBeforeDataAccess {
+                replayed = true
+            }
+        }
+        assertFalse(replayed)
+        assertFalse(retired.exists())
+        assertEquals(BackupRecoveryJournal.State.Absent, BackupRecoveryJournal(directory).inspect())
+    }
+
 }
