@@ -55,6 +55,13 @@ class ExerciseImageManager internal constructor(
         check(hasSafePrivateParent()) { "El directorio privado de imágenes no es seguro" }
     }
 
+    private fun requireSafeImageDirectory() {
+        requireSafePrivateParent()
+        check(Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El directorio de imágenes fue sustituido o dejó de ser seguro"
+        }
+    }
+
     fun observeImages(exerciseId: String): Flow<List<ExerciseImageItem>> =
         exerciseDao.observeImages(exerciseId).map { images -> images.map(::toItem) }
 
@@ -99,6 +106,8 @@ class ExerciseImageManager internal constructor(
             // CREATE_NEW and NOFOLLOW_LINKS prevent a substituted temporary symlink from
             // truncating an external file. The random name alone is not a security boundary.
             beforeUserImageWrite(temporaryFile)
+            // NOFOLLOW_LINKS on the file does not protect a replaced ancestor directory.
+            requireSafeImageDirectory()
             FileChannel.open(
                 temporaryFile.toPath(),
                 StandardOpenOption.CREATE_NEW,
@@ -111,6 +120,7 @@ class ExerciseImageManager internal constructor(
             check(temporaryFile.length() == bytes.size.toLong()) { "No se pudo guardar la imagen" }
             // Deterministic test seam: failure here must leave neither a published file nor Room metadata.
             afterUserImageSync(temporaryFile)
+            requireSafeImageDirectory()
             check(Files.isRegularFile(temporaryFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                 "El temporal de imagen dejó de ser un archivo regular"
             }
@@ -128,7 +138,7 @@ class ExerciseImageManager internal constructor(
                     "La imagen temporal cambió después de sincronizarse"
                 }
             }
-            requireSafePrivateParent()
+            requireSafeImageDirectory()
             check(temporaryFile.renameTo(finalFile)) { "No se pudo activar la imagen guardada" }
             val entity = ExerciseImageEntity(
                 id = id,
@@ -143,7 +153,9 @@ class ExerciseImageManager internal constructor(
             try {
                 // Persist the rename before publishing the Room reference. A file fsync
                 // alone cannot guarantee the new directory entry survives a crash.
+                requireSafeImageDirectory()
                 syncImageDirectory(imageDirectory)
+                requireSafeImageDirectory()
                 exerciseDao.insertImage(entity)
                 afterImageRowInsert(entity)
             } catch (error: Throwable) {
