@@ -771,3 +771,22 @@ exclusión entre procesos, durabilidad Room/DataStore/filesystem, ausencia
 de TOCTOU ni compatibilidad real Android 15/16. No conectar el limpiador
 aislado ni borrar `exercise-images-previous-*`; #56 permanece abierta,
 PR #57 en DRAFT sobre #50 y BF-02 pendiente de regresión física.
+
+## Marcador de confirmación interrumpido tras inspect — 2026-10-31 22:10 UTC
+
+Se amplía la regresión JVM de `BackupRecoveryJournal.markCommitted()`
+(commit `b79df0b`) para distinguir dos casos **después** de validar el
+journal PREPARED:
+
+- Si aparece `state.tmp` como enlace simbólico hacia un fichero externo,
+  debe fallar cerrado, conservar los bytes externos y la preimagen PREPARED.
+  Una reparación explícita de la fixture permite reintentar.
+- Si aparece un `state.tmp` regular de una confirmación interrumpida, debe
+  retirarlo antes de publicar el nuevo marcador COMMITTED; la limpieza
+  posterior debe ser idempotente.
+
+Son pruebas deterministas JVM; no demuestran atomicidad frente a TOCTOU
+concurrente, durabilidad ante corte, comportamiento de Android API 35/36
+ni exclusión entre procesos. Verificar CI del HEAD que incluye los tests.
+Mantener #56 abierta, PR #57 DRAFT sobre #50; no conectar la limpieza
+automática de staging ni retirar `exercise-images-previous-*`.
