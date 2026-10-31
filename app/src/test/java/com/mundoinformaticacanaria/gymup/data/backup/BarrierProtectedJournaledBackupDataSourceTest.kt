@@ -221,6 +221,51 @@ class BarrierProtectedJournaledBackupDataSourceTest {
         assertArrayEquals(snapshot("before").data, backup.exportSnapshot().data)
     }
 
+    @Test
+    fun `cancelled startup replay keeps the barrier closed until a successful retry`() = runBlocking {
+        val barrier = BackupDomainWriteBarrier()
+        val replayEntered = CompletableDeferred<Unit>()
+        val neverRelease = CompletableDeferred<Unit>()
+        val source = object : BackupDataSource {
+            var allowRestore = false
+            var current = snapshot("partially-restored")
+
+            override suspend fun exportSnapshot(): BackupSnapshot = current
+
+            override suspend fun replaceAll(snapshot: BackupSnapshot) {
+                if (!allowRestore) {
+                    replayEntered.complete(Unit)
+                    neverRelease.await()
+                }
+                current = snapshot
+            }
+        }
+        val journal = BackupRecoveryJournal(File(temp.root, "journal"))
+        journal.prepare(BackupArchiveCodec.create(snapshot("before"), "1.0-test"))
+        val backup = wrapper(source, barrier)
+
+        val replay = async(start = CoroutineStart.UNDISPATCHED) {
+            backup.recoverBeforeDataAccess()
+        }
+        replayEntered.await()
+        replay.cancelAndJoin()
+
+        assertTrue("Cancellation must preserve PREPARED", journal.inspect() is BackupRecoveryJournal.State.Prepared)
+        assertArrayEquals(snapshot("partially-restored").data, source.current.data)
+        assertTrue("Cancelled replay must not reopen writes", runCatching {
+            barrier.withDomainWrite { "unsafe" }
+        }.isFailure)
+        assertTrue("Cancelled replay must not expose partial data", runCatching {
+            backup.exportSnapshot()
+        }.isFailure)
+
+        source.allowRestore = true
+        backup.recoverBeforeDataAccess()
+        assertArrayEquals(snapshot("before").data, source.current.data)
+        assertEquals("allowed", barrier.withDomainWrite { "allowed" })
+        assertArrayEquals(snapshot("before").data, backup.exportSnapshot().data)
+    }
+
     private fun wrapper(
         source: BackupDataSource,
         barrier: BackupDomainWriteBarrier,
