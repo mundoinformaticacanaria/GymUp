@@ -1,5 +1,6 @@
 package com.mundoinformaticacanaria.gymup.data.backup
 
+import com.mundoinformaticacanaria.gymup.domain.backup.BackupArchiveCodec
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
@@ -184,6 +185,40 @@ class BarrierProtectedJournaledBackupDataSourceTest {
             BackupRecoveryJournal.State.Absent,
             BackupRecoveryJournal(File(temp.root, "journal")).inspect(),
         )
+    }
+
+    @Test
+    fun `failed startup recovery keeps domain writes blocked until a successful retry`() = runBlocking {
+        val barrier = BackupDomainWriteBarrier()
+        val source = object : BackupDataSource {
+            var allowRestore = false
+            var current = snapshot("partially-restored")
+
+            override suspend fun exportSnapshot(): BackupSnapshot = current
+
+            override suspend fun replaceAll(snapshot: BackupSnapshot) {
+                if (!allowRestore) error("Simulated startup replay failure")
+                current = snapshot
+            }
+        }
+        val journal = BackupRecoveryJournal(File(temp.root, "journal"))
+        journal.prepare(BackupArchiveCodec.create(snapshot("before"), "1.0-test"))
+        val backup = wrapper(source, barrier)
+
+        assertTrue(runCatching { backup.recoverBeforeDataAccess() }.isFailure)
+        assertTrue(journal.inspect() is BackupRecoveryJournal.State.Prepared)
+        assertTrue("Failed replay must not reopen writes", runCatching {
+            barrier.withDomainWrite { "unsafe" }
+        }.isFailure)
+        assertTrue("Failed replay must not expose a backup", runCatching {
+            backup.exportSnapshot()
+        }.isFailure)
+
+        source.allowRestore = true
+        backup.recoverBeforeDataAccess()
+        assertArrayEquals(snapshot("before").data, source.current.data)
+        assertEquals("allowed", barrier.withDomainWrite { "allowed" })
+        assertArrayEquals(snapshot("before").data, backup.exportSnapshot().data)
     }
 
     private fun wrapper(
