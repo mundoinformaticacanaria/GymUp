@@ -155,6 +155,48 @@ class ExerciseImageDurabilityTest {
     }
 
     @Test
+    fun `insert compensation never deletes external image after root symlink swap`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val root = context.filesDir.resolve("exercise-images")
+        val parked = context.filesDir.resolve("exercise-images-parked-after-insert")
+        val outside = context.filesDir.resolve("outside-root-after-insert").apply { mkdirs() }
+        val sentinel = byteArrayOf(91, 92, 93, 94)
+        val manager = ExerciseImageManager(
+            context = context,
+            exerciseDao = database.exerciseDao(),
+            afterImageRowInsert = { entity ->
+                // The image is already published and Room has accepted the row.
+                // Redirect the original pathname to a same-named external file.
+                Files.move(root.toPath(), parked.toPath())
+                Files.createSymbolicLink(root.toPath(), outside.toPath())
+                outside.resolve(entity.storageKey.removePrefix("user:")).writeBytes(sentinel)
+                throw IOException("simulated failure after root substitution")
+            },
+        )
+
+        try {
+            val failure = runCatching {
+                manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+            }.exceptionOrNull()
+
+            assertTrue(failure is IOException)
+            assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+            assertTrue(Files.isSymbolicLink(root.toPath()))
+            assertEquals(1, outside.listFiles().orEmpty().size)
+            assertArrayEquals(sentinel, outside.listFiles().single().readBytes())
+        } finally {
+            if (Files.isSymbolicLink(root.toPath())) Files.delete(root.toPath())
+            if (parked.exists()) Files.move(parked.toPath(), root.toPath())
+            outside.deleteRecursively()
+        }
+
+        val retry = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, byteArrayOf(5, 6, 7))
+        assertArrayEquals(byteArrayOf(5, 6, 7),
+            ExerciseImageManager(context, database.exerciseDao()).readBytes(retry))
+    }
+
+    @Test
     fun `cancellation after Room image insert compensates metadata and preserves retry`() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val bytes = byteArrayOf(1, 3, 5, 7)
