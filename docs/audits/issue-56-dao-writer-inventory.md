@@ -476,3 +476,13 @@ apertura; no sustituyen aislamiento por descriptores, exclusión entre
 procesos, pruebas de durabilidad/cortes ni ejecución instrumentada API35/36.
 No activar el limpiador aislado ni borrar `exercise-images-previous-*`.
 #56 continúa abierta y PR #57 en DRAFT, pendiente también de BF-02 física.
+
+## Activación de staging tras sincronización — 2026-10-31 00:17 UTC
+
+La [CI #41142922249](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41142922249) finalizó **SUCCESS** para el HEAD anterior `9213e6d`: job `verify` (JVM/Robolectric, lint, debug y compilación de androidTest); **no ejecuta pruebas Android instrumentadas**.
+
+Hallazgo adicional en `StagedImageReplacement.activate()`: aunque `stageReplacement()` revalidaba staging antes de devolverlo, entre la sincronización y la activación (incluido el punto de inyección `BEFORE_IMAGES_ACTIVATED`) podía sustituirse el directorio `exercise-images-import-<UUID>` por un enlace simbólico. `renameTo(current)` trasladaría entonces el **enlace** a la ruta activa. No consta incidencia real; es una ventana reproducible de manipulación de rutas.
+
+La corrección `e51b971` comprueba con `NOFOLLOW_LINKS` que el padre privado y staging sean directorios reales antes de mover la raíz antigua y **de nuevo** inmediatamente antes de activar staging, después de la sincronización de la copia preservada. La regresión Robolectric `23a7f54` usa `importFault(BEFORE_IMAGES_ACTIVATED)` para sustituir staging por symlink tras su sincronización y exige fallo cerrado, sin modificar Room, tema ni bytes originales/externos. Los archivos de prueba se retiran sin seguir el enlace. **CI de estos nuevos commits pendiente de comprobar**.
+
+Esta revalidación de rutas no proporciona apertura/rename atómicos por descriptores ni elimina carreras TOCTOU; tampoco demuestra recuperación tras muerte real de proceso, durabilidad física o ejecución API 35/36. Se preservan `exercise-images-previous-*`, y el inspector/limpiador siguen desconectados. Mantener #56 abierta y PR #57 DRAFT; BF-02 física y los gates restantes siguen pendientes.
