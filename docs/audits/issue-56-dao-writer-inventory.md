@@ -587,3 +587,13 @@ y `delete()`; tampoco demuestra durabilidad ante caída abrupta. Esta
 corrección no sustituye los gates Android 15/16, pruebas de cortes, revisión
 global de DAO/lectores ni regresión física BF-02. CI del nuevo HEAD
 pendiente de verificar; PR #57 continúa en DRAFT y #56 abierta.
+
+## Reconciliación de huérfanas: sustitución de raíz tras consulta DAO — 2026-10-31 07:11 UTC
+
+La CI del HEAD anterior `fc31ff7`, [Android CI #41175629179](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41175629179), finalizó **SUCCESS** (verificación ordinaria JVM/Robolectric/lint/compilaciones; no instrumentación Android ni prueba de corte). Esta ejecución no valida los cambios descritos aquí.
+
+La inspección de `UserImageOrphanReconciler.reconcile()` encontró que la raíz `exercise-images` se validaba antes de enumerar archivos y consultar Room, pero no se revalidaba justo antes de `removeFile(file)`. Si un actor sustituyera la raíz por un symlink después de la consulta DAO, el borrado podría seguir el directorio intermedio y eliminar un archivo externo con el mismo nombre UUID. Es un riesgo estático reproducible mediante inyección determinista; **no consta incidente real**.
+
+El commit `2117727` añade una comprobación fail-closed del padre privado, raíz intermedia y archivo regular con `NOFOLLOW_LINKS` inmediatamente antes del borrado; también incorpora un seam de prueba `beforeOrphanRemoval`. El commit `40ab5f2` añade una regresión Robolectric que intercambia la raíz tras la comprobación DAO, exige preservar bytes externos y permite reintentar la reconciliación después de restaurar la raíz original. **CI del HEAD nuevo pendiente de comprobar.**
+
+Estas comprobaciones por ruta no son atómicas frente a un cambio concurrente entre validación y `delete()`; no demuestran aislamiento entre procesos ni durabilidad física. Se mantienen los gates Android 15/16, cortes reales, revisión global DAO/lectores/procesos y regresión BF-02. No activar el limpiador aislado ni borrar `exercise-images-previous-*`; #56 y PR #57 permanecen abiertas en DRAFT.
