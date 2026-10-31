@@ -182,7 +182,12 @@ class ExerciseImageManager internal constructor(
                             }
                         }
                     }
+                    // Room compensation must not unlink a same-named external file if
+                    // exercise-images was replaced with a symlink after the insert.
+                    // NOFOLLOW_LINKS on the final component does not guard ancestors.
+                    // This is fail-closed validation, not atomic TOCTOU protection.
                     if (safeToRemoveFile && hasSafePrivateParent() &&
+                        Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS) &&
                         Files.isRegularFile(finalFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                         if (!finalFile.delete()) {
                             error.addSuppressed(IllegalStateException("No se pudo retirar la imagen sin registrar"))
