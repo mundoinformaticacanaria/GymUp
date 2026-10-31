@@ -714,6 +714,45 @@ class BackupRecoveryJournalTest {
     }
 
     @Test
+    fun `interrupted commit cleanup refuses a root swapped after inspect`() {
+        val directory = File(temp.root, "recovery")
+        val saved = File(temp.root, "saved-interrupted-commit")
+        val outside = temp.newFolder("outside-interrupted-commit")
+        val externalMarker = File(outside, "state.tmp")
+        externalMarker.writeText("preserve external marker")
+        val previous = byteArrayOf(81, 82, 83)
+        var swapped = false
+        val journal = BackupRecoveryJournal(
+            directory,
+            beforeInterruptedCommitCleanup = {
+                if (!swapped) {
+                    assertTrue(directory.renameTo(saved))
+                    Files.createSymbolicLink(directory.toPath(), outside.toPath())
+                    swapped = true
+                }
+            },
+        )
+        journal.prepare(previous)
+
+        assertTrue(runCatching { journal.markCommitted() }.isFailure)
+        assertTrue(swapped)
+        assertTrue(Files.isSymbolicLink(directory.toPath()))
+        assertEquals("preserve external marker", externalMarker.readText())
+        assertArrayEquals(previous, File(saved, "previous.zip").readBytes())
+
+        // The original PREPARED journal remains recoverable after restoring the root.
+        assertTrue(directory.delete())
+        assertTrue(saved.renameTo(directory))
+        assertArrayEquals(
+            previous,
+            (BackupRecoveryJournal(directory).inspect() as BackupRecoveryJournal.State.Prepared)
+                .previousArchive,
+        )
+        BackupRecoveryJournal(directory).markCommitted()
+        assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(directory).inspect())
+    }
+
+    @Test
     fun `linked private parent cannot create an external journal staging directory`() {
         val external = temp.newFolder("external-journal-parent")
         val linkedParent = File(temp.root, "linked-private-parent")
