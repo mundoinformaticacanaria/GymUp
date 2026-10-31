@@ -563,3 +563,27 @@ La auditoría de `ExerciseImageManager.addUserImageUnprotected()` detectó que, 
 El commit `31ed962` añade `requireSafeImageDirectory()` después de ambos seams y alrededor de la publicación/sincronización, rechazando raíces sustituidas o enlazadas. `a7a0430` incorpora dos regresiones Robolectric con raíz intercambiada antes de abrir el descriptor y después del fsync; exigen que no se cree referencia Room ni se modifique el árbol externo. **La CI de este HEAD todavía debe verificarse**; el SUCCESS anterior no valida estos cambios.
 
 Estas verificaciones de ruta **no resuelven TOCTOU atómico** entre la última comprobación y apertura/rename, ni acreditan durabilidad en Android API 35/36, exclusión entre procesos o cortes de energía. No conectar el limpiador aislado, no eliminar `exercise-images-previous-*`, mantener #56 abierta y PR #57 en DRAFT. Se requiere ejecución instrumentada y regresión física BF-02 antes de integrar.
+
+## Borrado de imagen USER: raíz sustituida tras eliminar fila Room — 2026-10-31 06:10 UTC
+
+En `ExerciseImageManager.deleteUserImageUnprotected()` se verificaba la ruta
+antes de `exerciseDao.deleteImage(image)`, pero tras confirmar el borrado
+Room solo se volvía a comprobar `filesDir`. Si `exercise-images` pasaba a
+ser un enlace simbólico entre ambas operaciones, la eliminación posterior
+podía actuar sobre un archivo externo con el mismo nombre. No consta
+incidente real.
+
+El commit `26e1de9` comprueba la raíz intermedia y el componente final antes
+de retirar bytes y vuelve a comprobar la raíz tras el callback de borrado.
+Ante una raíz sustituida conserva la fila Room para permitir recuperación,
+sin seguir ni borrar archivos del destino externo. El commit `670a4d3`
+añade una regresión Robolectric que sustituye la raíz justo después de
+borrar la fila, verifica que el archivo externo permanece intacto y que
+la referencia original puede leerse al restaurar la raíz privada.
+
+**Limitación:** la comprobación por rutas no es una operación atómica
+resistente a un adversario que cambie el filesystem entre comprobación
+y `delete()`; tampoco demuestra durabilidad ante caída abrupta. Esta
+corrección no sustituye los gates Android 15/16, pruebas de cortes, revisión
+global de DAO/lectores ni regresión física BF-02. CI del nuevo HEAD
+pendiente de verificar; PR #57 continúa en DRAFT y #56 abierta.
