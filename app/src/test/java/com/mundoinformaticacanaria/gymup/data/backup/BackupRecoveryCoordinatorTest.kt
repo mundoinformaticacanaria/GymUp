@@ -426,11 +426,11 @@ class BackupRecoveryCoordinatorTest {
         val dir = File(temp.root, "recovery")
         val previous = byteArrayOf(50, 51, 52)
         var parentSyncs = 0
-        val journal = BackupRecoveryJournal(dir) { parent ->
+        val journal = BackupRecoveryJournal(dir, syncDirectory = { parent ->
             if (parent.canonicalPath == temp.root.canonicalPath && ++parentSyncs == 2) {
                 error("Simulated PREPARED directory fsync failure")
             }
-        }
+        })
         var applied = false
         val result = runCatching {
             BackupRecoveryCoordinator(journal).replaceWithRecovery(
@@ -465,11 +465,11 @@ class BackupRecoveryCoordinatorTest {
         var current = previous.copyOf()
         var failCommitSync = false
         var rollbackCalls = 0
-        val journal = BackupRecoveryJournal(dir) { syncedDirectory ->
+        val journal = BackupRecoveryJournal(dir, syncDirectory = { syncedDirectory ->
             if (failCommitSync && syncedDirectory.canonicalPath == dir.canonicalPath) {
                 error("Simulated COMMITTED directory fsync failure after rename")
             }
-        }
+        })
 
         val result = runCatching {
             BackupRecoveryCoordinator(journal).replaceWithRecovery(
@@ -544,11 +544,11 @@ class BackupRecoveryCoordinatorTest {
 
         // The restore has already completed when COMMITTED is renamed. A failed directory
         // fsync must not make a later startup restore the pre-image a second time.
-        val failingJournal = BackupRecoveryJournal(dir) { syncedDirectory ->
+        val failingJournal = BackupRecoveryJournal(dir, syncDirectory = { syncedDirectory ->
             if (syncedDirectory.canonicalPath == dir.canonicalPath) {
                 error("Simulated COMMITTED fsync failure during startup recovery")
             }
-        }
+        })
         val firstAttempt = runCatching {
             BackupRecoveryCoordinator(failingJournal).recoverBeforeDataAccess { archive ->
                 current = archive.copyOf()
