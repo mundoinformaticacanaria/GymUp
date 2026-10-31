@@ -597,3 +597,31 @@ La inspección de `UserImageOrphanReconciler.reconcile()` encontró que la raíz
 El commit `2117727` añade una comprobación fail-closed del padre privado, raíz intermedia y archivo regular con `NOFOLLOW_LINKS` inmediatamente antes del borrado; también incorpora un seam de prueba `beforeOrphanRemoval`. El commit `40ab5f2` añade una regresión Robolectric que intercambia la raíz tras la comprobación DAO, exige preservar bytes externos y permite reintentar la reconciliación después de restaurar la raíz original. **CI del HEAD nuevo pendiente de comprobar.**
 
 Estas comprobaciones por ruta no son atómicas frente a un cambio concurrente entre validación y `delete()`; no demuestran aislamiento entre procesos ni durabilidad física. Se mantienen los gates Android 15/16, cortes reales, revisión global DAO/lectores/procesos y regresión BF-02. No activar el limpiador aislado ni borrar `exercise-images-previous-*`; #56 y PR #57 permanecen abiertas en DRAFT.
+
+## Compensación de inserción de imagen USER ante raíz sustituida — 2026-10-31 08:10 UTC
+
+La revisión de `ExerciseImageManager.addUserImageUnprotected()` identificó una
+ruta distinta de las escrituras/borrados normales: cuando el DAO inserta la
+fila y luego falla `afterImageRowInsert`, la compensación `NonCancellable`
+elimina primero la fila y después intenta retirar el fichero publicado.
+Antes de `b457af1` se comprobaba `filesDir` y el componente final con
+`NOFOLLOW_LINKS`, pero **no** que el directorio intermedio
+`exercise-images` continuase siendo real. Si ese directorio se sustituía
+por un symlink a un árbol con un archivo del mismo UUID, la compensación
+podía borrar el archivo externo. Hallazgo de análisis de código y
+reproducción determinista preparada; **no se confirma incidente real**.
+
+- `b457af1` exige raíz intermedia real `NOFOLLOW_LINKS` antes del borrado
+  compensatorio. Ante sustitución, falla cerrado: puede retener un huérfano
+  local recuperable, pero no sigue el enlace.
+- `e8ea904` añade regresión Robolectric con cambio de raíz tras insertar
+  la fila Room y antes del fallo inyectado; comprueba preservación de bytes
+  externos, compensación de metadatos y posibilidad de nueva inserción.
+- La prueba queda **pendiente de resultado CI del HEAD**. La comprobación
+  de rutas por nombre no es una operación atómica: persiste una carrera
+  TOCTOU entre validación y `File.delete()`; no afirmar aislamiento fuerte
+  entre procesos ni resistencia frente a sustituciones concurrentes.
+- Continúan pendientes API 35/36 instrumentada, durabilidad ante corte
+  real, auditoría exhaustiva DAO/lectores/procesos y regresión física BF-02.
+  Mantener #56 abierta, PR #57 DRAFT sobre #50, limpiador/inspector
+  aislados y `exercise-images-previous-*` preservado.
