@@ -195,6 +195,48 @@ class UserImageOrphanReconcilerTest {
         }
     }
 
+    @Test fun `image root swapped after DAO check never deletes an external orphan`() = runBlocking {
+        val root = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val orphanName = UUID.randomUUID().toString()
+        val orphan = root.resolve(orphanName).apply { writeText("private orphan") }
+        val parked = context.filesDir.resolve("parked-images-" + UUID.randomUUID())
+        val external = context.cacheDir.resolve("external-images-" + UUID.randomUUID())
+            .apply { check(mkdirs()) }
+        val valuable = external.resolve(orphanName).apply { writeText("external bytes survive") }
+        try {
+            val reconciler = UserImageOrphanReconciler(
+                context, database.exerciseDao(), syncDirectory = {},
+                beforeOrphanRemoval = {
+                    java.nio.file.Files.move(root.toPath(), parked.toPath())
+                    java.nio.file.Files.createSymbolicLink(root.toPath(), external.toPath())
+                },
+            )
+            assertThrows(IOException::class.java) {
+                runBlocking { reconciler.reconcile() }
+            }
+            assertTrue(java.nio.file.Files.isSymbolicLink(root.toPath()))
+            assertTrue(valuable.readText() == "external bytes survive")
+
+            // Once the original root is restored, reconciliation can safely retry.
+            java.nio.file.Files.delete(root.toPath())
+            java.nio.file.Files.move(parked.toPath(), root.toPath())
+            assertTrue(orphan.exists())
+            UserImageOrphanReconciler(context, database.exerciseDao(), syncDirectory = {}).reconcile()
+            assertFalse(orphan.exists())
+            assertTrue(valuable.readText() == "external bytes survive")
+        } finally {
+            if (java.nio.file.Files.isSymbolicLink(root.toPath())) {
+                java.nio.file.Files.delete(root.toPath())
+            }
+            if (parked.exists()) {
+                java.nio.file.Files.move(parked.toPath(), root.toPath())
+            }
+            orphan.delete()
+            valuable.delete()
+            external.delete()
+        }
+    }
+
     @Test fun `failed metadata sync is surfaced and retry is idempotent`() = runBlocking {
         val orphan = context.filesDir.resolve("exercise-images").apply { mkdirs() }
             .resolve(UUID.randomUUID().toString()).apply { writeText("fsync") }
