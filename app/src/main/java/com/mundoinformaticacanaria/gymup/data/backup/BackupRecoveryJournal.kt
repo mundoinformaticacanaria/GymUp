@@ -24,6 +24,8 @@ internal class BackupRecoveryJournal(
     private val beforeTrustedWrite: (File) -> Unit = {},
     // Deterministic seam: replace a synced temporary entry before its publication rename.
     private val beforeTrustedPublish: (File) -> Unit = {},
+    // Deterministic seam: replace the active root after inspect() but before deleting state.tmp.
+    private val beforeInterruptedCommitCleanup: (File) -> Unit = {},
     // Injected by tests to verify ordering/fail-closed behavior; production syncs metadata.
     private val syncDirectory: (File) -> Unit = ::syncDirectoryMetadata,
 ) {
@@ -106,9 +108,19 @@ internal class BackupRecoveryJournal(
         // PREPARED is still authoritative; discard only this uncommitted marker so startup
         // recovery can finish instead of being permanently blocked by the stale temp file.
         val interruptedCommit = File(directory, "$STATE_FILE.tmp")
+        beforeInterruptedCommitCleanup(interruptedCommit)
+        // inspect() validated the root before this point, but it may have been swapped
+        // while the marker was being examined. Never delete state.tmp through a
+        // linked intermediate directory, even when the final file is regular.
+        requireSafeJournalDirectory(directory)
         requireNotSymlink(interruptedCommit)
-        if (interruptedCommit.exists()) {
-            check(interruptedCommit.isFile && interruptedCommit.delete()) {
+        if (Files.exists(interruptedCommit.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            check(Files.isRegularFile(interruptedCommit.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                "Temporal de confirmación del journal inseguro"
+            }
+            requireSafeJournalDirectory(directory)
+            requireNotSymlink(interruptedCommit)
+            check(interruptedCommit.delete()) {
                 "No se pudo limpiar un marcador COMMITTED interrumpido"
             }
         }
