@@ -1,23 +1,29 @@
 package com.mundoinformaticacanaria.gymup.data.repository
 
 import android.content.Context
+import android.content.ContextWrapper
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mundoinformaticacanaria.gymup.core.model.LoadMode
 import com.mundoinformaticacanaria.gymup.core.model.MeasurementUnit
 import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
+import com.mundoinformaticacanaria.gymup.data.local.ExerciseImageEntity
 import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseDeletionResult
 import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseMaintenanceInput
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogKind
 import com.mundoinformaticacanaria.gymup.domain.repository.RoutineRemovalConfirmationRequired
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionSource
+import java.io.IOException
+import java.nio.file.Files
 import java.time.LocalDate
+import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
@@ -152,6 +158,351 @@ class RoomCatalogMaintenanceRepositoryTest {
         assertEquals(ExerciseDeletionResult.Deactivated, result)
         assertFalse(requireNotNull(maintenance.getExercise(exerciseId)).isActive)
         assertEquals(exerciseId, requireNotNull(training.getSessionDetail(sessionId)).exercises.single().exerciseId)
+    }
+
+    @Test
+    fun `exercise deletion reports failed image removal instead of silently succeeding`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Borrado fallido", "Failed deletion"))
+        val file = context.filesDir.resolve("exercise-images").apply { mkdirs() }.resolve("delete-failure")
+        file.writeText("image bytes")
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "delete-failure", exerciseId = exerciseId, position = 1,
+                sourceType = "USER", storageKey = "user:delete-failure",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+        val failing = RoomCatalogMaintenanceRepository(
+            context, database, removeImageFile = { false }, syncImageDirectory = {},
+        )
+
+        assertThrows(IOException::class.java) {
+            runBlocking { failing.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+        // This is NOT rollback: the Room transaction already committed. Preserve the
+        // orphan bytes for a future recovery/cleanup instead of reporting false success.
+        assertNull(maintenance.getExercise(exerciseId))
+        assertTrue(file.isFile)
+    }
+
+    @Test
+    fun `exercise deletion rejects false positive filesystem success`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Borrado simulado", "Simulated deletion"))
+        val file = context.filesDir.resolve("exercise-images").apply { mkdirs() }.resolve("false-success")
+        file.writeText("image bytes")
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "false-success", exerciseId = exerciseId, position = 1,
+                sourceType = "USER", storageKey = "user:false-success",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+        val failing = RoomCatalogMaintenanceRepository(
+            context, database, removeImageFile = { true }, syncImageDirectory = {},
+        )
+
+        assertThrows(IOException::class.java) {
+            runBlocking { failing.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+        assertNull(maintenance.getExercise(exerciseId))
+        assertTrue(file.isFile)
+    }
+
+    @Test
+    fun `exercise deletion reports partial cleanup when a later image cannot be removed`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(
+            customInput(group.id, "Borrado parcial", "Partial image deletion"),
+        )
+        val directory = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val first = directory.resolve("partial-first").apply { writeText("first image") }
+        val second = directory.resolve("partial-second").apply { writeText("second image") }
+        listOf(first, second).forEachIndexed { index, file ->
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = file.name, exerciseId = exerciseId, position = index + 1,
+                    sourceType = "USER", storageKey = "user:${file.name}",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+        }
+        val failing = RoomCatalogMaintenanceRepository(
+            context, database,
+            removeImageFile = { file -> if (file.name == second.name) false else file.delete() },
+            syncImageDirectory = {},
+        )
+
+        assertThrows(IOException::class.java) {
+            runBlocking { failing.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+
+        // Room is already committed and only the first image was removed. A future
+        // restart must reconcile the second orphan; this test is NOT crash recovery.
+        assertNull(maintenance.getExercise(exerciseId))
+        assertFalse(first.exists())
+        assertTrue(second.isFile)
+        assertEquals("second image", second.readText())
+    }
+
+    @Test
+    fun `exercise deletion does not claim success when directory fsync fails`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(
+            customInput(group.id, "Fsync fallido", "Directory sync failure"),
+        )
+        val file = context.filesDir.resolve("exercise-images")
+            .apply { mkdirs() }
+            .resolve("sync-failure")
+            .apply { writeText("image bytes") }
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "sync-failure", exerciseId = exerciseId, position = 1,
+                sourceType = "USER", storageKey = "user:sync-failure",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+        val failing = RoomCatalogMaintenanceRepository(
+            context, database,
+            syncImageDirectory = { throw IOException("Injected directory fsync failure") },
+        )
+
+        assertThrows(IOException::class.java) {
+            runBlocking { failing.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+
+        // A failed metadata sync cannot prove durability even when the file disappeared.
+        assertNull(maintenance.getExercise(exerciseId))
+        assertFalse(file.exists())
+    }
+
+    @Test
+    fun `exercise deletion refuses to remove an image still referenced by another exercise`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val firstId = maintenance.createExercise(customInput(group.id, "Compartido A", "Shared A"))
+        val secondId = maintenance.createExercise(customInput(group.id, "Compartido B", "Shared B"))
+        val image = context.filesDir.resolve("exercise-images")
+            .apply { mkdirs() }
+            .resolve("shared-storage")
+            .apply { writeText("preserve both references") }
+        listOf(firstId, secondId).forEachIndexed { index, exerciseId ->
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = "shared-${index}", exerciseId = exerciseId, position = 1,
+                    sourceType = "USER", storageKey = "user:shared-storage",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { maintenance.deleteExercise(firstId, confirmRoutineRemoval = true) }
+        }
+
+        assertTrue(maintenance.getExercise(firstId) != null)
+        assertTrue(maintenance.getExercise(secondId) != null)
+        assertEquals(1, database.exerciseDao().getImages(firstId).size)
+        assertEquals(1, database.exerciseDao().getImages(secondId).size)
+        assertEquals("preserve both references", image.readText())
+    }
+
+    @Test
+    fun `exercise deletion rejects traversal image key before committing Room`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Imagen insegura", "Unsafe image"))
+        val outside = context.filesDir.resolve("outside-exercise-images").apply { writeText("keep me") }
+        try {
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = "traversal", exerciseId = exerciseId, position = 1,
+                    sourceType = "USER", storageKey = "user:../outside-exercise-images",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+            }
+
+            assertTrue(maintenance.getExercise(exerciseId) != null)
+            assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+            assertEquals("keep me", outside.readText())
+        } finally {
+            outside.delete()
+        }
+    }
+
+    @Test
+    fun `exercise deletion rejects malformed user image key without dropping references`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Imagen inválida", "Invalid image"))
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "missing-prefix", exerciseId = exerciseId, position = 1,
+                sourceType = "USER", storageKey = "legacy-image-key",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+
+        assertTrue(maintenance.getExercise(exerciseId) != null)
+        assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+    }
+
+    @Test
+    fun `exercise deletion refuses a directory masquerading as a user image before Room commit`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Imagen directorio", "Directory image"))
+        val imageDirectory = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val unexpectedDirectory = imageDirectory.resolve("not-an-image").apply { mkdir() }
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "not-an-image", exerciseId = exerciseId, position = 1,
+                sourceType = "USER", storageKey = "user:not-an-image",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+
+        assertTrue(maintenance.getExercise(exerciseId) != null)
+        assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+        assertTrue(unexpectedDirectory.isDirectory)
+    }
+
+    @Test
+    fun `exercise deletion rejects a dangling symbolic link before committing Room`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Enlace roto", "Dangling link"))
+        val imageDirectory = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val missingTarget = imageDirectory.resolve("missing-image-target")
+        val danglingLink = imageDirectory.resolve("dangling-image")
+        Files.createSymbolicLink(danglingLink.toPath(), missingTarget.toPath())
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "dangling-image", exerciseId = exerciseId, position = 1,
+                sourceType = "USER", storageKey = "user:dangling-image",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+
+        assertFalse(danglingLink.exists()) // File.exists follows the missing target.
+        assertTrue(Files.isSymbolicLink(danglingLink.toPath()))
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+        }
+
+        assertTrue(maintenance.getExercise(exerciseId) != null)
+        assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+        assertTrue(Files.isSymbolicLink(danglingLink.toPath()))
+        assertFalse(missingTarget.exists())
+    }
+
+    @Test
+    fun `exercise deletion rejects symlinked image root without deleting external files`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Raíz enlazada", "Linked image root"))
+        val root = context.filesDir.resolve("exercise-images")
+        val outside = context.filesDir.resolve("outside-image-root").apply { mkdirs() }
+        val externalImage = outside.resolve("external-image").apply { writeText("keep me") }
+        root.deleteRecursively()
+        Files.createSymbolicLink(root.toPath(), outside.toPath())
+        try {
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = "external-image", exerciseId = exerciseId, position = 1,
+                    sourceType = "USER", storageKey = "user:external-image",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+            }
+            assertTrue(maintenance.getExercise(exerciseId) != null)
+            assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+            assertEquals("keep me", externalImage.readText())
+            assertTrue(Files.isSymbolicLink(root.toPath()))
+        } finally {
+            Files.deleteIfExists(root.toPath())
+            outside.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `exercise deletion rejects dangling image root before committing Room`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(customInput(group.id, "Raíz colgante", "Dangling image root"))
+        val root = context.filesDir.resolve("exercise-images")
+        val missing = context.filesDir.resolve("missing-image-root")
+        root.deleteRecursively()
+        Files.createSymbolicLink(root.toPath(), missing.toPath())
+        try {
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = "missing-image", exerciseId = exerciseId, position = 1,
+                    sourceType = "USER", storageKey = "user:missing-image",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+            assertTrue(Files.isSymbolicLink(root.toPath()))
+            assertFalse(root.exists())
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { maintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+            }
+            assertTrue(maintenance.getExercise(exerciseId) != null)
+            assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+        } finally {
+            Files.deleteIfExists(root.toPath())
+        }
+    }
+
+    @Test
+    fun `exercise deletion rejects a symlinked private parent before committing Room`() = runBlocking {
+        val group = database.masterDataDao().getMuscleGroups().first { it.isActive }
+        val exerciseId = maintenance.createExercise(
+            customInput(group.id, "Padre enlazado", "Linked private parent"),
+        )
+        val outside = context.cacheDir.resolve("external-parent-" + UUID.randomUUID())
+            .apply { check(mkdirs()) }
+        val images = outside.resolve("exercise-images").apply { check(mkdirs()) }
+        val valuable = images.resolve("external-image").apply { writeText("preserve external bytes") }
+        val linkedParent = context.cacheDir.resolve("linked-parent-" + UUID.randomUUID())
+        try {
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = "linked-parent-image", exerciseId = exerciseId, position = 1,
+                    sourceType = "USER", storageKey = "user:external-image",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+            Files.createSymbolicLink(linkedParent.toPath(), outside.toPath())
+            val linkedContext = object : ContextWrapper(context) {
+                override fun getApplicationContext(): Context = this
+                override fun getFilesDir(): java.io.File = linkedParent
+            }
+            val linkedMaintenance = RoomCatalogMaintenanceRepository(
+                linkedContext, database, syncImageDirectory = {},
+            )
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { linkedMaintenance.deleteExercise(exerciseId, confirmRoutineRemoval = true) }
+            }
+            assertTrue(maintenance.getExercise(exerciseId) != null)
+            assertEquals(1, database.exerciseDao().getImages(exerciseId).size)
+            assertEquals("preserve external bytes", valuable.readText())
+            assertTrue(Files.isSymbolicLink(linkedParent.toPath()))
+        } finally {
+            Files.deleteIfExists(linkedParent.toPath())
+            valuable.delete()
+            images.delete()
+            outside.delete()
+        }
     }
 
     private fun customInput(

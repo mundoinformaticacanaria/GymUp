@@ -35,19 +35,46 @@ import com.mundoinformaticacanaria.gymup.domain.backup.BackupSessionSet
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSessionType
 import com.mundoinformaticacanaria.gymup.domain.backup.BackupSnapshot
 import java.io.File
+import java.io.IOException
+import java.nio.channels.Channels
+import java.nio.channels.FileChannel
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.StandardOpenOption
 import java.util.UUID
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 class RoomBackupDataSource(
     context: Context,
     private val database: GymUpDatabase,
     private val preferences: UserPreferencesRepository,
+    // Test seam for proving Room's transaction stays open until image capture finishes.
+    private val exportAfterRoomRead: suspend () -> Unit = {},
+    // Test seam: simulate a staging failure after syncing image bytes, before Room mutation.
+    private val afterStagedImageSync: (String) -> Unit = {},
+    // Deterministic seam for directory fsync failures at the rename boundaries.
+    private val imageDirectorySync: (File) -> Unit = ::syncBackupImageDirectory,
+    private val importFault: (BackupReplacePhase) -> Unit = {},
+    // Test seam: replace the file after preflight but before opening its descriptor.
+    private val beforeRequiredImageRead: (File) -> Unit = {},
+    // Deterministic seam: an unsafe staging target appears before descriptor creation.
+    private val beforeStagedImageWrite: (File) -> Unit = {},
 ) : BackupDataSource {
     private val backupDao = database.backupDao()
-    private val imageStore = UserExerciseImageStore(context.applicationContext)
+    private val imageStore = UserExerciseImageStore(
+        context.applicationContext, afterStagedImageSync, imageDirectorySync,
+        beforeRequiredImageRead, beforeStagedImageWrite,
+    )
 
-    override suspend fun exportSnapshot(): BackupSnapshot {
-        val theme = preferences.currentThemeMode()
-        val data = database.withTransaction {
+    override suspend fun exportSnapshot(): BackupSnapshot = database.withTransaction {
+        // Keep Room's read transaction open through the image capture. Previously Room
+        // was released before reading files, allowing metadata and image bytes to diverge
+        // when a concurrent Room writer changed the image references.
+        // This does NOT serialize direct image-file or DataStore writes: a global domain
+        // barrier remains mandatory before enabling crash-recovery imports.
+        val theme = preferences.currentThemeModeForBackup()
+        val data =
             BackupDataV1(
                 sessionTypes = backupDao.getSessionTypes().map { it.toBackup() },
                 muscleGroups = backupDao.getMuscleGroups().map { it.toBackup() },
@@ -61,14 +88,14 @@ class RoomBackupDataSource(
                 sessionSets = backupDao.getSessionSets().map { it.toBackup() },
                 preferences = BackupPreferences(theme.name),
             )
-        }
         check(BackupDataCodec.validate(data) == BackupDataValidationResult.Valid) {
             "El estado local no puede serializarse como backup v1"
         }
+        exportAfterRoomRead()
         val userImages = data.exerciseImages
             .filter { it.sourceType == USER_IMAGE_SOURCE }
             .associate { image -> image.storageKey to imageStore.readRequired(image.storageKey) }
-        return BackupSnapshot(
+        BackupSnapshot(
             data = BackupDataCodec.encode(data).encodeToByteArray(),
             images = userImages,
         )
@@ -92,6 +119,7 @@ class RoomBackupDataSource(
         require(snapshot.images.keys == expectedImageKeys) {
             "Las imágenes del ZIP no coinciden con exercise_images"
         }
+        val previousTheme = preferences.currentThemeModeForBackup()
         val stagedImages = imageStore.stageReplacement(snapshot.images)
 
         try {
@@ -117,13 +145,23 @@ class RoomBackupDataSource(
                 backupDao.insertSessions(data.sessions.map { it.toEntity() })
                 backupDao.insertSessionExercises(data.sessionExercises.map { it.toEntity() })
                 backupDao.insertSessionSets(data.sessionSets.map { it.toEntity() })
+                // Keep Room uncommitted until images and preferences have been activated.
+                importFault(BackupReplacePhase.BEFORE_IMAGES_ACTIVATED)
+                stagedImages.activate()
+                importFault(BackupReplacePhase.AFTER_IMAGES_ACTIVATED)
+                preferences.setThemeMode(ThemeMode.valueOf(data.preferences.themeMode))
+                importFault(BackupReplacePhase.AFTER_PREFERENCES_UPDATED)
             }
-            preferences.setThemeMode(ThemeMode.valueOf(data.preferences.themeMode))
-            stagedImages.commit()
         } catch (error: Throwable) {
-            stagedImages.discard()
+            // Room rolls back its transaction; restore the other stores even on cancellation.
+            withContext(NonCancellable) {
+                runCatching { stagedImages.rollback() }.onFailure(error::addSuppressed)
+                runCatching { preferences.setThemeMode(previousTheme) }.onFailure(error::addSuppressed)
+            }
             throw error
         }
+        // Cleanup is best-effort: never turn a committed import into a false failure.
+        stagedImages.complete()
     }
 
     private fun SessionTypeEntity.toBackup() = BackupSessionType(id, name, isActive, isProtectedOther)
@@ -277,30 +315,165 @@ class RoomBackupDataSource(
     }
 }
 
-private class UserExerciseImageStore(context: Context) {
+private class UserExerciseImageStore(
+    context: Context,
+    private val afterStagedImageSync: (String) -> Unit,
+    private val syncDirectory: (File) -> Unit,
+    private val beforeRequiredImageRead: (File) -> Unit,
+    private val beforeStagedImageWrite: (File) -> Unit,
+) {
     private val parentDir = context.filesDir
     private val rootDir = File(parentDir, DIRECTORY)
+    private val MAX_USER_IMAGE_BYTES = 10 * 1024 * 1024
 
-    fun readRequired(storageKey: String): ByteArray = fileFor(rootDir, storageKey).let { file ->
-        require(file.isFile) { "Falta la imagen personalizada $storageKey" }
-        file.readBytes()
+    fun readRequired(storageKey: String): ByteArray {
+        // A safe final image and root are insufficient if filesDir is a symlink.
+        // Reject the substituted private parent before reading any image bytes.
+        requireSafePrivateParent()
+        // A corrupted Room reference must not turn an export (or recovery pre-image)
+        // into a read outside the private image store. Do not follow symlinks, even
+        // dangling ones, and reject the image directory itself if it is a symlink.
+        require(storageKey.matches(Regex("^user:[0-9a-fA-F-]{36}$"))) {
+            "storage_key de imagen personalizada no válido"
+        }
+        check(!Files.isSymbolicLink(rootDir.toPath())) {
+            "El directorio de imágenes personalizadas es un enlace simbólico"
+        }
+        val file = fileFor(rootDir, storageKey)
+        check(!Files.isSymbolicLink(file.toPath()) && file.isFile) {
+            "Imagen personalizada ausente o insegura: $storageKey"
+        }
+        // Preflight alone has a TOCTOU window. Open the final component without
+        // following symlinks so a replacement after validation cannot leak other bytes.
+        beforeRequiredImageRead(file)
+        // The image root may be swapped after preflight. NOFOLLOW_LINKS on the
+        // final file alone does not prevent traversal through a linked parent.
+        // Reject the substituted root before opening any image bytes.
+        requireSafePrivateParent()
+        check(Files.isDirectory(rootDir.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El directorio de imágenes personalizadas cambió a una ruta insegura"
+        }
+        return try {
+            Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS).use { input ->
+                val output = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (count == 0) continue
+                    check(output.size() <= MAX_USER_IMAGE_BYTES - count) {
+                        "La imagen personalizada supera el límite de 10 MiB: $storageKey"
+                    }
+                    output.write(buffer, 0, count)
+                }
+                output.toByteArray()
+            }
+        } catch (error: IOException) {
+            throw IllegalStateException("No se pudo leer la imagen personalizada de forma segura: $storageKey", error)
+        }
     }
 
     fun stageReplacement(images: Map<String, ByteArray>): StagedImageReplacement {
+        // Staging creates directories and writes bytes under filesDir; never traverse
+        // a substituted symlink parent even when exercise-images itself is regular.
+        requireSafePrivateParent()
+        // Reject an unsafe current store before staging. Files.exists follows links and
+        // would otherwise allow replacing a symlink (including a dangling one).
+        check(!Files.isSymbolicLink(rootDir.toPath()) && (!rootDir.exists() || rootDir.isDirectory)) {
+            "El directorio de imágenes actual no es seguro para importar"
+        }
         val staging = File(parentDir, "$DIRECTORY-import-${UUID.randomUUID()}")
         check(staging.mkdirs()) { "No se pudo preparar la importación de imágenes" }
         try {
             images.forEach { (storageKey, bytes) ->
                 require(storageKey.matches(Regex("^user:[0-9a-fA-F-]{36}$"))) { "storage_key no válido" }
+                require(bytes.isNotEmpty() && bytes.size <= MAX_USER_IMAGE_BYTES) {
+                    "Tamaño de imagen personalizada no válido: $storageKey"
+                }
                 val target = fileFor(staging, storageKey)
-                target.writeBytes(bytes)
-                check(target.length() == bytes.size.toLong()) { "No se pudo escribir $storageKey" }
+                // CREATE_NEW + NOFOLLOW_LINKS prevents an injected staging symlink from
+                // redirecting or truncating an external file. Sync bytes before publication.
+                // Directory rename metadata still requires Android durability validation.
+                beforeStagedImageWrite(target)
+                // The staging directory itself may be swapped for a symlink after preflight.
+                // NOFOLLOW_LINKS on the target file does not protect intermediate directories.
+                requireSafeStaging(staging)
+                FileChannel.open(
+                    target.toPath(),
+                    StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE,
+                    LinkOption.NOFOLLOW_LINKS,
+                ).use { channel ->
+                    Channels.newOutputStream(channel).write(bytes)
+                    channel.force(true)
+                }
+                afterStagedImageSync(storageKey)
+                requireSafeStaging(staging)
+                // Reopen the final staging component without following symlinks. A path
+                // replaced after fsync must not be published as an imported user image.
+                check(Files.isRegularFile(target.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                    "Imagen staged insegura: $storageKey"
+                }
+                FileChannel.open(
+                    target.toPath(),
+                    StandardOpenOption.READ,
+                    LinkOption.NOFOLLOW_LINKS,
+                ).use { channel ->
+                    // Size alone cannot detect a same-length substitution after fsync.
+                    // Verify the bytes actually reachable through the NOFOLLOW descriptor
+                    // before publishing staging or changing Room and DataStore.
+                    check(channel.size() == bytes.size.toLong()) {
+                        "No se pudo escribir $storageKey"
+                    }
+                    val verified = Channels.newInputStream(channel).readNBytes(bytes.size + 1)
+                    check(verified.contentEquals(bytes) && channel.size() == bytes.size.toLong()) {
+                        "La imagen staged cambió después de sincronizarse: $storageKey"
+                    }
+                }
             }
+            // Persist the staging directory entries and its parent before activation.
+            // File byte fsync alone does not make newly created image names durable.
+            requireSafeStaging(staging)
+            syncDirectory(staging)
+            syncDirectory(parentDir)
         } catch (error: Throwable) {
-            staging.deleteRecursively()
+            // Never recursively traverse an attacker-supplied staging symlink.
+            // Keep the original import error and report cleanup failure as suppressed.
+            runCatching { discardFailedStaging(staging) }.onFailure(error::addSuppressed)
             throw error
         }
-        return StagedImageReplacement(rootDir, staging)
+        return StagedImageReplacement(rootDir, staging, syncDirectory)
+    }
+
+    private fun discardFailedStaging(staging: File) {
+        val path = staging.toPath()
+        check(!Files.isSymbolicLink(path) && Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+            "Directorio de staging inseguro"
+        }
+        val entries = staging.listFiles() ?: error("No se pudo inspeccionar el staging")
+        entries.forEach { entry ->
+            val entryPath = entry.toPath()
+            check(
+                Files.isRegularFile(entryPath, LinkOption.NOFOLLOW_LINKS) ||
+                    Files.isSymbolicLink(entryPath),
+            ) { "Contenido inesperado en staging: ${entry.name}" }
+        }
+        // Files.delete removes the link itself, never the file it points to.
+        entries.forEach { Files.delete(it.toPath()) }
+        Files.delete(path)
+    }
+
+    private fun requireSafePrivateParent() {
+        check(Files.isDirectory(parentDir.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El directorio privado de imágenes no es seguro"
+        }
+    }
+
+    private fun requireSafeStaging(staging: File) {
+        requireSafePrivateParent()
+        check(Files.isDirectory(staging.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El staging de imágenes cambió a una ruta insegura"
+        }
     }
 
     private fun fileFor(directory: File, storageKey: String): File =
@@ -311,29 +484,101 @@ private class UserExerciseImageStore(context: Context) {
     }
 }
 
+/** Deterministic fault points for the non-atomic Room/files/DataStore import path. */
+enum class BackupReplacePhase { BEFORE_IMAGES_ACTIVATED, AFTER_IMAGES_ACTIVATED, AFTER_PREFERENCES_UPDATED }
+
+/** Sync metadata after image directory mutations; failures propagate before Room commits. */
+private fun syncBackupImageDirectory(directory: File) {
+    FileChannel.open(directory.toPath(), StandardOpenOption.READ).use { it.force(true) }
+}
+
 private class StagedImageReplacement(
     private val current: File,
     private val staged: File,
+    private val syncDirectory: (File) -> Unit,
 ) {
+    // Unique path: never delete another operation's preserved user images.
+    private val previous = File(current.parentFile, "${current.name}-previous-${UUID.randomUUID()}")
+    private var oldMoved = false
+    private var activated = false
     private var finished = false
 
-    fun commit() {
+    fun activate() {
+        check(!finished && !activated) { "La sustitución de imágenes ya se activó" }
+        // Staging is already synced, but can be replaced before activation. Do not
+        // rename a symlink (or follow a substituted private parent) into the live root.
+        requireSafeActivationPaths()
+        // Never move a symlink into the preserved previous-image slot.
+        check(!Files.isSymbolicLink(current.toPath()) && (!current.exists() || current.isDirectory)) {
+            "El directorio de imágenes cambió a una ruta insegura durante la importación"
+        }
+        if (current.exists()) {
+            check(current.renameTo(previous)) { "No se pudieron preservar las imágenes actuales" }
+            oldMoved = true
+            // Preserve the old directory entry before publishing the replacement.
+            syncDirectory(current.parentFile)
+        }
+        // Recheck after syncing the preserved root: callbacks and other actors may
+        // have changed staging while the old root was being moved aside.
+        requireSafeActivationPaths()
+        check(staged.renameTo(current)) { "No se pudieron activar las imágenes importadas" }
+        // Mark active BEFORE syncing: if fsync fails, rollback must remove the new
+        // directory and restore the preserved previous one.
+        activated = true
+        syncDirectory(current.parentFile)
+    }
+
+    private fun requireSafeActivationPaths() {
+        check(Files.isDirectory(current.parentFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El directorio privado de imágenes cambió a una ruta insegura"
+        }
+        check(Files.isDirectory(staged.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El staging cambió a una ruta insegura antes de su activación"
+        }
+    }
+
+    fun rollback() {
         check(!finished) { "La sustitución de imágenes ya terminó" }
-        val previous = File(current.parentFile, "${current.name}-previous")
-        previous.deleteRecursively()
-        if (current.exists() && !current.renameTo(previous)) {
-            throw IllegalStateException("No se pudieron preservar las imágenes actuales")
+        // Preserve the previous directory if deletion/restoration fails; never erase it.
+        if (activated && current.exists()) {
+            check(deleteFlatImageDirectoryNoFollow(current)) { "No se pudieron retirar las imágenes importadas de forma segura" }
         }
-        if (!staged.renameTo(current)) {
-            if (previous.exists()) previous.renameTo(current)
-            throw IllegalStateException("No se pudieron activar las imágenes importadas")
+        if (oldMoved) {
+            check(previous.renameTo(current)) { "No se pudieron recuperar las imágenes anteriores" }
         }
-        previous.deleteRecursively()
+        // Recovery is not complete until the restored directory entry is synced.
+        syncDirectory(current.parentFile)
+        check(deleteFlatImageDirectoryNoFollow(staged)) { "No se pudo limpiar el staging de forma segura" }
         finished = true
     }
 
-    fun discard() {
-        if (!finished) staged.deleteRecursively()
+    fun complete() {
+        check(activated && !finished) { "La sustitución de imágenes no está activada" }
+        // A failed cleanup leaves a recoverable copy rather than reporting an import failure.
+        deleteFlatImageDirectoryNoFollow(previous)
         finished = true
     }
+}
+
+/**
+ * Best-effort cleanup of a flat private image directory without recursive traversal.
+ * Symlink entries are deleted as links, never followed. An unexpected nested directory,
+ * linked root or I/O failure leaves remaining data for inspection/recovery.
+ * This is NOT an atomic defense against a concurrent actor replacing ancestor paths.
+ */
+internal fun deleteFlatImageDirectoryNoFollow(directory: File): Boolean {
+    val root = directory.toPath()
+    if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS)) return true
+    if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) return false
+    return runCatching {
+        Files.newDirectoryStream(root).use { stream ->
+            val entries = stream.toList()
+            check(entries.all { entry ->
+                Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(entry)
+            }) { "El directorio de imágenes contiene entradas inesperadas" }
+            entries.forEach { Files.delete(it) }
+        }
+        Files.delete(root)
+        true
+    }.getOrDefault(false)
 }

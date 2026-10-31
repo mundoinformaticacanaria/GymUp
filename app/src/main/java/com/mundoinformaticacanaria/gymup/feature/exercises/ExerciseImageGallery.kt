@@ -11,14 +11,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mundoinformaticacanaria.gymup.data.images.ExerciseImageItem
 import com.mundoinformaticacanaria.gymup.data.images.ExerciseImageManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ExerciseImageGallery(
@@ -33,13 +36,25 @@ fun ExerciseImageGallery(
         Text("Imágenes", style = MaterialTheme.typography.labelLarge)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(images, key = ExerciseImageItem::id) { image ->
-                val file = image.localFile
-                val bitmap = remember(file?.absolutePath, file?.lastModified()) {
-                    file?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
+                // Do not decode a File path directly: it can become a symlink
+                // between Room observation and rendering. Use the manager's
+                // bounded NOFOLLOW_LINKS descriptor read off the UI thread.
+                val bitmap by produceState<ImageBitmap?>(
+                    initialValue = null,
+                    manager,
+                    image.id,
+                    image.storageKey,
+                    image.localFile?.lastModified(),
+                ) {
+                    value = withContext(Dispatchers.IO) {
+                        decodeUserImageBitmap(manager, image)
+                    }
                 }
-                if (bitmap != null) {
+                // Compose's delegated state property cannot be smart-cast across reads.
+                val loadedBitmap = bitmap
+                if (loadedBitmap != null) {
                     Image(
-                        bitmap = bitmap,
+                        bitmap = loadedBitmap,
                         contentDescription = "${image.position}. Imagen de ayuda del ejercicio",
                         modifier = Modifier.size(140.dp),
                         contentScale = ContentScale.Fit,
@@ -50,4 +65,13 @@ fun ExerciseImageGallery(
             }
         }
     }
+}
+
+/** Gallery decoding must use the validated descriptor path, never BitmapFactory.decodeFile. */
+internal fun decodeUserImageBitmap(
+    manager: ExerciseImageManager,
+    item: ExerciseImageItem,
+): ImageBitmap? {
+    val bytes = manager.readBytes(item) ?: return null
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
 }
