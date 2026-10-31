@@ -255,6 +255,10 @@ internal class BackupRecoveryJournal(
         check(Files.isRegularFile(temp.toPath(), LinkOption.NOFOLLOW_LINKS)) {
             "Temporal de journal inseguro antes de publicarlo: ${temp.name}"
         }
+        // A regular file can replace the synced temporary entry just as a symlink can.
+        // Verify its bytes through a NOFOLLOW descriptor before publishing the journal.
+        // This narrows deterministic substitution; path-based rename remains non-atomic.
+        requireSyncedTemporaryContent(temp, bytes)
         requireNotSymlink(target)
         if (replace) {
             // Do not remove PREPARED before COMMITTED is ready: keep the old marker if rename fails.
@@ -264,6 +268,39 @@ internal class BackupRecoveryJournal(
         }
         // fsync(file) alone does not persist the rename/creation of its directory entry.
         syncDirectory(target.parentFile)
+    }
+
+    /**
+     * A regular-file replacement after fsync must not publish a different pre-image or marker.
+     * Stream the check so a maximum-sized backup does not require a second in-memory copy.
+     * The check and subsequent rename are not an atomic filesystem operation.
+     */
+    private fun requireSyncedTemporaryContent(temp: File, expected: ByteArray) {
+        requireSafeJournalDirectory(temp.parentFile)
+        val expectedDigest = MessageDigest.getInstance("SHA-256").digest(expected)
+        val actualDigest = MessageDigest.getInstance("SHA-256")
+        Files.newByteChannel(
+            temp.toPath(),
+            setOf(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
+        ).use { channel ->
+            check(channel.size() == expected.size.toLong()) {
+                "Temporal de journal alterado antes de publicarlo: ${temp.name}"
+            }
+            val input = Channels.newInputStream(channel)
+            val buffer = ByteArray(64 * 1024)
+            var remaining = expected.size.toLong()
+            while (remaining > 0) {
+                val read = input.read(buffer, 0, minOf(remaining, buffer.size.toLong()).toInt())
+                check(read > 0) { "Temporal de journal truncado: ${temp.name}" }
+                actualDigest.update(buffer, 0, read)
+                remaining -= read
+            }
+            check(channel.size() == expected.size.toLong() &&
+                actualDigest.digest().contentEquals(expectedDigest)
+            ) {
+                "Temporal de journal modificado antes de publicarlo: ${temp.name}"
+            }
+        }
     }
 
     /**
