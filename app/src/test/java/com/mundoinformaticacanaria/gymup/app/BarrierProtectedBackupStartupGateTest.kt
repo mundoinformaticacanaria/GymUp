@@ -11,8 +11,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Tests the optional exclusive startup composition. AppContainer still does not install it:
- * the real startup must also gate every reader/writer and use unwrapped recovery/seeding.
+ * Tests the exclusive startup composition used by AppContainer. It guards cooperating writers;
+ * callers that bypass the barrier and independent processes remain outside this guarantee.
  */
 class BarrierProtectedBackupStartupGateTest {
     @Test
@@ -75,12 +75,13 @@ class BarrierProtectedBackupStartupGateTest {
 
         assertTrue(runCatching { gate.awaitReady() }.isFailure)
         assertEquals(0, seeds)
-        assertEquals("unlocked", barrier.withDomainWrite { "unlocked" })
+        assertTrue(runCatching { barrier.withDomainWrite { "unsafe" } }.isFailure)
 
         gate.awaitReady()
         gate.awaitReady()
         assertEquals(2, attempts)
         assertEquals(1, seeds)
+        assertEquals("unlocked", barrier.withDomainWrite { "unlocked" })
     }
     @Test
     fun `domain writer cannot interleave with orphan image reconciliation`() = runBlocking {
@@ -112,6 +113,45 @@ class BarrierProtectedBackupStartupGateTest {
             listOf("recover", "seed", "cleanup-start", "cleanup-end", "write"),
             events,
         )
+    }
+
+    @Test
+    fun `failed seeding keeps cooperating writers blocked until full retry`() = runBlocking {
+        val barrier = BackupDomainWriteBarrier()
+        var seedAttempts = 0
+        val gate = BackupStartupGate(
+            recover = {},
+            seed = {
+                if (++seedAttempts == 1) error("seed failed after recovery")
+            },
+            writeBarrier = barrier,
+        )
+
+        assertTrue(runCatching { gate.awaitReady() }.isFailure)
+        assertTrue(runCatching { barrier.withDomainWrite { "unsafe" } }.isFailure)
+        gate.awaitReady()
+        assertEquals(2, seedAttempts)
+        assertEquals("ready", barrier.withDomainWrite { "ready" })
+    }
+
+    @Test
+    fun `failed image reconciliation keeps cooperating writers blocked until retry`() = runBlocking {
+        val barrier = BackupDomainWriteBarrier()
+        var cleanupAttempts = 0
+        val gate = BackupStartupGate(
+            recover = {},
+            seed = {},
+            reconcileImages = {
+                if (++cleanupAttempts == 1) error("reconciliation failed")
+            },
+            writeBarrier = barrier,
+        )
+
+        assertTrue(runCatching { gate.awaitReady() }.isFailure)
+        assertTrue(runCatching { barrier.withDomainWrite { "unsafe" } }.isFailure)
+        gate.awaitReady()
+        assertEquals(2, cleanupAttempts)
+        assertEquals("ready", barrier.withDomainWrite { "ready" })
     }
 
 }
