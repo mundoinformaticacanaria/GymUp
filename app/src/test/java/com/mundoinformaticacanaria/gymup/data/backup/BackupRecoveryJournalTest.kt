@@ -712,4 +712,42 @@ class BackupRecoveryJournalTest {
             (BackupRecoveryJournal(directory).inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
         )
     }
+
+    @Test
+    fun `linked private parent cannot create an external journal staging directory`() {
+        val external = temp.newFolder("external-journal-parent")
+        val linkedParent = File(temp.root, "linked-private-parent")
+        Files.createSymbolicLink(linkedParent.toPath(), external.toPath())
+        val journal = BackupRecoveryJournal(File(linkedParent, "recovery"))
+
+        assertTrue(runCatching { journal.inspect() }.isFailure)
+        assertTrue(runCatching { journal.prepare(byteArrayOf(1, 2, 3)) }.isFailure)
+        assertFalse(File(external, "recovery").exists())
+        assertFalse(File(external, "recovery.preparing").exists())
+        assertTrue(Files.isSymbolicLink(linkedParent.toPath()))
+    }
+
+    @Test
+    fun `linked private parent cannot delete external retired or preparing artifacts`() {
+        val external = temp.newFolder("external-journal-cleanup")
+        val retired = File(external, "recovery.retired")
+        val preparing = File(external, "recovery.preparing")
+        assertTrue(retired.mkdir())
+        assertTrue(preparing.mkdir())
+        val retiredArchive = File(retired, "previous.zip")
+        val preparingArchive = File(preparing, "previous.zip")
+        retiredArchive.writeBytes(byteArrayOf(10, 11))
+        preparingArchive.writeBytes(byteArrayOf(20, 21))
+        val linkedParent = File(temp.root, "linked-cleanup-parent")
+        Files.createSymbolicLink(linkedParent.toPath(), external.toPath())
+        val journal = BackupRecoveryJournal(File(linkedParent, "recovery"))
+
+        assertTrue(runCatching { journal.cleanupRetired() }.isFailure)
+        assertTrue(runCatching { journal.cleanupAbandonedPreparation() }.isFailure)
+        assertArrayEquals(byteArrayOf(10, 11), retiredArchive.readBytes())
+        assertArrayEquals(byteArrayOf(20, 21), preparingArchive.readBytes())
+        assertTrue(retired.isDirectory)
+        assertTrue(preparing.isDirectory)
+    }
+
 }
