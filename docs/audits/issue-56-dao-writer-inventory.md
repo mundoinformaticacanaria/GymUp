@@ -729,3 +729,11 @@ corrupto debe fallar cerrado, pero no debe promoverse deliberadamente.
 - CI del nuevo HEAD pendiente; conservar PR #57 DRAFT y #56 abierta. Permanecen
   Android API35/36, cortes reales/durabilidad, auditoría DAO/lectores/procesos,
   TOCTOU atómico y regresión física BF-02.
+
+## Puerta de arranque: barrier abierto tras fallo de recuperación/seed/reconciliación — 2026-10-31 17:08 UTC
+
+La composición de producción `DefaultAppContainer` invoca `BackupStartupGate.awaitReady()` con el `BackupDomainWriteBarrier` compartido, pero usa deliberadamente un adaptador de recuperación sin wrapper para evitar un mutex recursivo. La corrección previa en `BarrierProtectedJournaledBackupDataSource.recoverBeforeDataAccess()` marca `recoveryRequired` antes del replay, **pero ese método no se llama desde el arranque**. Por tanto, si el replay, el seed o la reconciliación fallaban, el mutex exclusivo se liberaba con `recoveryRequired=false`; un escritor cooperante que accediera al repositorio sin pasar por `awaitReady()` podía mutar datos mientras la puerta de UI seguía cerrada. Es un defecto de defensa en profundidad por inspección del cableado, **sin incidente real confirmado**.
+
+La corrección `14e0095` marca `recoveryRequired` al entrar en la sección exclusiva de `BackupStartupGate` y solo lo retira tras recuperar, sembrar y reconciliar correctamente. La regresión `161306c` actualiza la expectativa previa que daba por válido un writer tras un replay fallido y añade escenarios de fallo de seed y reconciliación; comprueba bloqueo hasta un reintento completo. **CI del HEAD nuevo pendiente de comprobar**: no atribuir éxito a estas pruebas hasta verificar su ejecución.
+
+Esto protege solo a escritores que usan la barrera compartida. No demuestra protección de acceso directo a DAO, lectores ya montados, otros procesos, durabilidad ante corte ni TOCTOU atómico. Se mantienen PR #57 DRAFT sobre #50, #56 abierta y gates Android API35/36, cortes reales y regresión física BF-02. No habilitar limpiadores aislados ni borrar `exercise-images-previous-*`.
