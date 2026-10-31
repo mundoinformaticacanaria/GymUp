@@ -660,3 +660,25 @@ reabre la barrera. El test usa una suspensión determinista en memoria; **no
 simula muerte de proceso, corte de energía ni Android real**. No acredita
 cobertura de escritores ajenos a la barrera ni resuelve TOCTOU o los gates
 físicos API 35/36. PR #57 continúa DRAFT y #56 abierta.
+
+## Limpieza de marcador COMMITTED interrumpido: raíz intercambiada — 2026-10-31
+
+Revisión de `BackupRecoveryJournal.markCommitted()`: después de `inspect()`,
+la retirada de `state.tmp` verificaba únicamente que el componente final no
+fuera un symlink. Una sustitución del directorio intermedio `recovery` por
+un enlace a un directorio externo con un `state.tmp` regular permitía borrar
+ese archivo externo antes de que `writeSynced()` rechazase la raíz insegura.
+**Hallazgo estático con reproducción determinista; no consta incidente real.**
+
+- `963bb02` vuelve a comprobar la raíz y su padre con `NOFOLLOW_LINKS`
+  antes de inspeccionar y eliminar el marcador temporal; exige fichero regular
+  sin seguir enlaces y revalida la raíz antes del borrado. No elimina ni
+  sobreescribe `PREPARED` si falla la comprobación.
+- `b6797dd` incorpora regresión JVM con sustitución de raíz exactamente tras
+  `inspect()`: exige preservar el `state.tmp` externo, mantener intacta la
+  preimagen y permitir confirmar tras restaurar el directorio privado.
+- **CI del HEAD pendiente de verificar.** Las comprobaciones por ruta no son
+  defensa atómica frente a TOCTOU, no prueban Android 15/16, durabilidad ante
+  cortes ni aislamiento entre procesos. Se mantienen #56 abierta y PR #57
+  DRAFT sobre #50; no conectar limpiadores, no borrar `-previous-*`, no
+  fusionar ni publicar APK sin completar los gates restantes.
