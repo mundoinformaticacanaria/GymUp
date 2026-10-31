@@ -790,3 +790,9 @@ concurrente, durabilidad ante corte, comportamiento de Android API 35/36
 ni exclusión entre procesos. Verificar CI del HEAD que incluye los tests.
 Mantener #56 abierta, PR #57 DRAFT sobre #50; no conectar la limpieza
 automática de staging ni retirar `exercise-images-previous-*`.
+
+## Sustitución de la raíz del journal durante confirmación — 2026-10-31 23:07 UTC
+
+La regresión JVM `BackupRecoveryJournalInterruptedCommitTest.interrupted commit refuses journal root swapped to a symlink after inspect` (commit `5c0b767`) reproduce la sustitución determinista de la raíz `recovery` por un enlace a un directorio externo **después** de `inspect()` y antes de examinar `state.tmp`. Exige fallo cerrado, preservación del marcador externo y de la preimagen PREPARED desplazada, y permite confirmar tras restaurar explícitamente el fixture. No se modifica código de producción.
+
+**Pendiente verificar CI del HEAD nuevo.** La prueba reduce una ventana de regresión observable, pero no demuestra protección atómica frente a intercambios concurrentes de rutas ni durabilidad ante muerte de proceso o corte. Siguen pendientes Android API 35/36 instrumentado, auditoría global de accesos DAO/lectores/procesos y regresión física BF-02. Inspector/limpiador de staging aislados, `exercise-images-previous-*` preservados; #56 abierta y PR #57 DRAFT sobre #50.
