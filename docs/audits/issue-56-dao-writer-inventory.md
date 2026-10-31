@@ -682,3 +682,24 @@ ese archivo externo antes de que `writeSynced()` rechazase la raíz insegura.
   cortes ni aislamiento entre procesos. Se mantienen #56 abierta y PR #57
   DRAFT sobre #50; no conectar limpiadores, no borrar `-previous-*`, no
   fusionar ni publicar APK sin completar los gates restantes.
+
+## Limpieza de journal retirado: cambios entre preflight y borrado — 2026-10-31 12:10 UTC
+
+La revisión de `BackupRecoveryJournal.cleanupJournalArtifacts()` detectó que
+las entradas se validaban como ficheros durante el preflight, pero antes de
+cada `File.delete()` solo se revalidaba el directorio padre/raíz. Una entrada
+sustituida por un directorio vacío podía eliminarse pese a no ser un
+artefacto plano válido; una raíz sustituida por symlink tras el preflight
+exige rechazo explícito antes de intentar borrar. No consta incidente real.
+
+- `4018866` vuelve a exigir que cada entrada sea un fichero regular con
+  `NOFOLLOW_LINKS` y no un symlink inmediatamente antes del borrado.
+- `f4880f9` añade dos regresiones JVM deterministas: sustitución de la raíz
+  retirada por un enlace a archivos externos, y sustitución de una entrada
+  por un directorio después del preflight. Exigen preservar los bytes ajenos
+  y permitir reintentar la limpieza del journal original.
+- **CI del HEAD pendiente de comprobar**. Los chequeos por ruta no garantizan
+  atomicidad ante un atacante concurrente que intercambie componentes entre
+  la última comprobación y `delete()`. Mantener la PR #57 en DRAFT y la
+  Issue #56 abierta. Siguen pendientes API35/36, durabilidad/cortes reales,
+  auditoría global DAO/lectores/procesos y regresión física BF-02.
