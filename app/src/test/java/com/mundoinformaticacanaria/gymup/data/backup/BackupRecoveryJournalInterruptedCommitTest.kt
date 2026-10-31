@@ -108,4 +108,46 @@ class BackupRecoveryJournalInterruptedCommitTest {
         BackupRecoveryJournal(directory).cleanupCommitted()
         assertFalse(directory.exists())
     }
+
+    @Test
+    fun `interrupted commit refuses journal root swapped to a symlink after inspect`() {
+        val directory = File(temp.root, "recovery")
+        val heldRoot = File(temp.root, "recovery-held")
+        val outside = File(temp.root, "external-root")
+        assertTrue(outside.mkdir())
+        val outsideMarker = File(outside, "state.tmp")
+        outsideMarker.writeText("external marker must survive")
+        val previous = byteArrayOf(61, 62, 63)
+        var injected = false
+        val journal = BackupRecoveryJournal(
+            directory,
+            beforeInterruptedCommitCleanup = { marker ->
+                assertEquals(File(directory, "state.tmp").absolutePath, marker.absolutePath)
+                assertTrue(directory.renameTo(heldRoot))
+                Files.createSymbolicLink(directory.toPath(), outside.toPath())
+                injected = true
+            },
+        )
+        journal.prepare(previous)
+
+        assertTrue(runCatching { journal.markCommitted() }.isFailure)
+        assertTrue(injected)
+        assertTrue(Files.isSymbolicLink(directory.toPath()))
+        assertEquals("external marker must survive", outsideMarker.readText())
+        assertArrayEquals(
+            previous,
+            (BackupRecoveryJournal(heldRoot).inspect() as BackupRecoveryJournal.State.Prepared)
+                .previousArchive,
+        )
+
+        // Restore only the synthetic fixture; the journal must remain recoverable.
+        assertTrue(directory.delete())
+        assertTrue(heldRoot.renameTo(directory))
+        BackupRecoveryJournal(directory).markCommitted()
+        assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(directory).inspect())
+        BackupRecoveryJournal(directory).cleanupCommitted()
+        assertFalse(directory.exists())
+        assertEquals("external marker must survive", outsideMarker.readText())
+    }
+
 }
