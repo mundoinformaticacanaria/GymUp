@@ -497,3 +497,31 @@ La auditoría de `BackupRecoveryJournal.readTrustedFile()` y `writeSynced()` det
 El commit `c199fc4` revalida con `Files.isDirectory(..., NOFOLLOW_LINKS)` el directorio padre privado y el directorio inmediato del journal **después** de los seams de lectura/escritura y antes de abrir el descriptor. `8b855a6` incorpora dos regresiones JVM: sustitución del journal activo por enlace a otro journal válido antes de leer `state`, y sustitución de `backup-recovery.preparing` por enlace antes de crear `previous.zip.tmp`. `9202983` añade una tercera para sustitución del journal activo antes de crear `state.tmp` durante COMMITTED. Exigen rechazo y preservación de journals y archivos externos. **CI del HEAD nuevo pendiente de comprobar**.
 
 Esta defensa reduce una carrera determinista pero **no** es atómica: otro actor puede sustituir un ancestro entre el chequeo y `FileChannel.open`. Tampoco cubre todavía todas las operaciones de `renameTo`, limpieza, aislamiento entre procesos ni durabilidad bajo corte. El journal y la recuperación permanecen pendientes de Android API 35/36, pruebas de muerte/corte real, auditoría completa de lectores/DAO/procesos y regresión física BF-02. No habilitar limpieza automática ni borrar `exercise-images-previous-*`; mantener #56 abierta y PR #57 DRAFT.
+
+## Publicación PREPARED tras fsync: raíz de staging sustituida — 2026-10-31 02:15 UTC
+
+[Android CI #41154097310](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41154097310)
+finalizó **SUCCESS** para `c9317f3`: JVM/Robolectric, lint y compilaciones del
+job `verify`, **sin pruebas instrumentadas Android 15/16 ni cortes reales**.
+Valida las tres regresiones anteriores del journal, no los cambios de esta sección.
+
+Se encontró una ventana adicional en `BackupRecoveryJournal.prepare()`:
+tras escribir y sincronizar `previous.zip` y `state` dentro de
+`backup-recovery.preparing`, el método publicaba el directorio con
+`renameTo(backup-recovery)` sin revalidar que staging siguiera siendo un
+directorio real. Una sustitución por symlink después del último fsync podía
+publicar un enlace como journal PREPARED. No hay incidente real confirmado.
+
+El commit `6f076de` revalida el directorio de staging y su padre con
+`NOFOLLOW_LINKS`, rechaza un journal activo aparecido concurrentemente
+(incluidos enlaces colgantes) y solo después intenta publicar PREPARED.
+`8f06197` añade una regresión JVM con inyección durante el segundo fsync
+de staging: comprueba rechazo, ausencia de journal activo, conservación de
+los archivos preparados y de bytes externos. **Pendiente CI del HEAD nuevo**.
+
+Estas comprobaciones no son atómicas ante cambios entre la última
+validación y `renameTo`, ni demuestran persistencia de metadatos tras
+corte de energía. Mantener #56 abierta, PR #57 DRAFT sobre #50,
+inspector/limpiador desconectados y `exercise-images-previous-*`
+preservados. Siguen pendientes API35/36 instrumentado, cortes reales,
+auditoría global de DAO/lectores/procesos y BF-02 física.
