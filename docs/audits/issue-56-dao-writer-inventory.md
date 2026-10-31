@@ -711,3 +711,21 @@ exige rechazo explícito antes de intentar borrar. No consta incidente real.
 El test JVM `failed fsync after retiring committed journal is retryable without restoring old data` (`2a4b6bd`) inyecta un fallo de sincronización del directorio padre **después** de renombrar el journal `COMMITTED` a `recovery.retired`, pero antes de eliminar sus archivos. Exige que la primera limpieza comunique el error, que la preimagen retirada se conserve y que un nuevo arranque retire únicamente los artefactos obsoletos, **sin restaurar el dominio anterior**. Cubre una ventana adicional de limpieza idempotente; no modifica producción.
 
 **Límites:** el test simula un error de fsync mediante callback JVM, no verifica durabilidad real de metadatos tras corte eléctrico o muerte de proceso. Su CI nueva debe confirmarse para el HEAD exacto. No habilita limpieza automática de staging ni eliminación de `exercise-images-previous-*`. Continúan pendientes Android 15/16 instrumentado, cortes reales, TOCTOU atómico, revisión DAO/lectores/procesos y regresión física BF-02. #56 abierta y PR #57 DRAFT sobre #50.
+
+## Sustitución por fichero regular tras fsync — 2026-10-31 16:12 UTC
+
+En `BackupRecoveryJournal.writeSynced()` la validación posterior a `beforeTrustedPublish`
+rechazaba enlaces simbólicos, pero aceptaba otro **fichero regular** de igual tamaño
+que hubiera reemplazado el temporal ya sincronizado. El `renameTo` podía publicar
+un `previous.zip` o `state` distinto del contenido recién escrito; un journal
+corrupto debe fallar cerrado, pero no debe promoverse deliberadamente.
+
+- `bf631de` verifica tamaño y SHA-256 de los bytes del temporal mediante descriptor
+  `NOFOLLOW_LINKS` antes del rename, sin duplicar en memoria un backup de hasta 100 MiB.
+- `ad8a356` añade dos regresiones JVM para sustitución por fichero regular del
+  archivo previo y del marcador COMMITTED después del fsync.
+- La verificación **no es atómica** frente a intercambios concurrentes entre
+  lectura y rename. No habilita limpiadores ni elimina `exercise-images-previous-*`.
+- CI del nuevo HEAD pendiente; conservar PR #57 DRAFT y #56 abierta. Permanecen
+  Android API35/36, cortes reales/durabilidad, auditoría DAO/lectores/procesos,
+  TOCTOU atómico y regresión física BF-02.
