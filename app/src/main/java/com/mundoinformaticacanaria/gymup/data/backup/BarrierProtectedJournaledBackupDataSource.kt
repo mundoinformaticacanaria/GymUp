@@ -24,6 +24,10 @@ internal class BarrierProtectedJournaledBackupDataSource(
     /** Must finish before any repository, seeder or UI can access the persisted domain. */
     suspend fun recoverBeforeDataAccess() {
         barrier.withExclusiveBackup {
+            // Startup recovery can fail even before any import in this process. Keep the
+            // shared barrier closed until a complete replay has actually succeeded.
+            // This also protects callers that retry recovery after initial startup.
+            barrier.markRecoveryRequired()
             delegate.recoverBeforeDataAccess()
             barrier.markRecovered()
         }
