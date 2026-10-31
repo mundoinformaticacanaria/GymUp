@@ -23,6 +23,8 @@ internal class UserImageOrphanReconciler(
     private val exerciseDao: ExerciseDao,
     private val removeFile: (File) -> Boolean = File::delete,
     private val syncDirectory: (File) -> Unit = ::syncDirectoryMetadata,
+    // Deterministic seam: the image root can change after DAO checks and before unlink.
+    private val beforeOrphanRemoval: (File) -> Unit = {},
 ) {
     private val filesDirectory = context.applicationContext.filesDir
     private val directory = File(filesDirectory, "exercise-images")
@@ -54,6 +56,15 @@ internal class UserImageOrphanReconciler(
             }
             // Defense in depth: a stale snapshot must not delete a newly referenced file.
             if (exerciseDao.countUserImageStorageKeyReferences(key) != 0) continue
+            beforeOrphanRemoval(file)
+            // The final component's NOFOLLOW_LINKS check above does not protect an
+            // intermediate image root swapped after enumeration or DAO validation.
+            // This closes the deterministic swap window, not an atomic TOCTOU race.
+            if (!Files.isDirectory(filesDirectory.toPath(), LinkOption.NOFOLLOW_LINKS) ||
+                !Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS) ||
+                !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+                throw IOException("Ruta de imagen huérfana sustituida antes del borrado: ${file.name}")
+            }
             if (!removeFile(file) || Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
                 throw IOException("No se pudo retirar la imagen huérfana: ${file.name}")
             }
