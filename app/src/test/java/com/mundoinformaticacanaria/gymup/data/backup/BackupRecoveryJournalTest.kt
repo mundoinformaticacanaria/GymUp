@@ -584,4 +584,40 @@ class BackupRecoveryJournalTest {
         assertTrue(saved.isDirectory)
     }
 
+
+    @Test
+    fun `journal commit refuses active root swapped to symlink before marker write`() {
+        val directory = File(temp.root, "recovery")
+        val saved = File(temp.root, "saved-committing-recovery")
+        val outside = File(temp.root, "external-commit")
+        assertTrue(outside.mkdir())
+        val sentinel = File(outside, "keep.txt")
+        sentinel.writeText("preserve")
+        val previous = byteArrayOf(41, 42, 43)
+        var injectOnCommit = false
+        var swapped = false
+        val journal = BackupRecoveryJournal(
+            directory,
+            beforeTrustedWrite = { file ->
+                if (injectOnCommit && file.name == "state.tmp" && !swapped) {
+                    assertTrue(directory.renameTo(saved))
+                    Files.createSymbolicLink(directory.toPath(), outside.toPath())
+                    swapped = true
+                }
+            },
+        )
+        journal.prepare(previous)
+        injectOnCommit = true
+
+        assertTrue(runCatching { journal.markCommitted() }.isFailure)
+        assertTrue(swapped)
+        assertTrue(Files.isSymbolicLink(directory.toPath()))
+        assertFalse(File(outside, "state.tmp").exists())
+        assertEquals("preserve", sentinel.readText())
+        assertArrayEquals(
+            previous,
+            (BackupRecoveryJournal(saved).inspect() as BackupRecoveryJournal.State.Prepared).previousArchive,
+        )
+    }
+
 }
