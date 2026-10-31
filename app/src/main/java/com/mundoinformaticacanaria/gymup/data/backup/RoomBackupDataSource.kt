@@ -505,7 +505,9 @@ private class StagedImageReplacement(
 
     fun activate() {
         check(!finished && !activated) { "La sustitución de imágenes ya se activó" }
-        // Recheck at the rename boundary: the store may have changed after staging.
+        // Staging is already synced, but can be replaced before activation. Do not
+        // rename a symlink (or follow a substituted private parent) into the live root.
+        requireSafeActivationPaths()
         // Never move a symlink into the preserved previous-image slot.
         check(!Files.isSymbolicLink(current.toPath()) && (!current.exists() || current.isDirectory)) {
             "El directorio de imágenes cambió a una ruta insegura durante la importación"
@@ -516,11 +518,23 @@ private class StagedImageReplacement(
             // Preserve the old directory entry before publishing the replacement.
             syncDirectory(current.parentFile)
         }
+        // Recheck after syncing the preserved root: callbacks and other actors may
+        // have changed staging while the old root was being moved aside.
+        requireSafeActivationPaths()
         check(staged.renameTo(current)) { "No se pudieron activar las imágenes importadas" }
         // Mark active BEFORE syncing: if fsync fails, rollback must remove the new
         // directory and restore the preserved previous one.
         activated = true
         syncDirectory(current.parentFile)
+    }
+
+    private fun requireSafeActivationPaths() {
+        check(Files.isDirectory(current.parentFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El directorio privado de imágenes cambió a una ruta insegura"
+        }
+        check(Files.isDirectory(staged.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El staging cambió a una ruta insegura antes de su activación"
+        }
     }
 
     fun rollback() {
