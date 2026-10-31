@@ -266,6 +266,41 @@ class ExerciseImageDurabilityTest {
 
 
     @Test
+    fun `swapped image root after Room deletion cannot remove external bytes or lose metadata`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val original = byteArrayOf(2, 4, 8, 16)
+        val normalManager = ExerciseImageManager(context, database.exerciseDao())
+        val image = normalManager.addUserImage(exercise.id, original)
+        val root = context.filesDir.resolve("exercise-images")
+        val parked = context.filesDir.resolve("exercise-images-parked-after-delete")
+        val outside = context.filesDir.resolve("outside-root-after-delete").apply { mkdirs() }
+        val marker = outside.resolve("marker").apply { writeText("untouched") }
+        try {
+            val manager = ExerciseImageManager(
+                context = context,
+                exerciseDao = database.exerciseDao(),
+                afterImageRowDelete = {
+                    Files.move(root.toPath(), parked.toPath())
+                    Files.createSymbolicLink(root.toPath(), outside.toPath())
+                },
+            )
+
+            val failure = runCatching { manager.deleteUserImage(image.id) }.exceptionOrNull()
+
+            assertTrue(failure is IllegalStateException)
+            // A missing file under the malicious root must not discard the Room reference.
+            assertEquals(image.id, database.exerciseDao().getImageById(image.id)?.id)
+            assertEquals("untouched", marker.readText())
+            assertEquals(listOf("marker"), outside.listFiles().orEmpty().map { it.name })
+        } finally {
+            if (Files.isSymbolicLink(root.toPath())) Files.delete(root.toPath())
+            if (parked.exists()) Files.move(parked.toPath(), root.toPath())
+            outside.deleteRecursively()
+        }
+        assertArrayEquals(original, normalManager.readBytes(image))
+    }
+
+    @Test
     fun `single image deletion refuses to remove shared storage bytes`() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val manager = ExerciseImageManager(context, database.exerciseDao())
