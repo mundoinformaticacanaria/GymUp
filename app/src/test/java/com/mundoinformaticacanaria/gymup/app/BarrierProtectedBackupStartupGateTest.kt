@@ -187,6 +187,42 @@ class BarrierProtectedBackupStartupGateTest {
     }
 
     @Test
+    fun `cancelled seeding keeps cooperating writers blocked until full retry`() = runBlocking {
+        val barrier = BackupDomainWriteBarrier()
+        val enteredSeed = CompletableDeferred<Unit>()
+        val waitForever = CompletableDeferred<Unit>()
+        var recoveries = 0
+        var seeds = 0
+        var reconciliations = 0
+        val gate = BackupStartupGate(
+            recover = { recoveries++ },
+            seed = {
+                if (++seeds == 1) {
+                    enteredSeed.complete(Unit)
+                    waitForever.await()
+                }
+            },
+            reconcileImages = { reconciliations++ },
+            writeBarrier = barrier,
+        )
+
+        val first = launch { gate.awaitReady() }
+        enteredSeed.await()
+        first.cancelAndJoin()
+
+        assertEquals(1, recoveries)
+        assertEquals(1, seeds)
+        assertEquals(0, reconciliations)
+        assertTrue(runCatching { barrier.withDomainWrite { "unsafe" } }.isFailure)
+
+        gate.awaitReady()
+        assertEquals(2, recoveries)
+        assertEquals(2, seeds)
+        assertEquals(1, reconciliations)
+        assertEquals("ready", barrier.withDomainWrite { "ready" })
+    }
+
+    @Test
     fun `cancelled reconciliation keeps cooperating writers blocked until full retry`() = runBlocking {
         val barrier = BackupDomainWriteBarrier()
         val enteredReconciliation = CompletableDeferred<Unit>()
