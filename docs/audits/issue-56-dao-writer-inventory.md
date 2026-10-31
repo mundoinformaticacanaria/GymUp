@@ -703,3 +703,11 @@ exige rechazo explícito antes de intentar borrar. No consta incidente real.
   la última comprobación y `delete()`. Mantener la PR #57 en DRAFT y la
   Issue #56 abierta. Siguen pendientes API35/36, durabilidad/cortes reales,
   auditoría global DAO/lectores/procesos y regresión física BF-02.
+
+## Fallo de fsync al retirar COMMITTED — 2026-10-31 15:14 UTC
+
+[Android CI #41208652180](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41208652180) finalizó **SUCCESS** para `0317e40` (job `verify`: tests JVM/Robolectric, lint, ensamblado debug y compilación de fuentes androidTest; **0 artefactos, sin instrumentación Android**). Los ocho fallos de inyección de `syncDirectory` de la ejecución anterior quedaron corregidos en ese SHA; no atribuir este resultado a commits posteriores.
+
+El test JVM `failed fsync after retiring committed journal is retryable without restoring old data` (`2a4b6bd`) inyecta un fallo de sincronización del directorio padre **después** de renombrar el journal `COMMITTED` a `recovery.retired`, pero antes de eliminar sus archivos. Exige que la primera limpieza comunique el error, que la preimagen retirada se conserve y que un nuevo arranque retire únicamente los artefactos obsoletos, **sin restaurar el dominio anterior**. Cubre una ventana adicional de limpieza idempotente; no modifica producción.
+
+**Límites:** el test simula un error de fsync mediante callback JVM, no verifica durabilidad real de metadatos tras corte eléctrico o muerte de proceso. Su CI nueva debe confirmarse para el HEAD exacto. No habilita limpieza automática de staging ni eliminación de `exercise-images-previous-*`. Continúan pendientes Android 15/16 instrumentado, cortes reales, TOCTOU atómico, revisión DAO/lectores/procesos y regresión física BF-02. #56 abierta y PR #57 DRAFT sobre #50.
