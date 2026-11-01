@@ -25,7 +25,7 @@ class AbandonedImageImportStagingCleanerDeviceTest {
         withIsolatedDirectory { root ->
             val active = File(root, "exercise-images").apply { assertTrue(mkdir()) }
             File(active, imageName).writeBytes(byteArrayOf(1, 2, 3))
-            val staging = File(root, stageName).apply { assertTrue(mkdir() }
+            val staging = File(root, stageName).apply { assertTrue(mkdir()) }
             File(staging, stageImageName).writeBytes(byteArrayOf(4, 5, 6))
 
             assertEquals(
