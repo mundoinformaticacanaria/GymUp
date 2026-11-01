@@ -819,3 +819,29 @@ y publicarse `COMMITTED` usando el digest de la preimagen anterior.
 
 Mantener #56 abierta y PR #57 DRAFT sobre #50; no habilitar el limpiador
 aislado ni eliminar `exercise-images-previous-*`.
+
+## Retirada de COMMITTED: sustitución de journal antes del rename — 2026-11-01 01:16 UTC
+
+En `BackupRecoveryJournal.cleanupCommitted()`, la comprobación inicial
+`inspect() is COMMITTED` no bastaba para garantizar que el directorio
+retirado mediante `renameTo(recovery.retired)` siguiera siendo el mismo.
+Una sustitución por otro directorio regular después de la inspección podía
+retirar y borrar una preimagen ajena todavía `PREPARED`, o un `COMMITTED`
+de contenido diferente. No consta un incidente real.
+
+- `5d6eba1` incorpora una segunda inspección y comparación del marcador
+  `COMMITTED` inmediatamente antes de retirar la raíz, con rechazo si
+  cambia el estado o el digest de la preimagen.
+- `174badc` añade dos regresiones JVM con intercambio determinista de
+  directorios reales: `PREPARED` ajeno y `COMMITTED` ajeno con otra
+  preimagen. Ambos deben sobrevivir al intento fallido, y la limpieza
+  del journal original solo puede completarse tras reparar la fixture.
+- **Pendiente comprobar CI del HEAD actualizado.** La segunda lectura
+  es una mitigación de intercambios observables, **no** una operación
+  atómica sobre descriptor/directorio: una sustitución concurrente posterior,
+  o un directorio distinto con el mismo contenido, sigue fuera de garantía.
+
+No activar la limpieza automática de staging ni borrar
+`exercise-images-previous-*`. Persisten las puertas de Android 15/16
+instrumentado, cortes/durabilidad reales, auditoría global DAO/lectores/procesos,
+TOCTOU atómico y regresión física BF-02. #56 abierta; PR #57 DRAFT sobre #50.
