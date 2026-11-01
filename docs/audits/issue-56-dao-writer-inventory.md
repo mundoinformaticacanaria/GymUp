@@ -869,3 +869,29 @@ No habilitar limpieza de staging ni borrar `exercise-images-previous-*`.
 Permanecen pendientes Android API 35/36 instrumentado, durabilidad ante
 muerte/cortes reales, TOCTOU atómico, auditoría global DAO/lectores/procesos
 y regresión física BF-02. #56 abierta, PR #57 DRAFT sobre #50.
+
+## Limpieza de journal: sustitución regular de raíz o entrada — 2026-11-01 03:08 UTC
+
+En `BackupRecoveryJournal.cleanupJournalArtifacts()`, el preflight validaba
+nombres, ausencia de symlinks y tipo de archivo, pero tras
+`beforeArtifactDelete` una **raíz o entrada regular distinta** podía ocupar
+la misma ruta. La segunda validación de tipo seguía siendo satisfactoria y
+`File.delete()` podía borrar contenido ajeno. Es un riesgo estático con
+fixture determinista, **no hay incidente real confirmado**.
+
+- `0e81368` registra las identidades `BasicFileAttributes.fileKey()` de
+  raíz y entradas durante el preflight, y las compara antes de cada borrado
+  y antes de retirar la raíz. Si el proveedor devuelve `null`, la
+  comparación no se aplica; no se presupone soporte uniforme en Android.
+- `983612c` añade dos regresiones JVM: intercambio por otro directorio
+  regular con archivo válido, y sustitución de una entrada por otro fichero
+  regular de igual tamaño. Ambas deben fallar cerrado y preservar los bytes
+  originales y ajenos; tras reparar el fixture, la limpieza es reintentable.
+- **CI del HEAD nuevo pendiente de comprobar.** Las identidades por ruta
+  siguen sin cerrar el TOCTOU entre comparación y `delete()`; tampoco
+  acreditan durabilidad, exclusión entre procesos ni `fileKey` en API 35/36.
+
+Mantener #56 abierta, PR #57 DRAFT sobre #50; no conectar el limpiador de
+staging ni borrar `exercise-images-previous-*`. Pendientes instrumentación
+Android 15/16, cortes reales, auditoría DAO/lectores/procesos y regresión
+física BF-02.
