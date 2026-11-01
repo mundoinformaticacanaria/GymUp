@@ -237,6 +237,47 @@ class UserImageOrphanReconcilerTest {
         }
     }
 
+    @Test fun `regular image root swapped after DAO check does not delete unrelated bytes`() = runBlocking {
+        val root = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val name = UUID.randomUUID().toString()
+        val original = root.resolve(name).apply { writeText("original orphan") }
+        val parked = context.filesDir.resolve("parked-images-" + UUID.randomUUID())
+        val external = context.cacheDir.resolve("regular-images-" + UUID.randomUUID())
+            .apply { check(mkdirs()) }
+        val unrelated = external.resolve(name).apply { writeText("unrelated bytes") }
+        try {
+            val rootIdentity = java.nio.file.Files.readAttributes(
+                root.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java,
+                java.nio.file.LinkOption.NOFOLLOW_LINKS,
+            ).fileKey()
+            val otherIdentity = java.nio.file.Files.readAttributes(
+                external.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java,
+                java.nio.file.LinkOption.NOFOLLOW_LINKS,
+            ).fileKey()
+            assertTrue("Filesystem must expose distinct directory identities", 
+                rootIdentity != null && otherIdentity != null && rootIdentity != otherIdentity)
+
+            val reconciler = UserImageOrphanReconciler(
+                context, database.exerciseDao(), syncDirectory = {},
+                beforeOrphanRemoval = {
+                    java.nio.file.Files.move(root.toPath(), parked.toPath())
+                    java.nio.file.Files.move(external.toPath(), root.toPath())
+                },
+            )
+            assertThrows(IOException::class.java) { runBlocking { reconciler.reconcile() } }
+            assertTrue(root.resolve(name).readText() == "unrelated bytes")
+            assertTrue(parked.resolve(name).readText() == "original orphan")
+        } finally {
+            if (parked.exists()) {
+                java.nio.file.Files.move(root.toPath(), external.toPath())
+                java.nio.file.Files.move(parked.toPath(), root.toPath())
+            }
+            original.delete()
+            unrelated.delete()
+            external.delete()
+        }
+    }
+
     @Test fun `failed metadata sync is surfaced and retry is idempotent`() = runBlocking {
         val orphan = context.filesDir.resolve("exercise-images").apply { mkdirs() }
             .resolve(UUID.randomUUID().toString()).apply { writeText("fsync") }
