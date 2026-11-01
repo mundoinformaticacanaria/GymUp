@@ -58,3 +58,17 @@ La prueba instrumentada `BackupRecoveryJournalDeviceTest.swappedCommittedRootKee
 La inspección de `cleanupCommitted()` comprobaba el estado y los bytes del marcador tras sustituir la raíz. Dos directorios COMMITTED distintos con **la misma preimagen** superaban esas comprobaciones y podían retirar el journal equivocado. La corrección añade comparación `BasicFileAttributes.fileKey()` de la raíz entre la inspección y el `renameTo`, cuando el filesystem ofrece identidad. La regresión JVM y `BackupRecoveryJournalDeviceTest.swappedCommittedRootWithIdenticalPreimageIsRejectedByDeviceIdentity` prueban el caso de bytes y marcadores idénticos.
 
 **Estado:** fuente preparada; comprobar CI exacta y ejecutar Android 15/API35 y Android 16/API36 sobre AVD desechables antes de afirmar compatibilidad. La defensa sigue siendo best-effort si `fileKey()` es nulo y no es atómica ante TOCTOU, reciclaje de inodos ni cortes reales. No se autoriza limpiar `exercise-images-previous-*`, activar el limpiador aislado, fusionar #57 ni generar APK.
+
+## Sustitución PREPARED por raíz regular con bytes idénticos (01/11/2026)
+
+`BackupRecoveryJournalDeviceTest.swappedPreparedRootWithIdenticalPreimageIsRejectedByDeviceIdentity`
+comprueba que el filesystem Android expone `fileKey()` para el directorio
+PREPARED y que sustituirlo después de la primera inspección por otro directorio
+regular con el mismo archivo y marcador no permite eliminar el `state.tmp`
+ajeno ni confirmar el journal equivocado. Ambas preimágenes deben sobrevivir.
+
+**Estado: código publicado, ejecución Android pendiente.** La CI ordinaria
+solo compila fuentes `androidTest`. Ejecutar en AVD desechables Android
+15/API35 y Android 16/API36, documentando serial, SHA y resultado.
+El test no demuestra atomicidad TOCTOU, resistencia al reciclaje de inodos,
+fsync tras cortes reales ni recuperación Room/DataStore.
