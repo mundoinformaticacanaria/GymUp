@@ -3,11 +3,15 @@ package com.mundoinformaticacanaria.gymup.data.backup
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -106,6 +110,54 @@ class BackupRecoveryJournalDeviceTest {
                     .recoverBeforeDataAccess { replayCount++ }
             }
             assertEquals(2, replayCount)
+        }
+    }
+
+
+    @Test
+    fun swappedRegularPreparingRootIsRejectedByDeviceFileIdentity() {
+        withJournalDirectory { directory ->
+            val preparing = File(directory.parentFile, "${directory.name}.preparing")
+            val held = File(directory.parentFile, "${directory.name}.held")
+            val foreign = File(directory.parentFile, "${directory.name}.foreign")
+            val original = byteArrayOf(1, 2, 3)
+            val alien = byteArrayOf(4, 5, 6)
+            try {
+                assertTrue(preparing.mkdir())
+                assertTrue(foreign.mkdir())
+                File(preparing, "previous.zip").writeBytes(original)
+                File(foreign, "previous.zip").writeBytes(alien)
+
+                // The JVM test alone cannot prove fileKey() exists on Android API 35/36.
+                // Fail explicitly rather than treating a null key as protection.
+                val identity = Files.readAttributes(
+                    preparing.toPath(),
+                    BasicFileAttributes::class.java,
+                    LinkOption.NOFOLLOW_LINKS,
+                ).fileKey()
+                assertNotNull("Android filesystem did not expose a directory fileKey", identity)
+
+                var swapped = false
+                val journal = BackupRecoveryJournal(
+                    directory,
+                    beforeArtifactDelete = {
+                        if (!swapped) {
+                            assertTrue(preparing.renameTo(held))
+                            assertTrue(foreign.renameTo(preparing))
+                            swapped = true
+                        }
+                    },
+                )
+                assertTrue(runCatching { journal.cleanupAbandonedPreparation() }.isFailure)
+                assertTrue(swapped)
+                assertArrayEquals(original, File(held, "previous.zip").readBytes())
+                assertArrayEquals(alien, File(preparing, "previous.zip").readBytes())
+            } finally {
+                // These are isolated test-only directories; never touch the app image store.
+                held.deleteRecursively()
+                foreign.deleteRecursively()
+                preparing.deleteRecursively()
+            }
         }
     }
 
