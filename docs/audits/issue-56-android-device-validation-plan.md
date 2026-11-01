@@ -92,3 +92,9 @@ por ruta no cierra TOCTOU entre el chequeo y el rename, ni demuestra
 durabilidad frente a corte o muerte real del proceso. No habilitar limpieza
 automática ni borrar `exercise-images-previous-*`; #56 y PR #57 siguen
 abiertas/DRAFT hasta cumplir todos los gates.
+
+## Limpieza aislada: intercambio de staging regular con bytes idénticos (01/11/2026)
+
+La prueba instrumentada `AbandonedImageImportStagingCleanerDeviceTest.swappedRegularStagingWithIdenticalBytesIsRejectedOnDevice` (commit `59c3702`) reproduce en el almacenamiento privado temporal de un AVD el intercambio, tras el preflight, de un candidato de staging por **otro directorio regular con bytes idénticos**. Comprueba que Android ofrece `BasicFileAttributes.fileKey()` no nulo, que la limpieza aislada devuelve `removed=0, preserved=1`, y que sobreviven las dos copias y la imagen activa. No utiliza Room ni imágenes personales.
+
+**Estado:** fuente publicada; la CI ordinaria solo compila `androidTest`. Pendiente ejecución real en AVD desechables API 35 y 36, anotando SHA, serial, API y resultado. Este caso no demuestra soporte de `SecureDirectoryStream` (cubierto por otra prueba), ausencia de TOCTOU posterior a la comprobación, durabilidad ante cortes ni recuperación completa de Room/DataStore. El limpiador permanece desconectado de producción; #56 abierta y PR #57 DRAFT.
