@@ -88,7 +88,11 @@ internal class BackupRecoveryJournal(
         check(!retiredDirectory.exists()) { "Queda una limpieza anterior pendiente" }
         check(!preparingDirectory.exists()) { "Queda una preparación incompleta pendiente" }
         check(preparingDirectory.mkdirs()) { "No se pudo crear la preparación del journal" }
+        // Preserve the identity of the staging root we created. Byte checks alone cannot
+        // distinguish a second regular directory containing the same PREPARED pre-image.
+        val preparingIdentity = fileIdentity(preparingDirectory)
         syncDirectory(preparingDirectory.parentFile)
+        requireSameIdentity(preparingDirectory, preparingIdentity)
         // An interrupted preparation is not an active journal: no domain mutation is allowed
         // until this method publishes the complete PREPARED directory and returns.
         writeSynced(File(preparingDirectory, ARCHIVE_FILE), previousArchive)
@@ -100,8 +104,10 @@ internal class BackupRecoveryJournal(
         // pre-image or marker is not deliberately promoted as our PREPARED journal.
         // These path-based checks cannot make the subsequent rename atomic.
         requireSafeJournalDirectory(preparingDirectory)
+        requireSameIdentity(preparingDirectory, preparingIdentity)
         requireSyncedTemporaryContent(File(preparingDirectory, ARCHIVE_FILE), previousArchive)
         requireSyncedTemporaryContent(File(preparingDirectory, STATE_FILE), preparedMarker)
+        requireSameIdentity(preparingDirectory, preparingIdentity)
         requireNotSymlink(directory)
         check(!Files.exists(directory.toPath(), LinkOption.NOFOLLOW_LINKS)) {
             "Apareció un journal activo durante la preparación"
