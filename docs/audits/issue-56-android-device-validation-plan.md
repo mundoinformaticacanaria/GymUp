@@ -34,3 +34,9 @@ Los tests de `UserImageOrphanReconcilerDeviceTest` emplean un `filesDir` tempora
 - Regresión funcional física BF-02, accesibilidad, fuente ampliada y backup/restore con datos de prueba representativos.
 
 **Puerta de integración:** conservar #56 abierta y PR #57 en DRAFT hasta registrar resultados por API, evidencias de cortes reales y auditoría final; no inferir aceptación del MVP ni generar candidato desde este protocolo.
+
+## Identidad de directorios regulares en Android (01/11/2026)
+
+La regresión instrumentada `BackupRecoveryJournalDeviceTest.swappedRegularPreparingRootIsRejectedByDeviceFileIdentity` (commit `8082034`) verifica sobre el filesystem privado real que `BasicFileAttributes.fileKey()` no es nulo para la raíz `recovery.preparing`, y que la limpieza rechaza un intercambio determinista por otro directorio **regular** tras el preflight. Debe conservar intactas ambas preimágenes. Los datos usados son bytes ficticios en rutas temporales bajo `noBackupFilesDir`; no accede a Room, preferencias ni imágenes personales.
+
+**Estado: prueba publicada, NO ejecutada en Android.** CI ordinaria solo compila `androidTest`; comprobar resultado CI del HEAD. Ejecutar sobre AVD desechables API 35 y 36 según el protocolo anterior, registrar SHA, API, serial y resultado. Un `fileKey()` nulo debe producir fallo explícito: la protección actual es best-effort y no puede darse por acreditada en ese filesystem. Un resultado verde tampoco prueba atomicidad ante sustituciones concurrentes, muerte de proceso o cortes.
