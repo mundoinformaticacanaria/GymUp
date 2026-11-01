@@ -92,10 +92,15 @@ internal class BackupRecoveryJournal(
         // until this method publishes the complete PREPARED directory and returns.
         writeSynced(File(preparingDirectory, ARCHIVE_FILE), previousArchive)
         val digest = sha256(previousArchive)
-        writeSynced(File(preparingDirectory, STATE_FILE), "$VERSION PREPARED $digest\n".toByteArray(Charsets.US_ASCII))
-        // Directory fsync can be followed by a root swap before publication. Never
-        // promote a symlink (or replace an unexpected active entry) as PREPARED.
+        val preparedMarker = "$VERSION PREPARED $digest\n".toByteArray(Charsets.US_ASCII)
+        writeSynced(File(preparingDirectory, STATE_FILE), preparedMarker)
+        // A different regular directory can replace the synced staging root before
+        // publication. Recheck both bytes through NOFOLLOW descriptors so an alien
+        // pre-image or marker is not deliberately promoted as our PREPARED journal.
+        // These path-based checks cannot make the subsequent rename atomic.
         requireSafeJournalDirectory(preparingDirectory)
+        requireSyncedTemporaryContent(File(preparingDirectory, ARCHIVE_FILE), previousArchive)
+        requireSyncedTemporaryContent(File(preparingDirectory, STATE_FILE), preparedMarker)
         requireNotSymlink(directory)
         check(!Files.exists(directory.toPath(), LinkOption.NOFOLLOW_LINKS)) {
             "Apareció un journal activo durante la preparación"
