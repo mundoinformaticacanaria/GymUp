@@ -30,6 +30,8 @@ internal class BackupRecoveryJournal(
     private val syncDirectory: (File) -> Unit = ::syncDirectoryMetadata,
     // Deterministic seam: replace a retired/preparing root after preflight, before deletion.
     private val beforeArtifactDelete: (File) -> Unit = {},
+    // Deterministic seam: replace a validated COMMITTED root before retiring it.
+    private val beforeCommittedRetirement: (File) -> Unit = {},
 ) {
     /** Stable in-process identity shared by coordinator instances for this journal path. */
     internal val lockKey: String = directory.canonicalPath
@@ -143,8 +145,19 @@ internal class BackupRecoveryJournal(
      */
     fun cleanupCommitted() {
         check(inspect() is State.Committed) { "No se puede eliminar un journal pendiente" }
+        // The state marker identifies the committed pre-image. A different regular directory
+        // could replace the checked root before rename, causing us to retire PREPARED data.
+        // Re-inspect and compare the marker after the test seam, before destructive retirement.
+        // Path-based checks still do not provide atomic protection from concurrent TOCTOU.
+        val committedMarker = readTrustedFile(File(directory, STATE_FILE), MAX_STATE_BYTES)
         requireNotSymlink(retiredDirectory)
-        check(!retiredDirectory.exists()) { "Queda una limpieza anterior pendiente" }
+        check(!Files.exists(retiredDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "Queda una limpieza anterior pendiente"
+        }
+        beforeCommittedRetirement(directory)
+        check(inspect() is State.Committed &&
+            readTrustedFile(File(directory, STATE_FILE), MAX_STATE_BYTES).contentEquals(committedMarker)
+        ) { "El journal confirmado cambió antes de retirarlo" }
         requireSafeJournalDirectory(directory)
         check(directory.renameTo(retiredDirectory)) { "No se pudo retirar el journal confirmado" }
         syncDirectory(directory.parentFile)
