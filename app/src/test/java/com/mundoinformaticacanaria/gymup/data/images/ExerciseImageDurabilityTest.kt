@@ -576,4 +576,79 @@ class ExerciseImageDurabilityTest {
             outside.deleteRecursively()
         }
     }
+
+    @Test
+    fun `regular root swap before USER image descriptor fails closed`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val root = context.filesDir.resolve("exercise-images")
+        val parked = context.filesDir.resolve("parked-root-" + java.util.UUID.randomUUID())
+        val replacement = context.filesDir.resolve("replacement-root-" + java.util.UUID.randomUUID())
+            .apply { check(mkdirs()) }
+        val marker = replacement.resolve("valuable.txt").apply { writeText("preserve") }
+        var swapped = false
+        try {
+            val manager = ExerciseImageManager(
+                context = context,
+                exerciseDao = database.exerciseDao(),
+                beforeUserImageWrite = {
+                    Files.move(root.toPath(), parked.toPath())
+                    Files.move(replacement.toPath(), root.toPath())
+                    swapped = true
+                },
+            )
+            val failure = runCatching {
+                manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+            }.exceptionOrNull()
+            assertTrue("The regular-directory swap must be exercised", swapped)
+            assertTrue(failure is IllegalStateException)
+            assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+            assertEquals("preserve", root.resolve(marker.name).readText())
+            assertEquals(listOf(marker.name), root.listFiles().orEmpty().map { it.name })
+        } finally {
+            if (parked.exists()) {
+                Files.move(root.toPath(), replacement.toPath())
+                Files.move(parked.toPath(), root.toPath())
+            }
+            replacement.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `regular root swap after USER image fsync never publishes Room reference`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val root = context.filesDir.resolve("exercise-images")
+        val parked = context.filesDir.resolve("parked-synced-root-" + java.util.UUID.randomUUID())
+        val replacement = context.filesDir.resolve("replacement-synced-root-" + java.util.UUID.randomUUID())
+            .apply { check(mkdirs()) }
+        val marker = replacement.resolve("valuable.txt").apply { writeText("preserve") }
+        var swapped = false
+        try {
+            val manager = ExerciseImageManager(
+                context = context,
+                exerciseDao = database.exerciseDao(),
+                afterUserImageSync = {
+                    Files.move(root.toPath(), parked.toPath())
+                    Files.move(replacement.toPath(), root.toPath())
+                    swapped = true
+                },
+            )
+            val failure = runCatching {
+                manager.addUserImage(exercise.id, byteArrayOf(4, 5, 6))
+            }.exceptionOrNull()
+            assertTrue("The post-fsync swap must be exercised", swapped)
+            assertTrue(failure is IllegalStateException)
+            assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+            assertEquals("preserve", root.resolve(marker.name).readText())
+            assertEquals(listOf(marker.name), root.listFiles().orEmpty().map { it.name })
+            assertTrue("Original unpublished bytes remain available for recovery",
+                parked.listFiles().orEmpty().any { it.name.endsWith(".tmp") })
+        } finally {
+            if (parked.exists()) {
+                Files.move(root.toPath(), replacement.toPath())
+                Files.move(parked.toPath(), root.toPath())
+            }
+            replacement.deleteRecursively()
+        }
+    }
+
 }
