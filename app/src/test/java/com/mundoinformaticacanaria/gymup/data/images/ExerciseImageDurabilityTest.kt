@@ -343,6 +343,72 @@ class ExerciseImageDurabilityTest {
     }
 
     @Test
+    fun `regular image root swap after Room deletion preserves foreign bytes and metadata`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val normal = ExerciseImageManager(context, database.exerciseDao())
+        val original = byteArrayOf(1, 3, 5, 7)
+        val image = normal.addUserImage(exercise.id, original)
+        val root = context.filesDir.resolve("exercise-images")
+        val parked = context.filesDir.resolve("exercise-images-parked-regular-delete")
+        val foreign = context.filesDir.resolve("exercise-images-foreign-delete").apply { mkdirs() }
+        val foreignBytes = byteArrayOf(9, 8, 7, 6)
+        val name = image.storageKey.removePrefix("user:")
+        foreign.resolve(name).writeBytes(foreignBytes)
+        try {
+            val manager = ExerciseImageManager(
+                context = context,
+                exerciseDao = database.exerciseDao(),
+                afterImageRowDelete = {
+                    Files.move(root.toPath(), parked.toPath())
+                    Files.move(foreign.toPath(), root.toPath())
+                },
+            )
+            val failure = runCatching { manager.deleteUserImage(image.id) }.exceptionOrNull()
+            assertTrue(failure is IllegalStateException)
+            assertEquals(image.id, database.exerciseDao().getImageById(image.id)?.id)
+            assertArrayEquals(foreignBytes, root.resolve(name).readBytes())
+            assertArrayEquals(original, parked.resolve(name).readBytes())
+        } finally {
+            if (root.exists() && parked.exists()) Files.move(root.toPath(), foreign.toPath())
+            if (parked.exists()) Files.move(parked.toPath(), root.toPath())
+            foreign.deleteRecursively()
+        }
+        assertArrayEquals(original, normal.readBytes(image))
+    }
+
+    @Test
+    fun `regular image file swap with identical bytes after Room deletion is rejected`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val normal = ExerciseImageManager(context, database.exerciseDao())
+        val original = byteArrayOf(2, 4, 6, 8)
+        val image = normal.addUserImage(exercise.id, original)
+        val file = image.localFile!!
+        val parked = context.filesDir.resolve("image-parked-regular-delete")
+        val replacement = context.filesDir.resolve("image-replacement-regular-delete")
+        replacement.writeBytes(original)
+        try {
+            val manager = ExerciseImageManager(
+                context = context,
+                exerciseDao = database.exerciseDao(),
+                afterImageRowDelete = {
+                    Files.move(file.toPath(), parked.toPath())
+                    Files.move(replacement.toPath(), file.toPath())
+                },
+            )
+            val failure = runCatching { manager.deleteUserImage(image.id) }.exceptionOrNull()
+            assertTrue(failure is IllegalStateException)
+            assertEquals(image.id, database.exerciseDao().getImageById(image.id)?.id)
+            assertArrayEquals(original, file.readBytes())
+            assertArrayEquals(original, parked.readBytes())
+        } finally {
+            if (file.exists() && parked.exists()) Files.move(file.toPath(), replacement.toPath())
+            if (parked.exists()) Files.move(parked.toPath(), file.toPath())
+            replacement.delete()
+        }
+        assertArrayEquals(original, normal.readBytes(image))
+    }
+
+    @Test
     fun `single image deletion refuses to remove shared storage bytes`() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val manager = ExerciseImageManager(context, database.exerciseDao())
