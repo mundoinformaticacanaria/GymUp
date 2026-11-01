@@ -295,6 +295,10 @@ internal class BackupRecoveryJournal(
             Channels.newOutputStream(channel).write(bytes)
             channel.force(true)
         }
+        // Capture the identity of the descriptor-backed temporary entry after fsync.
+        // An alien regular file with identical bytes must not be published in its place.
+        // fileKey may be unavailable on Android; this narrows deterministic swaps only.
+        val tempIdentity = fileIdentity(temp)
         // A synced temporary entry can be swapped before its rename. NOFOLLOW_LINKS
         // protected the write descriptor, but not the later path-based publication.
         // Reject a linked temp, a swapped journal root, or a linked target instead
@@ -308,6 +312,7 @@ internal class BackupRecoveryJournal(
         // Verify its bytes through a NOFOLLOW descriptor before publishing the journal.
         // This narrows deterministic substitution; path-based rename remains non-atomic.
         requireSyncedTemporaryContent(temp, bytes)
+        requireSameIdentity(temp, tempIdentity)
         requireNotSymlink(target)
         if (replace) {
             // Do not remove PREPARED before COMMITTED is ready: keep the old marker if rename fails.
