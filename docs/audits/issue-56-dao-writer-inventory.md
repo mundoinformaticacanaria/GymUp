@@ -796,3 +796,26 @@ automática de staging ni retirar `exercise-images-previous-*`.
 La regresión JVM `BackupRecoveryJournalInterruptedCommitTest.interrupted commit refuses journal root swapped to a symlink after inspect` (commit `5c0b767`) reproduce la sustitución determinista de la raíz `recovery` por un enlace a un directorio externo **después** de `inspect()` y antes de examinar `state.tmp`. Exige fallo cerrado, preservación del marcador externo y de la preimagen PREPARED desplazada, y permite confirmar tras restaurar explícitamente el fixture. No se modifica código de producción.
 
 **Pendiente verificar CI del HEAD nuevo.** La prueba reduce una ventana de regresión observable, pero no demuestra protección atómica frente a intercambios concurrentes de rutas ni durabilidad ante muerte de proceso o corte. Siguen pendientes Android API 35/36 instrumentado, auditoría global de accesos DAO/lectores/procesos y regresión física BF-02. Inspector/limpiador de staging aislados, `exercise-images-previous-*` preservados; #56 abierta y PR #57 DRAFT sobre #50.
+
+## Sustitución por otro journal regular entre inspección y confirmación — 2026-11-01
+
+En `BackupRecoveryJournal.markCommitted()`, la validación `NOFOLLOW_LINKS`
+rechazaba raíces enlazadas, pero no impedía que, después de `inspect()`, el
+directorio activo se sustituyera por **otro directorio regular** con un journal
+`PREPARED` distinto. En esa situación podía retirarse el `state.tmp` ajeno
+y publicarse `COMMITTED` usando el digest de la preimagen anterior.
+
+- `7a60069` vuelve a inspeccionar el journal antes de borrar el marcador
+  temporal y exige que siga `PREPARED` con los mismos bytes de preimagen.
+- `612e7f8` reproduce el intercambio determinista de dos directorios reales
+  con preimágenes distintas, exige conservar ambos journals y el marcador
+  temporal ajeno, y verifica que solo la preimagen original se confirma tras
+  restaurar manualmente el fixture.
+- **Pendiente CI del nuevo HEAD**. La reinspección no hace atómica la secuencia:
+  un cambio concurrente posterior a la segunda lectura o un directorio
+  sustituto con contenido idéntico siguen fuera de esta garantía. Tampoco
+  sustituye Android API 35/36 instrumentado, pruebas reales de corte,
+  auditoría DAO/lectores/procesos ni regresión física BF-02.
+
+Mantener #56 abierta y PR #57 DRAFT sobre #50; no habilitar el limpiador
+aislado ni eliminar `exercise-images-previous-*`.
