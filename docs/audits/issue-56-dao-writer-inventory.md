@@ -920,3 +920,29 @@ ejecutada por la CI ordinaria. Sigue pendiente TOCTOU atómico entre
 comprobación y operación, muerte/corte real, auditoría DAO/lectores/procesos
 y regresión física BF-02. Mantener #56 abierta y PR #57 DRAFT sobre #50;
 no activar limpiador de staging ni borrar `exercise-images-previous-*`.
+
+## Publicación de temporal regular con bytes idénticos — 2026-11-01 10:08 UTC
+
+En `BackupRecoveryJournal.writeSynced()`, `CREATE_NEW | NOFOLLOW_LINKS` y el
+SHA-256 de `requireSyncedTemporaryContent()` evitaban publicar un temporal
+con bytes alterados o enlazado, pero no distinguían un archivo **regular distinto
+con los mismos bytes** sustituido después de `FileChannel.force(true)`.
+La ruta podía promover un marcador `state.tmp` o `previous.zip.tmp` ajeno,
+aunque su contenido coincidiera con el esperado. Es una ventana identificada
+por análisis estático, **sin incidente real confirmado**.
+
+- `2307085` captura `BasicFileAttributes.fileKey()` del temporal recién
+  sincronizado y comprueba su identidad después de la validación de bytes y
+  antes de `renameTo()`. No modifica el protocolo ni el formato ZIP.
+- `9a4a812` incorpora dos regresiones JVM con intercambio determinista por
+  archivos regulares de bytes idénticos: publicación PREPARED y confirmación
+  COMMITTED. Exigen fallo cerrado y preservación de ambas copias; el segundo
+  caso prueba un reintento tras reparar la fixture.
+- **CI del HEAD nuevo pendiente de verificación**. `fileKey() == null` no
+  permite probar identidad; tampoco se elimina el TOCTOU entre la última
+  comprobación y el rename. No se declara defensa atómica ni prueba Android.
+
+Mantener #56 abierta y PR #57 DRAFT sobre #50. Continúan pendientes
+instrumentación API 35/36, durabilidad ante muerte/cortes reales, auditoría
+DAO/lectores/procesos y regresión física BF-02. No conectar limpiador de
+staging ni borrar `exercise-images-previous-*`.
