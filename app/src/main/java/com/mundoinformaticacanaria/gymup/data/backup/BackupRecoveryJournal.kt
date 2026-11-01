@@ -6,6 +6,7 @@ import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 
 /**
@@ -196,26 +197,34 @@ internal class BackupRecoveryJournal(
         requireSafeJournalDirectory(path)
         requireNotSymlink(path)
         check(path.isDirectory) { "La ruta de limpieza no es un directorio de journal" }
+        // A different regular directory or file can replace a preflighted path without
+        // involving symlinks. Compare filesystem identities when the provider exposes them.
+        // Android providers may return null; this is a best-effort check, not atomic TOCTOU.
+        val rootIdentity = fileIdentity(path)
         val entries = path.listFiles() ?: error("No se pudo inspeccionar el directorio de journal")
         val allowed = setOf(ARCHIVE_FILE, STATE_FILE, "$ARCHIVE_FILE.tmp", "$STATE_FILE.tmp")
-        entries.forEach { entry ->
+        val entryIdentities = entries.associate { entry ->
             requireNotSymlink(entry)
             check(entry.name in allowed && entry.isFile) {
                 "Contenido inesperado en directorio de journal: ${entry.name}"
             }
+            entry.name to fileIdentity(entry)
         }
         entries.forEach { entry ->
             // The root or a preflighted entry can change before the destructive operation.
             beforeArtifactDelete(entry)
             requireSafeJournalDirectory(path)
+            requireSameIdentity(path, rootIdentity)
             requireNotSymlink(entry)
             check(Files.isRegularFile(entry.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                 "Artefacto de journal inseguro antes del borrado: ${entry.name}"
             }
-            // Path checks narrow deterministic swaps, but do not provide atomic TOCTOU safety.
+            requireSameIdentity(entry, entryIdentities[entry.name])
+            // Identity checks narrow deterministic swaps, but cannot make delete atomic.
             check(entry.delete()) { "No se pudo eliminar el archivo de journal: ${entry.name}" }
         }
         requireSafeJournalDirectory(path)
+        requireSameIdentity(path, rootIdentity)
         check(path.delete()) { "No se pudo eliminar el directorio de journal" }
         syncDirectory(path.parentFile)
     }
@@ -345,6 +354,20 @@ internal class BackupRecoveryJournal(
         }
         check(Files.isDirectory(path.toPath(), LinkOption.NOFOLLOW_LINKS)) {
             "Directorio de journal inseguro: ${path.name}"
+        }
+    }
+
+    /** Stable on filesystems exposing fileKey; null means identity cannot be proven here. */
+    private fun fileIdentity(file: File): Any? =
+        Files.readAttributes(
+            file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+        ).fileKey()
+
+    private fun requireSameIdentity(file: File, expected: Any?) {
+        if (expected != null) {
+            check(fileIdentity(file) == expected) {
+                "La identidad del artefacto de journal cambió durante la limpieza: ${file.name}"
+            }
         }
     }
 
