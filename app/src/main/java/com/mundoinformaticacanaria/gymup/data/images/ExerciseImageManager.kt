@@ -13,6 +13,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.OpenOption
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.UUID
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
@@ -98,6 +99,34 @@ class ExerciseImageManager internal constructor(
         // The directory itself must survive a restart before Room can refer to its files.
         if (createdDirectory) syncImageDirectory(imageDirectory.parentFile)
 
+        // A regular directory can replace another without becoming a symlink.
+        // Capture the actual parent/root identities before exposing the write seam.
+        // Missing fileKey is fail-closed until verified on Android API 35/36.
+        val originalParentKey = Files.readAttributes(
+            filesDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+        ).fileKey()
+        val originalRootKey = Files.readAttributes(
+            imageDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+        ).fileKey()
+        check(originalParentKey != null && originalRootKey != null) {
+            "No se puede verificar la identidad del almacenamiento de imágenes"
+        }
+        fun originalRootStillPresent(): Boolean = runCatching {
+            Files.isDirectory(filesDirectory.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                Files.readAttributes(
+                    filesDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                ).fileKey() == originalParentKey &&
+                Files.readAttributes(
+                    imageDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                ).fileKey() == originalRootKey
+        }.getOrDefault(false)
+        fun requireOriginalRoot() {
+            check(originalRootStillPresent()) {
+                "El almacenamiento de imágenes fue sustituido durante la escritura"
+            }
+        }
+
         val id = UUID.randomUUID().toString()
         val storageKey = "user:$id"
         val finalFile = fileFor(storageKey)
@@ -109,7 +138,7 @@ class ExerciseImageManager internal constructor(
             // truncating an external file. The random name alone is not a security boundary.
             beforeUserImageWrite(temporaryFile)
             // NOFOLLOW_LINKS on the file does not protect a replaced ancestor directory.
-            requireSafeImageDirectory()
+            requireOriginalRoot()
             FileChannel.open(
                 temporaryFile.toPath(),
                 StandardOpenOption.CREATE_NEW,
@@ -122,7 +151,7 @@ class ExerciseImageManager internal constructor(
             check(temporaryFile.length() == bytes.size.toLong()) { "No se pudo guardar la imagen" }
             // Deterministic test seam: failure here must leave neither a published file nor Room metadata.
             afterUserImageSync(temporaryFile)
-            requireSafeImageDirectory()
+            requireOriginalRoot()
             check(Files.isRegularFile(temporaryFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                 "El temporal de imagen dejó de ser un archivo regular"
             }
@@ -140,7 +169,7 @@ class ExerciseImageManager internal constructor(
                     "La imagen temporal cambió después de sincronizarse"
                 }
             }
-            requireSafeImageDirectory()
+            requireOriginalRoot()
             check(temporaryFile.renameTo(finalFile)) { "No se pudo activar la imagen guardada" }
             val entity = ExerciseImageEntity(
                 id = id,
@@ -155,9 +184,9 @@ class ExerciseImageManager internal constructor(
             try {
                 // Persist the rename before publishing the Room reference. A file fsync
                 // alone cannot guarantee the new directory entry survives a crash.
-                requireSafeImageDirectory()
+                requireOriginalRoot()
                 syncImageDirectory(imageDirectory)
-                requireSafeImageDirectory()
+                requireOriginalRoot()
                 exerciseDao.insertImage(entity)
                 afterImageRowInsert(entity)
             } catch (error: Throwable) {
@@ -186,8 +215,7 @@ class ExerciseImageManager internal constructor(
                     // exercise-images was replaced with a symlink after the insert.
                     // NOFOLLOW_LINKS on the final component does not guard ancestors.
                     // This is fail-closed validation, not atomic TOCTOU protection.
-                    if (safeToRemoveFile && hasSafePrivateParent() &&
-                        Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                    if (safeToRemoveFile && originalRootStillPresent() &&
                         Files.isRegularFile(finalFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                         if (!finalFile.delete()) {
                             error.addSuppressed(IllegalStateException("No se pudo retirar la imagen sin registrar"))
@@ -204,8 +232,7 @@ class ExerciseImageManager internal constructor(
             // Unlink that entry itself (never its target), but only while both
             // parent directories are still real directories. The old cleanup
             // skipped symlinks and left unsafe temporary entries behind.
-            if (hasSafePrivateParent() &&
-                Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+            if (originalRootStillPresent() &&
                 (Files.isRegularFile(temporaryFile.toPath(), LinkOption.NOFOLLOW_LINKS) ||
                     Files.isSymbolicLink(temporaryFile.toPath()))) {
                 temporaryFile.delete()
