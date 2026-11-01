@@ -255,6 +255,39 @@ class ExerciseImageManager internal constructor(
         // A corrupt reference must not escape the private directory or silently drop
         // metadata for a directory or dangling symlink (File.exists follows symlinks).
         val file = validatedUserImageFile(image.storageKey)
+        // A regular directory/file can be swapped for another regular inode after
+        // Room commits the row deletion. Capture all identities before that commit.
+        val originalFilePresent = Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)
+        val originalParentKey = Files.readAttributes(
+            filesDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+        ).fileKey()
+        val originalRootKey = if (Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            Files.readAttributes(
+                imageDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+            ).fileKey()
+        } else null
+        val originalFileKey = if (originalFilePresent) Files.readAttributes(
+            file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+        ).fileKey() else null
+        if (originalFilePresent) {
+            check(originalParentKey != null && originalRootKey != null && originalFileKey != null) {
+                "No se puede verificar la identidad de la imagen que se va a eliminar"
+            }
+        }
+        fun originalDeletionPathUnchanged(): Boolean = runCatching {
+            Files.isDirectory(filesDirectory.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                Files.readAttributes(
+                    filesDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                ).fileKey() == originalParentKey &&
+                Files.readAttributes(
+                    imageDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                ).fileKey() == originalRootKey &&
+                Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                Files.readAttributes(
+                    file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                ).fileKey() == originalFileKey
+        }.getOrDefault(false)
         // storage_key is not unique in the Room schema. Fail before deleting metadata
         // if another image row still points to the same private file.
         require(exerciseDao.countUserImageStorageKeyReferences(image.storageKey) == 1) {
@@ -270,10 +303,20 @@ class ExerciseImageManager internal constructor(
             // The image root can change after Room commits the deletion. A safe filesDir
             // alone is insufficient: reject a linked/non-directory intermediate root.
             requireSafeImageRootForDeletion()
+            // An originally present file must not silently disappear through a
+            // regular root swap; likewise a new file must not be deleted in its place.
+            if (originalFilePresent) {
+                check(originalDeletionPathUnchanged()) {
+                    "La identidad de la imagen cambió antes del borrado"
+                }
+            }
             check(!Files.isSymbolicLink(file.toPath())) {
                 "La imagen fue sustituida por un enlace simbólico antes del borrado"
             }
             if (file.exists()) {
+                check(originalFilePresent && originalDeletionPathUnchanged()) {
+                    "La imagen o su directorio fueron sustituidos antes del borrado"
+                }
                 check(Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                     "La imagen dejó de ser un archivo regular antes del borrado"
                 }
@@ -305,7 +348,8 @@ class ExerciseImageManager internal constructor(
                 // When the root is safe, never recreate a row for already-missing bytes.
                 val rootSafe = hasSafePrivateParent() &&
                     Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)
-                if (!rootSafe || Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                if (!rootSafe || (originalFilePresent && !originalDeletionPathUnchanged()) ||
+                    Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                     runCatching { exerciseDao.insertImage(image) }.onFailure(failure::addSuppressed)
                 }
             }
