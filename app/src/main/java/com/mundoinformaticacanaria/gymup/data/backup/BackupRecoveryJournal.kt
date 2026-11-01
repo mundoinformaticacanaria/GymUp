@@ -111,6 +111,13 @@ internal class BackupRecoveryJournal(
         // recovery can finish instead of being permanently blocked by the stale temp file.
         val interruptedCommit = File(directory, "$STATE_FILE.tmp")
         beforeInterruptedCommitCleanup(interruptedCommit)
+        // A different regular directory can replace the inspected journal without using
+        // a symlink. Re-read PREPARED before deleting a stale marker or publishing COMMITTED.
+        // This detects deterministic root substitution, not atomic concurrent TOCTOU.
+        val stillPrepared = inspect()
+        check(stillPrepared is State.Prepared &&
+            stillPrepared.previousArchive.contentEquals(prepared.previousArchive)
+        ) { "La preimagen del journal cambió durante la confirmación" }
         // inspect() validated the root before this point, but it may have been swapped
         // while the marker was being examined. Never delete state.tmp through a
         // linked intermediate directory, even when the final file is regular.
