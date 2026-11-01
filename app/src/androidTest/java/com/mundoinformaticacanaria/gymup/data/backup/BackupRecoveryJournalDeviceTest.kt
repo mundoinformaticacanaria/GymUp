@@ -161,6 +161,52 @@ class BackupRecoveryJournalDeviceTest {
         }
     }
 
+    @Test
+    fun swappedRegularArchiveIsRejectedByDeviceFileIdentity() {
+        withJournalDirectory { directory ->
+            val preparing = File(directory.parentFile, "${directory.name}.preparing")
+            val archive = File(preparing, "previous.zip")
+            val held = File(directory.parentFile, "${directory.name}.held-archive")
+            val foreign = File(directory.parentFile, "${directory.name}.foreign-archive")
+            val originalBytes = byteArrayOf(10, 20, 30)
+            val foreignBytes = byteArrayOf(40, 50, 60)
+            try {
+                assertTrue(preparing.mkdir())
+                archive.writeBytes(originalBytes)
+                foreign.writeBytes(foreignBytes)
+
+                // Check a regular file as well as the directory identity covered above.
+                val identity = Files.readAttributes(
+                    archive.toPath(),
+                    BasicFileAttributes::class.java,
+                    LinkOption.NOFOLLOW_LINKS,
+                ).fileKey()
+                assertNotNull("Android filesystem did not expose a regular-file fileKey", identity)
+
+                var swapped = false
+                val journal = BackupRecoveryJournal(
+                    directory,
+                    beforeArtifactDelete = { entry ->
+                        if (!swapped && entry.name == "previous.zip") {
+                            assertTrue(archive.renameTo(held))
+                            assertTrue(foreign.renameTo(archive))
+                            swapped = true
+                        }
+                    },
+                )
+                assertTrue(runCatching { journal.cleanupAbandonedPreparation() }.isFailure)
+                assertTrue(swapped)
+                assertArrayEquals(originalBytes, held.readBytes())
+                assertArrayEquals(foreignBytes, archive.readBytes())
+            } finally {
+                // All paths are unique test fixtures under noBackupFilesDir.
+                preparing.deleteRecursively()
+                held.delete()
+                foreign.delete()
+            }
+        }
+    }
+
     private fun withJournalDirectory(block: (File) -> Unit) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val directory = File(context.noBackupFilesDir, "gymup-journal-test-${UUID.randomUUID()}")
