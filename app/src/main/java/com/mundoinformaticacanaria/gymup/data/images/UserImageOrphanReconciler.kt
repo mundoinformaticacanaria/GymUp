@@ -7,6 +7,7 @@ import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.StandardOpenOption
 
 /**
@@ -43,6 +44,11 @@ internal class UserImageOrphanReconciler(
             throw IOException("La ruta de imágenes no es un directorio")
         }
 
+        // Remember the identity of the original root, not just its path/type.
+        // A regular directory can replace another without becoming a symlink.
+        val rootIdentity = Files.readAttributes(
+            root, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+        ).fileKey()
         val referenced = exerciseDao.getAllUserImageStorageKeys().toSet()
         val entries = directory.listFiles() ?: throw IOException("No se pudieron enumerar las imágenes")
         for (file in entries) {
@@ -56,6 +62,12 @@ internal class UserImageOrphanReconciler(
             }
             // Defense in depth: a stale snapshot must not delete a newly referenced file.
             if (exerciseDao.countUserImageStorageKeyReferences(key) != 0) continue
+            val fileIdentity = Files.readAttributes(
+                path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+            ).fileKey()
+            // Without stable file identities, preserve the orphan rather than risk
+            // unlinking a different regular file through a substituted path.
+            if (rootIdentity == null || fileIdentity == null) continue
             beforeOrphanRemoval(file)
             // The final component's NOFOLLOW_LINKS check above does not protect an
             // intermediate image root swapped after enumeration or DAO validation.
@@ -64,6 +76,14 @@ internal class UserImageOrphanReconciler(
                 !Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS) ||
                 !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
                 throw IOException("Ruta de imagen huérfana sustituida antes del borrado: ${file.name}")
+            }
+            if (Files.readAttributes(
+                    root, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                ).fileKey() != rootIdentity ||
+                Files.readAttributes(
+                    path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                ).fileKey() != fileIdentity) {
+                throw IOException("Identidad de imagen huérfana sustituida: ${file.name}")
             }
             if (!removeFile(file) || Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
                 throw IOException("No se pudo retirar la imagen huérfana: ${file.name}")
