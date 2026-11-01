@@ -298,6 +298,7 @@ class ExerciseImageManager internal constructor(
         // This is only exception recovery; abrupt process death still needs the
         // journal/startup protocol and a shared domain write barrier (Issue #56).
         exerciseDao.deleteImage(image)
+        var fileRemovalStarted = false
         val failure = try {
             afterImageRowDelete(image)
             // The image root can change after Room commits the deletion. A safe filesDir
@@ -321,7 +322,8 @@ class ExerciseImageManager internal constructor(
                     "La imagen dejó de ser un archivo regular antes del borrado"
                 }
                 when {
-                    !removeUserImageFile(file) -> IOException("No se pudo eliminar el archivo de imagen")
+                    !run { fileRemovalStarted = true; removeUserImageFile(file) } ->
+                        IOException("No se pudo eliminar el archivo de imagen")
                     runCatching { requireSafeImageRootForDeletion() }.isFailure ->
                         IOException("El directorio de imágenes cambió durante el borrado")
                     file.exists() -> IOException("El archivo de imagen sigue presente tras el borrado")
@@ -348,7 +350,7 @@ class ExerciseImageManager internal constructor(
                 // When the root is safe, never recreate a row for already-missing bytes.
                 val rootSafe = hasSafePrivateParent() &&
                     Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)
-                if (!rootSafe || (originalFilePresent && !originalDeletionPathUnchanged()) ||
+                if (!rootSafe || (!fileRemovalStarted && originalFilePresent && !originalDeletionPathUnchanged()) ||
                     Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                     runCatching { exerciseDao.insertImage(image) }.onFailure(failure::addSuppressed)
                 }
