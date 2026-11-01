@@ -1034,3 +1034,29 @@ falla cerrada. La compensación posterior a un unlink iniciado sigue siendo
 best-effort ante muerte de proceso o cambios concurrentes. Mantener #56 abierta,
 PR #57 DRAFT y sin fusionar hasta completar instrumentación, durabilidad,
 auditoría y regresión física BF-02.
+
+## Lectura de imágenes USER: sustitución regular de raíz o archivo — 2026-11-01 23:10 UTC
+
+En `ExerciseImageManager.readBytes()`, `safeReadableUserImageFile()` y
+la segunda comprobación de tipo rechazaban enlaces simbólicos, pero una
+sustitución por **otro directorio regular** o **otro archivo regular** entre
+la observación de la galería y la apertura podía hacer que la lectura
+devolviera bytes ajenos bajo el mismo nombre. Riesgo estático reproducible
+con un hook de prueba; no consta exposición real de datos.
+
+- `b61a5c7` captura identidades `BasicFileAttributes.fileKey()` del padre
+  privado, raíz y fichero antes del hook de lectura, y revalida antes de abrir
+  y después de consumir los bytes. Si no se dispone de identidad, devuelve
+  `null` sin entregar bytes de un pathname no verificable.
+- `622b999` añade dos regresiones Robolectric: sustitución por directorio
+  regular y por archivo regular, con contenido ajeno preservado y lectura
+  normal tras restaurar el árbol original.
+- **CI del HEAD nuevo pendiente de verificar.** La comparación por pathname
+  no es atómica: un intercambio concurrente después del último chequeo o
+  un retorno ABA todavía puede escapar a la detección. Debe verificarse
+  `fileKey()` y lectura normal en Android API 35/36, sin declarar seguridad
+  absoluta por estas pruebas JVM.
+
+Mantener #56 abierta y PR #57 DRAFT sobre #50. Pendientes instrumentación
+API 35/36, cortes/durabilidad, auditoría global DAO/lectores/procesos,
+TOCTOU atómico y regresión física BF-02. Sin merge, APK, etiqueta ni release.
