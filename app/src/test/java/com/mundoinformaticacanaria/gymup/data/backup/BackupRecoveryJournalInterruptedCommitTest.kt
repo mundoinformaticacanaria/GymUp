@@ -150,4 +150,53 @@ class BackupRecoveryJournalInterruptedCommitTest {
         assertEquals("external marker must survive", outsideMarker.readText())
     }
 
+
+    @Test
+    fun `interrupted commit rejects another regular prepared journal after inspect`() {
+        val directory = File(temp.root, "recovery")
+        val heldRoot = File(temp.root, "recovery-held")
+        val foreignRoot = File(temp.root, "foreign-prepared")
+        val original = byteArrayOf(71, 72, 73)
+        val foreign = byteArrayOf(81, 82, 83)
+        val foreignMarker = File(foreignRoot, "state.tmp")
+        BackupRecoveryJournal(foreignRoot).prepare(foreign)
+        foreignMarker.writeText("foreign marker must survive")
+        var injected = false
+        val journal = BackupRecoveryJournal(
+            directory,
+            beforeInterruptedCommitCleanup = {
+                assertTrue(directory.renameTo(heldRoot))
+                assertTrue(foreignRoot.renameTo(directory))
+                injected = true
+            },
+        )
+        journal.prepare(original)
+
+        assertTrue(runCatching { journal.markCommitted() }.isFailure)
+        assertTrue(injected)
+        assertEquals("foreign marker must survive", File(directory, "state.tmp").readText())
+        assertArrayEquals(
+            foreign,
+            (BackupRecoveryJournal(directory).inspect() as BackupRecoveryJournal.State.Prepared)
+                .previousArchive,
+        )
+        assertArrayEquals(
+            original,
+            (BackupRecoveryJournal(heldRoot).inspect() as BackupRecoveryJournal.State.Prepared)
+                .previousArchive,
+        )
+
+        // Restore both test fixtures explicitly; only the original journal may be committed.
+        assertTrue(directory.renameTo(foreignRoot))
+        assertTrue(heldRoot.renameTo(directory))
+        BackupRecoveryJournal(directory).markCommitted()
+        assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(directory).inspect())
+        assertEquals("foreign marker must survive", foreignMarker.readText())
+        assertArrayEquals(
+            foreign,
+            (BackupRecoveryJournal(foreignRoot).inspect() as BackupRecoveryJournal.State.Prepared)
+                .previousArchive,
+        )
+    }
+
 }
