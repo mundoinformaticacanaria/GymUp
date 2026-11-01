@@ -72,3 +72,23 @@ solo compila fuentes `androidTest`. Ejecutar en AVD desechables Android
 15/API35 y Android 16/API36, documentando serial, SHA y resultado.
 El test no demuestra atomicidad TOCTOU, resistencia al reciclaje de inodos,
 fsync tras cortes reales ni recuperación Room/DataStore.
+
+## Sustitución de staging PREPARED por directorio idéntico (01/11/2026)
+
+El commit `5af4b42` conserva `BasicFileAttributes.fileKey()` del directorio
+`recovery.preparing` creado por la importación y revalida esa identidad
+después de sincronizar su padre y antes de publicar PREPARED. La validación
+de contenido existente no distinguía dos directorios regulares diferentes
+con la misma preimagen y el mismo marcador. La regresión JVM `26f180d`
+exige fallo cerrado y conservación de ambos directorios; la prueba Android
+`swappedIdenticalPreparingRootIsRejectedByDeviceFileIdentity` (`80bd93d`)
+reproduce el intercambio con bytes ficticios bajo `noBackupFilesDir`.
+
+**Estado:** código y fuentes de prueba publicados; verificar CI del HEAD
+exacto. La instrumentación no se considera ejecutada hasta registrar
+AVD desechables API 35 y API 36, SHA, serial y resultado. Un `fileKey()`
+nulo no acredita protección de identidad; incluso no nulo, la verificación
+por ruta no cierra TOCTOU entre el chequeo y el rename, ni demuestra
+durabilidad frente a corte o muerte real del proceso. No habilitar limpieza
+automática ni borrar `exercise-images-previous-*`; #56 y PR #57 siguen
+abiertas/DRAFT hasta cumplir todos los gates.
