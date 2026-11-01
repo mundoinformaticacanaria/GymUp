@@ -341,4 +341,49 @@ class UserImageOrphanReconcilerTest {
         }
     }
 
+    @Test fun `regular orphan file swapped after DAO check preserves unrelated bytes`() = runBlocking {
+        val root = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val name = UUID.randomUUID().toString()
+        val orphan = root.resolve(name).apply { writeText("private orphan") }
+        val parked = context.cacheDir.resolve("parked-orphan-" + UUID.randomUUID())
+        val replacement = context.cacheDir.resolve("replacement-orphan-" + UUID.randomUUID())
+            .apply { writeText("unrelated bytes must survive") }
+        try {
+            val originalIdentity = java.nio.file.Files.readAttributes(
+                orphan.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java,
+                java.nio.file.LinkOption.NOFOLLOW_LINKS,
+            ).fileKey()
+            val replacementIdentity = java.nio.file.Files.readAttributes(
+                replacement.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java,
+                java.nio.file.LinkOption.NOFOLLOW_LINKS,
+            ).fileKey()
+            assertTrue("Regular files must have distinct stable identities",
+                originalIdentity != null && replacementIdentity != null &&
+                    originalIdentity != replacementIdentity)
+
+            val reconciler = UserImageOrphanReconciler(
+                context, database.exerciseDao(), syncDirectory = {},
+                beforeOrphanRemoval = {
+                    java.nio.file.Files.move(orphan.toPath(), parked.toPath())
+                    java.nio.file.Files.move(replacement.toPath(), orphan.toPath())
+                },
+            )
+            assertThrows(IOException::class.java) { runBlocking { reconciler.reconcile() } }
+            assertTrue(orphan.readText() == "unrelated bytes must survive")
+            assertTrue(parked.readText() == "private orphan")
+
+            // Restoring the original path allows a safe retry; the unrelated file survives.
+            java.nio.file.Files.move(orphan.toPath(), replacement.toPath())
+            java.nio.file.Files.move(parked.toPath(), orphan.toPath())
+            UserImageOrphanReconciler(context, database.exerciseDao(), syncDirectory = {}).reconcile()
+            assertFalse(orphan.exists())
+            assertTrue(replacement.readText() == "unrelated bytes must survive")
+        } finally {
+            orphan.delete()
+            parked.delete()
+            replacement.delete()
+        }
+    }
+
+
 }
