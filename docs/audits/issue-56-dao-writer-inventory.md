@@ -975,3 +975,33 @@ la limpieza opcional debe permanecer deshabilitada. No conectar el
 limpiador al arranque, no borrar `exercise-images-previous-*`, no
 fusionar PR #57 ni cerrar #56 sin los gates pendientes de dispositivo,
 durabilidad, auditoría y regresión BF-02.
+
+## Alta de imágenes USER: sustitución de raíz regular — 2026-11-01 21:10 UTC
+
+La revisión de `ExerciseImageManager.addUserImageUnprotected()` encontró que
+`requireSafeImageDirectory()` rechazaba enlaces simbólicos, pero no distinguía
+dos directorios **regulares distintos**. Una sustitución de
+`filesDir/exercise-images` por otra carpeta regular después de crear la raíz,
+pero antes de abrir el temporal o después de su `fsync`, podía permitir
+escritura/publicación en la carpeta sustituta y asociar la referencia Room a
+una ruta cuya identidad no era la validada. No se ha observado incidente real.
+
+- `0f66b247` captura las identidades `BasicFileAttributes.fileKey()` del
+  padre privado y la raíz de imágenes, y las vuelve a comprobar antes de
+  escribir, validar, renombrar y publicar Room. La compensación y limpieza
+  del temporal no borran rutas si cambia la identidad. Sin `fileKey()` fiable
+  la operación falla cerrada, a verificar en Android 15/16.
+- `41f83a5` incorpora dos regresiones Robolectric deterministas:
+  sustitución por directorio regular antes de abrir el descriptor y después
+  del `fsync`. Ambas deben conservar los bytes de la carpeta sustituta y
+  evitar referencias Room nuevas. La segunda conserva el temporal original
+  sin publicar para una eventual recuperación.
+- **CI del HEAD nuevo pendiente de verificación**. Estas comprobaciones
+  cierran ventanas inyectadas, pero no hacen atómico el acceso al filesystem:
+  todavía existe TOCTOU entre `fileKey()` y `FileChannel.open/renameTo/delete`,
+  y falta comprobar la compatibilidad real de `fileKey()` en API 35/36.
+
+No fusionar PR #57 ni cerrar #56 por estas pruebas. Siguen pendientes
+ejecución instrumentada Android 15/16, durabilidad ante muerte/corte,
+auditoría de DAO/lectores/procesos, regresión física BF-02 y tratamiento
+seguro de las copias `exercise-images-previous-*`.
