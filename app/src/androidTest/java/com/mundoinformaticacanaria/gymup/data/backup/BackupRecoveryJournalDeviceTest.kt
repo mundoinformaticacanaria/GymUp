@@ -115,6 +115,51 @@ class BackupRecoveryJournalDeviceTest {
 
 
     @Test
+    fun swappedIdenticalPreparingRootIsRejectedByDeviceFileIdentity() {
+        withJournalDirectory { directory ->
+            val staging = File(directory.parentFile, "${directory.name}.preparing")
+            val held = File(directory.parentFile, "${directory.name}.held-identical")
+            val foreign = File(directory.parentFile, "${directory.name}.foreign-identical")
+            val previous = byteArrayOf(91, 92, 93)
+            try {
+                BackupRecoveryJournal(foreign).prepare(previous)
+                var swapped = false
+                val journal = BackupRecoveryJournal(
+                    directory,
+                    syncDirectory = { synced ->
+                        // This seam injects a deterministic swap, not a durability test.
+                        if (!swapped && synced.absolutePath == staging.absolutePath &&
+                            File(staging, "state").isFile
+                        ) {
+                            val key = Files.readAttributes(
+                                staging.toPath(),
+                                BasicFileAttributes::class.java,
+                                LinkOption.NOFOLLOW_LINKS,
+                            ).fileKey()
+                            assertNotNull("Android did not expose a staging directory fileKey", key)
+                            assertTrue(staging.renameTo(held))
+                            assertTrue(foreign.renameTo(staging))
+                            swapped = true
+                        }
+                    },
+                )
+
+                assertTrue(runCatching { journal.prepare(previous) }.isFailure)
+                assertTrue(swapped)
+                assertFalse(directory.exists())
+                assertArrayEquals(previous, File(held, "previous.zip").readBytes())
+                assertArrayEquals(previous, File(staging, "previous.zip").readBytes())
+                assertArrayEquals(File(held, "state").readBytes(), File(staging, "state").readBytes())
+            } finally {
+                // Isolated random fixture under noBackupFilesDir; no app user data.
+                held.deleteRecursively()
+                staging.deleteRecursively()
+                foreign.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
     fun swappedRegularPreparingRootIsRejectedByDeviceFileIdentity() {
         withJournalDirectory { directory ->
             val preparing = File(directory.parentFile, "${directory.name}.preparing")
