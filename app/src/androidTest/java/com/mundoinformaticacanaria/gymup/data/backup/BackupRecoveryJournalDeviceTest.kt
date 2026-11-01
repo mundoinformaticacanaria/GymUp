@@ -207,6 +207,49 @@ class BackupRecoveryJournalDeviceTest {
         }
     }
 
+    @Test
+    fun swappedCommittedRootKeepsBothPreimagesOnDevice() {
+        withJournalDirectory { directory ->
+            val held = File(directory.parentFile, "${directory.name}.held-committed")
+            val foreign = File(directory.parentFile, "${directory.name}.foreign-committed")
+            val previous = byteArrayOf(11, 22, 33)
+            val replacement = byteArrayOf(44, 55, 66)
+            try {
+                BackupRecoveryJournal(directory).apply {
+                    prepare(previous)
+                    markCommitted()
+                }
+                BackupRecoveryJournal(foreign).apply {
+                    prepare(replacement)
+                    markCommitted()
+                }
+
+                // Swap two *valid* COMMITTED roots after inspection but before retirement.
+                // Neither is a symlink: this exercises the real Android rename/marker checks.
+                var swapped = false
+                val journal = BackupRecoveryJournal(
+                    directory,
+                    beforeCommittedRetirement = {
+                        assertTrue(directory.renameTo(held))
+                        assertTrue(foreign.renameTo(directory))
+                        swapped = true
+                    },
+                )
+                assertTrue(runCatching { journal.cleanupCommitted() }.isFailure)
+                assertTrue(swapped)
+                assertArrayEquals(previous, File(held, "previous.zip").readBytes())
+                assertArrayEquals(replacement, File(directory, "previous.zip").readBytes())
+                assertTrue(File(held, "state").readText().contains("COMMITTED"))
+                assertTrue(File(directory, "state").readText().contains("COMMITTED"))
+            } finally {
+                // Only these uniquely named test fixtures are removed.
+                held.deleteRecursively()
+                foreign.deleteRecursively()
+                directory.deleteRecursively()
+            }
+        }
+    }
+
     private fun withJournalDirectory(block: (File) -> Unit) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val directory = File(context.noBackupFilesDir, "gymup-journal-test-${UUID.randomUUID()}")
