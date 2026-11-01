@@ -288,4 +288,57 @@ class UserImageOrphanReconcilerTest {
         assertFalse(orphan.exists())
         UserImageOrphanReconciler(context, database.exerciseDao(), syncDirectory = {}).reconcile()
     }
+
+    @Test fun `regular private parent swapped after DAO check preserves unrelated bytes`() = runBlocking {
+        // Use a disposable ContextWrapper: never rename the application's real filesDir.
+        val privateDir = context.cacheDir.resolve("private-parent-" + UUID.randomUUID())
+            .apply { check(mkdirs()) }
+        val originalRoot = privateDir.resolve("exercise-images").apply { check(mkdirs()) }
+        val name = UUID.randomUUID().toString()
+        val orphan = originalRoot.resolve(name).apply { writeText("private orphan") }
+        val parked = context.cacheDir.resolve("parked-parent-" + UUID.randomUUID())
+        val replacement = context.cacheDir.resolve("replacement-parent-" + UUID.randomUUID())
+            .apply { check(mkdirs()) }
+        val unrelated = replacement.resolve("exercise-images").apply { check(mkdirs()) }
+            .resolve(name).apply { writeText("unrelated bytes must survive") }
+        try {
+            val firstIdentity = java.nio.file.Files.readAttributes(
+                privateDir.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java,
+                java.nio.file.LinkOption.NOFOLLOW_LINKS,
+            ).fileKey()
+            val secondIdentity = java.nio.file.Files.readAttributes(
+                replacement.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java,
+                java.nio.file.LinkOption.NOFOLLOW_LINKS,
+            ).fileKey()
+            assertTrue("Distinct private parents must have stable identities",
+                firstIdentity != null && secondIdentity != null && firstIdentity != secondIdentity)
+
+            val isolatedContext = object : ContextWrapper(context) {
+                override fun getApplicationContext(): Context = this
+                override fun getFilesDir(): java.io.File = privateDir
+            }
+            val reconciler = UserImageOrphanReconciler(
+                isolatedContext, database.exerciseDao(), syncDirectory = {},
+                beforeOrphanRemoval = {
+                    java.nio.file.Files.move(privateDir.toPath(), parked.toPath())
+                    java.nio.file.Files.move(replacement.toPath(), privateDir.toPath())
+                },
+            )
+            assertThrows(IOException::class.java) { runBlocking { reconciler.reconcile() } }
+            assertTrue(privateDir.resolve("exercise-images").resolve(name).readText() ==
+                "unrelated bytes must survive")
+            assertTrue(parked.resolve("exercise-images").resolve(name).readText() ==
+                "private orphan")
+        } finally {
+            if (parked.exists()) {
+                java.nio.file.Files.move(privateDir.toPath(), replacement.toPath())
+                java.nio.file.Files.move(parked.toPath(), privateDir.toPath())
+            }
+            orphan.delete()
+            privateDir.deleteRecursively()
+            unrelated.delete()
+            replacement.deleteRecursively()
+        }
+    }
+
 }
