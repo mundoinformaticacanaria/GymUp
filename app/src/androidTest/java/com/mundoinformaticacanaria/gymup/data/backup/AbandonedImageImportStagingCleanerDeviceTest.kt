@@ -42,6 +42,42 @@ class AbandonedImageImportStagingCleanerDeviceTest {
     }
 
     @Test
+    fun failedParentSyncKeepsPreviousImagesAndAllowsDeviceRetry() {
+        withIsolatedDirectory { root ->
+            val active = File(root, "exercise-images").apply { assertTrue(mkdir()) }
+            File(active, imageName).writeBytes(byteArrayOf(1, 2, 3))
+            val previous = File(root, "exercise-images-previous-44444444-4444-4444-8444-444444444444")
+                .apply { assertTrue(mkdir()) }
+            val preservedImage = File(previous, stageImageName)
+                .apply { writeBytes(byteArrayOf(9, 8, 7)) }
+            val staging = File(root, stageName).apply { assertTrue(mkdir()) }
+            File(staging, stageImageName).writeBytes(byteArrayOf(4, 5, 6))
+
+            // The first pass deletes staging but reports an injected metadata-sync failure.
+            // This is NOT a real crash or a proof of power-loss durability.
+            val failure = runCatching {
+                AbandonedImageImportStagingCleaner(
+                    root,
+                    syncParent = { throw java.io.IOException("injected parent fsync failure") },
+                ).cleanupAfterRecovery(setOf("user:$imageName"))
+            }.exceptionOrNull()
+            assertTrue("Expected injected sync failure", failure is java.io.IOException)
+            assertFalse(staging.exists())
+            assertArrayEquals(byteArrayOf(9, 8, 7), preservedImage.readBytes())
+            assertArrayEquals(byteArrayOf(1, 2, 3), File(active, imageName).readBytes())
+
+            // Retrying on the actual Android filesystem must be idempotent and must never
+            // treat exercise-images-previous-* as an abandoned staging candidate.
+            assertEquals(
+                AbandonedImageImportStagingCleaner.Result(0, 0),
+                AbandonedImageImportStagingCleaner(root)
+                    .cleanupAfterRecovery(setOf("user:$imageName")),
+            )
+            assertArrayEquals(byteArrayOf(9, 8, 7), preservedImage.readBytes())
+        }
+    }
+
+    @Test
     fun swappedSymlinkCannotRedirectDeviceDeletion() {
         withIsolatedDirectory { root ->
             val active = File(root, "exercise-images").apply { assertTrue(mkdir()) }
