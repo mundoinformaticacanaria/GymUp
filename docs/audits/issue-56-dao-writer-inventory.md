@@ -1005,3 +1005,32 @@ No fusionar PR #57 ni cerrar #56 por estas pruebas. Siguen pendientes
 ejecución instrumentada Android 15/16, durabilidad ante muerte/corte,
 auditoría de DAO/lectores/procesos, regresión física BF-02 y tratamiento
 seguro de las copias `exercise-images-previous-*`.
+
+## Baja individual de imagen USER: intercambio regular tras commit Room — 2026-11-01 22:11 UTC
+
+La auditoría de `ExerciseImageManager.deleteUserImageUnprotected()` detectó una
+ventana distinta de la limpieza de huérfanos: tras confirmar `deleteImage()`,
+`requireSafeImageRootForDeletion()` solo comprobaba que el directorio no
+fuera un symlink. Sustituir la raíz por **otro directorio regular** con el mismo
+nombre de archivo, o sustituir el archivo por otro regular con bytes idénticos,
+podía llevar a borrar bytes ajenos. No hay incidente observado.
+
+- `674ca15` captura identidades `BasicFileAttributes.fileKey()` del padre,
+  raíz y archivo antes de quitar la fila Room, y las revalida después de la
+  inyección de fallo y antes del borrado. Un intercambio detectado falla cerrado
+  y restaura la fila cuando el borrado todavía no se ha intentado.
+- `5db12d4` distingue fallos anteriores al `unlink` de fallos después de
+  comenzar la retirada. Un error de `fsync` tras eliminar bytes **no** debe
+  reconstruir una referencia Room a un archivo ausente.
+- `3161fbb` incorpora dos regresiones Robolectric con raíz regular distinta
+  y fichero regular distinto de bytes idénticos. Comprueban conservación de
+  archivos y restauración de la referencia tras un intercambio previo al unlink.
+
+**Estado:** validar Android CI del HEAD exacto; no se han ejecutado pruebas
+instrumentadas API 35/36. Las comprobaciones por pathname/fileKey no son un
+`unlinkat` atómico ni protegen de intercambios concurrentes después del
+último check. En filesystems sin `fileKey` fiable, la baja de archivo presente
+falla cerrada. La compensación posterior a un unlink iniciado sigue siendo
+best-effort ante muerte de proceso o cambios concurrentes. Mantener #56 abierta,
+PR #57 DRAFT y sin fusionar hasta completar instrumentación, durabilidad,
+auditoría y regresión física BF-02.
