@@ -4,6 +4,10 @@ import java.io.File
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.Path
+import java.nio.file.SecureDirectoryStream
+import java.nio.file.attribute.BasicFileAttributeView
+import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.StandardOpenOption
 
 /**
@@ -27,6 +31,8 @@ internal class AbandonedImageImportStagingCleaner(
     private val syncParent: (File) -> Unit = { directory ->
         FileChannel.open(directory.toPath(), StandardOpenOption.READ).use { it.force(true) }
     },
+    // Test seam: replace a preflighted candidate before opening it for deletion.
+    private val beforeCandidateDelete: (File) -> Unit = {},
 ) {
     data class Result(val removed: Int, val preserved: Int)
 
@@ -57,17 +63,76 @@ internal class AbandonedImageImportStagingCleaner(
                 preserved++
                 continue
             }
-            // No recursive traversal, no symlink following, and no wildcard deletion.
-            // A failed delete is surfaced so a later controlled attempt can retry.
-            Files.newDirectoryStream(candidate.toPath()).use { stream ->
-                stream.forEach { Files.delete(it) }
+            // A candidate can be swapped after the path-based preflight. Deletion must
+            // be anchored to an open private-parent descriptor, never to a followed
+            // candidate path. If Android does not provide SecureDirectoryStream or
+            // stable fileKey identities, fail closed rather than risk external bytes.
+            val candidateIdentity = fileKey(candidate)
+            beforeCandidateDelete(candidate)
+            if (candidateIdentity == null || !isSafeFlatDirectory(candidate) ||
+                fileKey(candidate) != candidateIdentity
+            ) {
+                preserved++
+                continue
             }
-            Files.delete(candidate.toPath())
+            deleteViaSecureDirectoryStream(candidate, candidateIdentity)
             syncParent(filesDir)
             removed++
         }
         return Result(removed, preserved)
     }
+
+    /**
+     * Relative unlink operations are anchored to open directory handles. A swapped
+     * symlink cannot redirect deletion into another directory. This still cannot
+     * prove power-loss durability or exclude a malicious same-UID concurrent process.
+     */
+    private fun deleteViaSecureDirectoryStream(candidate: File, expectedIdentity: Any) {
+        val expectedParentIdentity = fileKey(filesDir)
+        check(expectedParentIdentity != null) { "Identidad del directorio privado no disponible" }
+        Files.newDirectoryStream(filesDir.toPath()).use { parentStream ->
+            check(parentStream is SecureDirectoryStream<*>) {
+                "El filesystem no admite borrado seguro de staging"
+            }
+            @Suppress("UNCHECKED_CAST")
+            val secureParent = parentStream as SecureDirectoryStream<Path>
+            check(secureParent.getFileAttributeView(BasicFileAttributeView::class.java)
+                .readAttributes().fileKey() == expectedParentIdentity
+            ) { "El directorio privado cambió antes de limpiar staging" }
+            val name = candidate.toPath().fileName
+            secureParent.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS).use { candidateStream ->
+                check(candidateStream is SecureDirectoryStream<*>) {
+                    "El filesystem no admite borrado seguro del candidato"
+                }
+                @Suppress("UNCHECKED_CAST")
+                val secureCandidate = candidateStream as SecureDirectoryStream<Path>
+                check(secureCandidate.getFileAttributeView(BasicFileAttributeView::class.java)
+                    .readAttributes().fileKey() == expectedIdentity
+                ) { "El staging fue sustituido antes de abrirlo" }
+                val entries = secureCandidate.toList()
+                // Preflight every entry again through the open directory descriptor
+                // before deleting anything; never follow a linked final component.
+                check(entries.all { entry ->
+                    val attrs = secureCandidate.getFileAttributeView(
+                        entry.fileName, BasicFileAttributeView::class.java, LinkOption.NOFOLLOW_LINKS,
+                    )?.readAttributes()
+                    IMAGE_FILE.matches(entry.fileName.toString()) &&
+                        attrs?.isRegularFile == true && attrs.size() in 1..MAX_IMAGE_BYTES
+                }) { "Contenido de staging inseguro antes del borrado" }
+                entries.forEach { secureCandidate.deleteFile(it.fileName) }
+            }
+            check(secureParent.getFileAttributeView(
+                name, BasicFileAttributeView::class.java, LinkOption.NOFOLLOW_LINKS,
+            )?.readAttributes()?.fileKey() == expectedIdentity
+            ) { "El staging cambió antes de retirar el directorio" }
+            secureParent.deleteDirectory(name)
+        }
+    }
+
+    private fun fileKey(file: File): Any? =
+        Files.readAttributes(
+            file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+        ).fileKey()
 
     private fun isSafeFlatDirectory(directory: File): Boolean {
         val path = directory.toPath()
