@@ -114,6 +114,9 @@ internal class BackupRecoveryJournal(
     fun markCommitted() {
         val prepared = inspect()
         check(prepared is State.Prepared) { "No hay recuperación preparada que confirmar" }
+        // Keep the inspected root identity: a second PREPARED directory with identical
+        // bytes must not inherit the first journal's confirmation.
+        val rootIdentity = fileIdentity(directory)
         // A process may die after syncing state.tmp but before renaming it over PREPARED.
         // PREPARED is still authoritative; discard only this uncommitted marker so startup
         // recovery can finish instead of being permanently blocked by the stale temp file.
@@ -126,6 +129,7 @@ internal class BackupRecoveryJournal(
         check(stillPrepared is State.Prepared &&
             stillPrepared.previousArchive.contentEquals(prepared.previousArchive)
         ) { "La preimagen del journal cambió durante la confirmación" }
+        requireSameIdentity(directory, rootIdentity)
         // inspect() validated the root before this point, but it may have been swapped
         // while the marker was being examined. Never delete state.tmp through a
         // linked intermediate directory, even when the final file is regular.
@@ -141,6 +145,7 @@ internal class BackupRecoveryJournal(
                 "No se pudo limpiar un marcador COMMITTED interrumpido"
             }
         }
+        requireSameIdentity(directory, rootIdentity)
         val digest = sha256(prepared.previousArchive)
         writeSynced(File(directory, STATE_FILE), "$VERSION COMMITTED $digest\n".toByteArray(Charsets.US_ASCII), replace = true)
     }
