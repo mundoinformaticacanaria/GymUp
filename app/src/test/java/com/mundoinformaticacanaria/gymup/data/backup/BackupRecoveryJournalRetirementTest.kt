@@ -95,4 +95,33 @@ class BackupRecoveryJournalRetirementTest {
         assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(foreignRoot).inspect())
         assertArrayEquals(foreign, File(foreignRoot, "previous.zip").readBytes())
     }
+
+    @Test
+    fun `retirement refuses an identical committed journal swapped after inspection`() {
+        val active = File(temp.root, "recovery")
+        val held = File(temp.root, "recovery-held")
+        val foreignRoot = File(temp.root, "foreign-committed")
+        val sameArchive = byteArrayOf(71, 72, 73)
+        BackupRecoveryJournal(foreignRoot).apply {
+            prepare(sameArchive)
+            markCommitted()
+        }
+        val journal = BackupRecoveryJournal(
+            active,
+            beforeCommittedRetirement = {
+                assertTrue(active.renameTo(held))
+                assertTrue(foreignRoot.renameTo(active))
+            },
+        )
+        journal.prepare(sameArchive)
+        journal.markCommitted()
+
+        // Content and COMMITTED markers match; only the directory identity differs.
+        assertTrue(runCatching { journal.cleanupCommitted() }.isFailure)
+        assertFalse(File(temp.root, "recovery.retired").exists())
+        assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(held).inspect())
+        assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(active).inspect())
+        assertArrayEquals(sameArchive, File(held, "previous.zip").readBytes())
+        assertArrayEquals(sameArchive, File(active, "previous.zip").readBytes())
+    }
 }

@@ -156,6 +156,9 @@ internal class BackupRecoveryJournal(
         // Re-inspect and compare the marker after the test seam, before destructive retirement.
         // Path-based checks still do not provide atomic protection from concurrent TOCTOU.
         val committedMarker = readTrustedFile(File(directory, STATE_FILE), MAX_STATE_BYTES)
+        // A replacement COMMITTED root may have the exact same marker and archive bytes.
+        // Check its filesystem identity as well, when the provider exposes a fileKey.
+        val rootIdentity = fileIdentity(directory)
         requireNotSymlink(retiredDirectory)
         check(!Files.exists(retiredDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)) {
             "Queda una limpieza anterior pendiente"
@@ -165,6 +168,7 @@ internal class BackupRecoveryJournal(
             readTrustedFile(File(directory, STATE_FILE), MAX_STATE_BYTES).contentEquals(committedMarker)
         ) { "El journal confirmado cambió antes de retirarlo" }
         requireSafeJournalDirectory(directory)
+        requireSameIdentity(directory, rootIdentity)
         check(directory.renameTo(retiredDirectory)) { "No se pudo retirar el journal confirmado" }
         syncDirectory(directory.parentFile)
         cleanupRetired()
