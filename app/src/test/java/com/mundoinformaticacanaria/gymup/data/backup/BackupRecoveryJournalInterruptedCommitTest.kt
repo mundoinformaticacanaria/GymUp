@@ -199,4 +199,50 @@ class BackupRecoveryJournalInterruptedCommitTest {
         )
     }
 
+
+    @Test
+    fun `interrupted commit rejects an identical regular prepared journal root swap`() {
+        val directory = File(temp.root, "recovery")
+        val heldRoot = File(temp.root, "held-identical")
+        val foreignRoot = File(temp.root, "foreign-identical")
+        val previous = byteArrayOf(91, 92, 93)
+        val foreignMarker = File(foreignRoot, "state.tmp")
+        BackupRecoveryJournal(foreignRoot).prepare(previous)
+        foreignMarker.writeText("unrelated interrupted commit")
+
+        var swapped = false
+        val journal = BackupRecoveryJournal(
+            directory,
+            beforeInterruptedCommitCleanup = {
+                assertTrue(directory.renameTo(heldRoot))
+                assertTrue(foreignRoot.renameTo(directory))
+                swapped = true
+            },
+        )
+        journal.prepare(previous)
+
+        // The second PREPARED journal has identical state and archive bytes.
+        // A content-only re-inspection cannot distinguish the replacement root.
+        assertTrue(runCatching { journal.markCommitted() }.isFailure)
+        assertTrue(swapped)
+        assertEquals("unrelated interrupted commit", File(directory, "state.tmp").readText())
+        assertArrayEquals(
+            previous,
+            (BackupRecoveryJournal(heldRoot).inspect() as BackupRecoveryJournal.State.Prepared)
+                .previousArchive,
+        )
+        assertArrayEquals(
+            previous,
+            (BackupRecoveryJournal(directory).inspect() as BackupRecoveryJournal.State.Prepared)
+                .previousArchive,
+        )
+
+        // Repair only the fixture; the original journal can then be committed.
+        assertTrue(directory.renameTo(foreignRoot))
+        assertTrue(heldRoot.renameTo(directory))
+        BackupRecoveryJournal(directory).markCommitted()
+        assertEquals(BackupRecoveryJournal.State.Committed, BackupRecoveryJournal(directory).inspect())
+        assertEquals("unrelated interrupted commit", foreignMarker.readText())
+    }
+
 }
