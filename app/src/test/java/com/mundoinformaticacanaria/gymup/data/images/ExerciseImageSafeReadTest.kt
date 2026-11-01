@@ -175,6 +175,74 @@ class ExerciseImageSafeReadTest {
     }
 
     @Test
+    fun swappedRegularImageRootBeforeOpenCannotReadForeignBytes() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val saved = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val root = context.filesDir.resolve("exercise-images")
+        val parked = context.filesDir.resolve("image-root-original-${UUID.randomUUID()}")
+        val foreignRoot = context.filesDir.resolve("image-root-target").apply { mkdirs() }
+        val foreignBytes = byteArrayOf(9, 8, 7, 6)
+        val foreignImage = foreignRoot.resolve(saved.storageKey.removePrefix("user:"))
+            .apply { writeBytes(foreignBytes) }
+        val manager = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            beforeUserImageRead = {
+                Files.move(root.toPath(), parked.toPath())
+                Files.move(foreignRoot.toPath(), root.toPath())
+            },
+        )
+        val observed = manager.observeImages(exercise.id).first().single()
+
+        try {
+            assertNull(manager.readBytes(observed))
+            assertArrayEquals(foreignBytes, root.resolve(foreignImage.name).readBytes())
+            assertNotNull(database.exerciseDao().getImageById(saved.id))
+        } finally {
+            if (Files.exists(root.toPath()) && Files.exists(parked.toPath())) {
+                Files.move(root.toPath(), foreignRoot.toPath())
+                Files.move(parked.toPath(), root.toPath())
+            }
+        }
+        assertArrayEquals(byteArrayOf(1, 2, 3),
+            ExerciseImageManager(context, database.exerciseDao()).readBytes(saved))
+    }
+
+    @Test
+    fun swappedRegularImageFileBeforeOpenCannotReadForeignBytes() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val saved = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val file = saved.localFile!!
+        val parked = context.filesDir.resolve("image-original-${UUID.randomUUID()}")
+        val foreignBytes = byteArrayOf(7, 8, 9)
+        val manager = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            beforeUserImageRead = {
+                Files.move(file.toPath(), parked.toPath())
+                file.writeBytes(foreignBytes)
+            },
+        )
+        val observed = manager.observeImages(exercise.id).first().single()
+
+        try {
+            assertNull(manager.readBytes(observed))
+            assertArrayEquals(foreignBytes, file.readBytes())
+            assertArrayEquals(byteArrayOf(1, 2, 3), parked.readBytes())
+            assertNotNull(database.exerciseDao().getImageById(saved.id))
+        } finally {
+            if (parked.exists()) {
+                Files.deleteIfExists(file.toPath())
+                Files.move(parked.toPath(), file.toPath())
+            }
+        }
+        assertArrayEquals(byteArrayOf(1, 2, 3),
+            ExerciseImageManager(context, database.exerciseDao()).readBytes(saved))
+    }
+
+    @Test
     fun oversizedPersistedImageCannotBeReadIntoMemory() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val manager = ExerciseImageManager(context, database.exerciseDao())
