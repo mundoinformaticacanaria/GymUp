@@ -895,3 +895,28 @@ Mantener #56 abierta, PR #57 DRAFT sobre #50; no conectar el limpiador de
 staging ni borrar `exercise-images-previous-*`. Pendientes instrumentación
 Android 15/16, cortes reales, auditoría DAO/lectores/procesos y regresión
 física BF-02.
+
+## Confirmación PREPARED con raíz regular idéntica — 2026-11-01 08:12 UTC
+
+Se encontró una variante de la sustitución de raíz durante
+`BackupRecoveryJournal.markCommitted()`: dos directorios PREPARED distintos
+con **idénticos bytes de preimagen y marcador** superan `inspect()` y la
+comparación de contenido. El código anterior podía eliminar `state.tmp`
+del journal ajeno y confirmar su marcador, sin garantizar que fuera la raíz
+inspeccionada. No consta pérdida de datos real.
+
+- `243cfff` conserva la identidad `BasicFileAttributes.fileKey()` de la raíz
+  tras la primera inspección y la compara antes de borrar el temporal y antes
+  de publicar COMMITTED. Si el filesystem devuelve `null`, esta mitigación
+  es best-effort y no aporta prueba de identidad.
+- `1ee1ad0` añade regresión JVM determinista con dos PREPARED de contenido
+  idéntico y marcador temporal ajeno, verificando que ambos sobreviven y
+  que el original puede confirmarse tras reparar la fixture.
+- `1f903b7` añade la variante instrumentada para el filesystem Android
+  real, pendiente de ejecutar en AVD desechables API 35/36.
+
+**Puertas:** verificar CI del HEAD exacto; ninguna prueba Android está
+ejecutada por la CI ordinaria. Sigue pendiente TOCTOU atómico entre
+comprobación y operación, muerte/corte real, auditoría DAO/lectores/procesos
+y regresión física BF-02. Mantener #56 abierta y PR #57 DRAFT sobre #50;
+no activar limpiador de staging ni borrar `exercise-images-previous-*`.
