@@ -4,10 +4,13 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.UUID
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -61,6 +64,36 @@ class AbandonedImageImportStagingCleanerDeviceTest {
             )
             assertArrayEquals(byteArrayOf(9, 8), sentinel.readBytes())
             assertArrayEquals(byteArrayOf(4, 5, 6), File(original, stageImageName).readBytes())
+        }
+    }
+
+    @Test
+    fun swappedRegularStagingWithIdenticalBytesIsRejectedOnDevice() {
+        withIsolatedDirectory { root ->
+            val active = File(root, "exercise-images").apply { assertTrue(mkdir()) }
+            File(active, imageName).writeBytes(byteArrayOf(1, 2, 3))
+            val staging = File(root, stageName).apply { assertTrue(mkdir()) }
+            File(staging, stageImageName).writeBytes(byteArrayOf(4, 5, 6))
+            val original = File(root, "original-staging")
+            val identity = Files.readAttributes(
+                staging.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+            ).fileKey()
+            assertNotNull("Android must expose a directory identity for safe cleanup", identity)
+
+            assertEquals(
+                AbandonedImageImportStagingCleaner.Result(0, 1),
+                AbandonedImageImportStagingCleaner(
+                    root,
+                    beforeCandidateDelete = { candidate ->
+                        assertTrue(candidate.renameTo(original))
+                        assertTrue(candidate.mkdir())
+                        File(candidate, stageImageName).writeBytes(byteArrayOf(4, 5, 6))
+                    },
+                ).cleanupAfterRecovery(setOf("user:$imageName")),
+            )
+            assertArrayEquals(byteArrayOf(4, 5, 6), File(staging, stageImageName).readBytes())
+            assertArrayEquals(byteArrayOf(4, 5, 6), File(original, stageImageName).readBytes())
+            assertArrayEquals(byteArrayOf(1, 2, 3), File(active, imageName).readBytes())
         }
     }
 
