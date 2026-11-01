@@ -946,3 +946,32 @@ Mantener #56 abierta y PR #57 DRAFT sobre #50. Continúan pendientes
 instrumentación API 35/36, durabilidad ante muerte/cortes reales, auditoría
 DAO/lectores/procesos y regresión física BF-02. No conectar limpiador de
 staging ni borrar `exercise-images-previous-*`.
+
+## Limpieza de staging: protección contra sustitución tras preflight — 01/11/2026
+
+Revisión estática de `AbandonedImageImportStagingCleaner`: tras validar un
+candidato `exercise-images-import-<UUID>`, la implementación anterior abría
+`Files.newDirectoryStream(candidate.toPath())` y borraba sus entradas usando
+rutas completas. Si el directorio candidato era sustituido por un enlace
+simbólico hacia otra carpeta **entre la validación y la apertura**, la
+enumeración podía seguir ese enlace y eliminar archivos ajenos. Se trata de
+un riesgo del limpiador **aislado, no conectado a producción**, sin pérdida
+observada.
+
+`c2ecf45` sustituye el borrado por operaciones relativas a
+`SecureDirectoryStream`, con `NOFOLLOW_LINKS` para abrir el candidato y
+borrado relativo a los descriptores del padre/candidato. Exige identidad
+`fileKey()` disponible y estable, revalida la lista completa antes de
+eliminar y falla cerrado si el filesystem no soporta el mecanismo. `8315c16`
+añade regresiones JVM de sustitución por symlink y por otro directorio
+regular con bytes idénticos; ambas deben conservar las copias y los datos
+externos. **Verificar CI del HEAD exacto antes de considerarlas superadas.**
+
+Límites: esta mitigación no acredita que Android 15/16 proporcione
+`SecureDirectoryStream` ni `fileKey()`, no demuestra durabilidad tras
+corte y no elimina todas las carreras de un proceso con permisos de
+escritura sobre los mismos directorios. En un filesystem incompatible
+la limpieza opcional debe permanecer deshabilitada. No conectar el
+limpiador al arranque, no borrar `exercise-images-previous-*`, no
+fusionar PR #57 ni cerrar #56 sin los gates pendientes de dispositivo,
+durabilidad, auditoría y regresión BF-02.
