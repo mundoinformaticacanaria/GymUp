@@ -46,6 +46,11 @@ internal class UserImageOrphanReconciler(
 
         // Remember the identity of the original root, not just its path/type.
         // A regular directory can replace another without becoming a symlink.
+        // The parent can also be replaced by another regular directory. Capture its
+        // identity before querying Room, not just its NOFOLLOW directory type.
+        val parentIdentity = Files.readAttributes(
+            filesDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+        ).fileKey()
         val rootIdentity = Files.readAttributes(
             root, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
         ).fileKey()
@@ -67,7 +72,7 @@ internal class UserImageOrphanReconciler(
             ).fileKey()
             // Without stable file identities, preserve the orphan rather than risk
             // unlinking a different regular file through a substituted path.
-            if (rootIdentity == null || fileIdentity == null) continue
+            if (parentIdentity == null || rootIdentity == null || fileIdentity == null) continue
             beforeOrphanRemoval(file)
             // The final component's NOFOLLOW_LINKS check above does not protect an
             // intermediate image root swapped after enumeration or DAO validation.
@@ -78,6 +83,9 @@ internal class UserImageOrphanReconciler(
                 throw IOException("Ruta de imagen huérfana sustituida antes del borrado: ${file.name}")
             }
             if (Files.readAttributes(
+                    filesDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                ).fileKey() != parentIdentity ||
+                Files.readAttributes(
                     root, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
                 ).fileKey() != rootIdentity ||
                 Files.readAttributes(
