@@ -845,3 +845,27 @@ No activar la limpieza automática de staging ni borrar
 `exercise-images-previous-*`. Persisten las puertas de Android 15/16
 instrumentado, cortes/durabilidad reales, auditoría global DAO/lectores/procesos,
 TOCTOU atómico y regresión física BF-02. #56 abierta; PR #57 DRAFT sobre #50.
+
+## Sustitución de raíz PREPARED durante publicación — 2026-11-01 02:09 UTC
+
+`BackupRecoveryJournal.prepare()` sincronizaba los archivos `previous.zip` y
+`state` en `recovery.preparing`, pero antes de renombrar la raíz a
+`recovery` solo comprobaba que siguiera siendo un directorio real. Si otro
+directorio regular con una preimagen válida diferente sustituía la preparación
+después del fsync, podía publicarse como PREPARED un backup ajeno al argumento
+de la importación. No consta incidente real.
+
+- `bc7759a` verifica de nuevo los bytes de preimagen y marcador mediante
+  descriptores `NOFOLLOW_LINKS` antes de publicar el directorio; usa
+  verificación por streaming para no duplicar en memoria un backup grande.
+- `996910f` añade una regresión JVM determinista que intercambia dos
+  directorios regulares tras el último fsync, exige fallo cerrado y conservación
+  de ambos contenidos, y comprueba un reintento tras reparar la fixture.
+- **La validación no es atómica** respecto al `renameTo`: una sustitución
+  concurrente posterior, incluso por un directorio de bytes idénticos, sigue
+  fuera de esta garantía. La CI del nuevo HEAD debe verificarse.
+
+No habilitar limpieza de staging ni borrar `exercise-images-previous-*`.
+Permanecen pendientes Android API 35/36 instrumentado, durabilidad ante
+muerte/cortes reales, TOCTOU atómico, auditoría global DAO/lectores/procesos
+y regresión física BF-02. #56 abierta, PR #57 DRAFT sobre #50.
