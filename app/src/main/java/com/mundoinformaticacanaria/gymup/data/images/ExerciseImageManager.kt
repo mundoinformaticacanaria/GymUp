@@ -395,14 +395,38 @@ class ExerciseImageManager internal constructor(
         // cannot protect against replacement between validation and opening.
         // Bound reads even if a persisted file was corrupted or replaced.
         return try {
-            beforeUserImageRead(file)
-            // The image root can be replaced after the initial gallery validation.
-            // NOFOLLOW_LINKS on the final file does not protect a linked parent.
-            // This closes the deterministic substitution window; concurrent ancestor
-            // swaps still require separate process/filesystem isolation validation.
+            // A regular directory or file can be exchanged without becoming a
+            // symlink. Pin the observed identities before the test seam and compare
+            // them both before opening and after reading. Without fileKey support,
+            // fail closed rather than return bytes from an unverified pathname.
             if (!hasSafePrivateParent() ||
-                !Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)) return null
-            Files.newByteChannel(
+                !Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS) ||
+                !Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) return null
+            val parentKey = Files.readAttributes(
+                filesDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+            ).fileKey() ?: return null
+            val rootKey = Files.readAttributes(
+                imageDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+            ).fileKey() ?: return null
+            val fileKey = Files.readAttributes(
+                file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+            ).fileKey() ?: return null
+            fun sameReadPath(): Boolean =
+                hasSafePrivateParent() &&
+                    Files.isDirectory(imageDirectory.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                    Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                    Files.readAttributes(
+                        filesDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                    ).fileKey() == parentKey &&
+                    Files.readAttributes(
+                        imageDirectory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                    ).fileKey() == rootKey &&
+                    Files.readAttributes(
+                        file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                    ).fileKey() == fileKey
+            beforeUserImageRead(file)
+            if (!sameReadPath()) return null
+            val bytes = Files.newByteChannel(
                 file.toPath(),
                 setOf<OpenOption>(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
             ).use { channel ->
@@ -419,6 +443,7 @@ class ExerciseImageManager internal constructor(
                     output.toByteArray()
                 }
             }
+            if (sameReadPath()) bytes else null
         } catch (_: IOException) {
             null
         } catch (_: SecurityException) {
