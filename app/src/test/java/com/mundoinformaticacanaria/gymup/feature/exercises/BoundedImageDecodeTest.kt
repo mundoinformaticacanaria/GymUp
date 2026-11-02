@@ -47,5 +47,7 @@ class BoundedImageDecodeTest {
     @Test
     fun malformedImageIsNotRendered() {
         assertNull(decodeBoundedImageBytes(byteArrayOf(1, 2, 3, 4)))
+        assertNull(decodeBoundedImageBytes(byteArrayOf()))
+        assertNull(decodeBoundedImageBytes(ByteArray(7) { 0x42 }))
     }
 }
