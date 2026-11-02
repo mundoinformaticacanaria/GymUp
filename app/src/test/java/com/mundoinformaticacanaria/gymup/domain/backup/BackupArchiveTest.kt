@@ -90,6 +90,45 @@ class BackupArchiveTest {
     }
 
     @Test
+    fun `read rejects unsafe ZIP directory even when data and manifest are valid`() {
+        val data = "{}".encodeToByteArray()
+        val manifest = BackupManifestCodec.create(
+            data = data,
+            images = emptyMap(),
+            appVersion = "0.1.0",
+            exportedAt = Instant.parse("2026-08-21T00:00:00Z"),
+        )
+        val archive = zipOf(
+            "../" to byteArrayOf(),
+            BackupManifestV1.MANIFEST_PATH to BackupManifestCodec.encode(manifest).encodeToByteArray(),
+            BackupManifestV1.DATA_PATH to data,
+        )
+
+        val result = BackupArchiveCodec.readAndValidate(archive)
+
+        assertTrue(result is BackupArchiveReadResult.Invalid)
+        assertTrue((result as BackupArchiveReadResult.Invalid).reason.contains("Ruta ZIP no válida"))
+    }
+
+    @Test
+    fun `read allows safe ZIP directory entries without changing valid backups`() {
+        val data = "{}".encodeToByteArray()
+        val manifest = BackupManifestCodec.create(
+            data = data,
+            images = emptyMap(),
+            appVersion = "0.1.0",
+            exportedAt = Instant.parse("2026-08-21T00:00:00Z"),
+        )
+        val archive = zipOf(
+            "images/" to byteArrayOf(),
+            BackupManifestV1.MANIFEST_PATH to BackupManifestCodec.encode(manifest).encodeToByteArray(),
+            BackupManifestV1.DATA_PATH to data,
+        )
+
+        assertTrue(BackupArchiveCodec.readAndValidate(archive) is BackupArchiveReadResult.Valid)
+    }
+
+    @Test
     fun `read reports checksum mismatch for tampered declared file`() {
         val original = "original".encodeToByteArray()
         val manifest = BackupManifestCodec.create(
