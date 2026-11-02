@@ -18,6 +18,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -109,6 +110,7 @@ class ExerciseImageSafeReadTest {
         val item = manager.observeImages(exercise.id).first().single()
 
         assertNull(item.localFile)
+        assertNull(item.fileRevision)
         assertNull(manager.readBytes(item.copy(localFile = link)))
         assertTrue(Files.isSymbolicLink(link.toPath()))
         assertArrayEquals(byteArrayOf(7, 6), outside.readBytes())
@@ -385,4 +387,50 @@ class ExerciseImageSafeReadTest {
             outside.deleteRecursively()
         }
     }
+    @Test
+    fun galleryRevisionChangesForSameNamedRegularReplacementWithSameBytesAndTime() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val bytes = byteArrayOf(10, 20, 30, 40)
+        val saved = manager.addUserImage(exercise.id, bytes)
+        val before = manager.observeImages(exercise.id).first().single()
+        assertNotNull(before.fileRevision)
+
+        val file = saved.localFile!!
+        val parked = context.filesDir.resolve("image-revision-original-${UUID.randomUUID()}")
+        val originalTime = Files.getLastModifiedTime(file.toPath())
+        try {
+            Files.move(file.toPath(), parked.toPath())
+            file.writeBytes(bytes)
+            Files.setLastModifiedTime(file.toPath(), originalTime)
+            val after = manager.observeImages(exercise.id).first().single()
+            assertNotNull(after.fileRevision)
+            assertNotEquals(before.fileRevision, after.fileRevision)
+            assertArrayEquals(bytes, manager.readBytes(after))
+        } finally {
+            Files.deleteIfExists(file.toPath())
+            if (Files.exists(parked.toPath())) Files.move(parked.toPath(), file.toPath())
+        }
+    }
+
+    @Test
+    fun galleryRevisionChangesWhenFileTimestampChangesWithoutRoomRowChange() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val saved = manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val before = manager.observeImages(exercise.id).first().single()
+        assertNotNull(before.fileRevision)
+
+        val file = saved.localFile!!
+        val initialTime = Files.getLastModifiedTime(file.toPath())
+        try {
+            Files.setLastModifiedTime(file.toPath(),
+                java.nio.file.attribute.FileTime.fromMillis(initialTime.toMillis() + 5_000))
+            val after = manager.observeImages(exercise.id).first().single()
+            assertNotEquals(before.fileRevision, after.fileRevision)
+        } finally {
+            Files.setLastModifiedTime(file.toPath(), initialTime)
+        }
+    }
+
 }
