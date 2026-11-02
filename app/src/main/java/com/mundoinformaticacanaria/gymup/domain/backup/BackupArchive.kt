@@ -24,7 +24,7 @@ sealed interface BackupArchiveReadResult {
 
 object BackupArchiveCodec {
     private const val MAX_ENTRY_BYTES = 25L * 1024L * 1024L
-    private const val MAX_ARCHIVE_BYTES = 100L * 1024L * 1024L
+    internal const val MAX_ARCHIVE_BYTES = 100L * 1024L * 1024L
     private const val MAX_ENTRIES = 1_000
 
     fun create(
