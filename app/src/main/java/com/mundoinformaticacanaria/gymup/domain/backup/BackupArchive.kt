@@ -82,6 +82,12 @@ object BackupArchiveCodec {
                     return BackupArchiveReadResult.Invalid("El backup contiene demasiados archivos")
                 }
                 if (entry.isDirectory) {
+                    // Directory entries are not extracted, but still belong to the
+                    // untrusted archive: never silently accept traversal paths.
+                    val directoryPath = entry.name.removeSuffix("/")
+                    if (!BackupManifestCodec.isSafeRelativePath(directoryPath)) {
+                        return BackupArchiveReadResult.Invalid("Ruta ZIP no válida: ${entry.name}")
+                    }
                     zip.closeEntry()
                     continue
                 }
