@@ -217,7 +217,12 @@ private fun ExerciseImagesSection(
                         TextButton(
                             onClick = {
                                 scope.launch {
-                                    runCatching { manager.deleteUserImage(image.id) }
+                                    // File deletion and directory fsync must not block Compose's UI thread.
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            manager.deleteUserImage(image.id)
+                                        }
+                                    }
                                         .onSuccess { onMessage("Imagen eliminada") }
                                         .onFailure { onMessage(it.message ?: "No se pudo eliminar la imagen") }
                                 }
