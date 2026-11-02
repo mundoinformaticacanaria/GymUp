@@ -73,5 +73,31 @@ internal fun decodeUserImageBitmap(
     item: ExerciseImageItem,
 ): ImageBitmap? {
     val bytes = manager.readBytes(item) ?: return null
-    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    return decodeBoundedImageBytes(bytes)
+}
+
+// 140dp gallery and 96dp catalog thumbnails do not need full-resolution bitmaps.
+// The 10 MiB on-disk limit alone does not bound decoded pixel memory.
+private const val MAX_DISPLAY_IMAGE_EDGE_PX = 512
+
+internal fun decodeBoundedImageBytes(bytes: ByteArray): ImageBitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+    // Powers of two are supported by BitmapFactory; compute without overflow even
+    // for a malicious image header advertising very large pixel dimensions.
+    var sampleSize = 1
+    val longestEdge = maxOf(bounds.outWidth, bounds.outHeight).toLong()
+    while (longestEdge > MAX_DISPLAY_IMAGE_EDGE_PX.toLong() * sampleSize) {
+        sampleSize *= 2
+    }
+    val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return null
+    // Fail closed if a decoder ignores sampling rather than rendering a huge bitmap.
+    if (bitmap.width > MAX_DISPLAY_IMAGE_EDGE_PX || bitmap.height > MAX_DISPLAY_IMAGE_EDGE_PX) {
+        bitmap.recycle()
+        return null
+    }
+    return bitmap.asImageBitmap()
 }
