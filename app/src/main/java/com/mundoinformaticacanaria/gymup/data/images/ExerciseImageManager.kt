@@ -18,6 +18,8 @@ import java.util.UUID
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 data class ExerciseImageItem(
@@ -27,6 +29,8 @@ data class ExerciseImageItem(
     val sourceType: String,
     val storageKey: String,
     val localFile: File?,
+    // Stable, no-follow filesystem revision captured off the Compose/UI thread.
+    val fileRevision: String? = null,
 )
 
 class ExerciseImageManager internal constructor(
@@ -67,6 +71,7 @@ class ExerciseImageManager internal constructor(
 
     fun observeImages(exerciseId: String): Flow<List<ExerciseImageItem>> =
         exerciseDao.observeImages(exerciseId).map { images -> images.map(::toItem) }
+            .flowOn(Dispatchers.IO)
 
     suspend fun addUserImage(exerciseId: String, bytes: ByteArray): ExerciseImageItem =
         domainWriteBarrier?.withDomainWrite { addUserImageUnprotected(exerciseId, bytes) }
@@ -451,17 +456,30 @@ class ExerciseImageManager internal constructor(
         }
     }
 
-    private fun toItem(entity: ExerciseImageEntity): ExerciseImageItem =
-        ExerciseImageItem(
+    private fun toItem(entity: ExerciseImageEntity): ExerciseImageItem {
+        val localFile = if (entity.sourceType == USER_SOURCE) {
+            safeReadableUserImageFile(entity.storageKey)
+        } else null
+        return ExerciseImageItem(
             id = entity.id,
             exerciseId = entity.exerciseId,
             position = entity.position,
             sourceType = entity.sourceType,
             storageKey = entity.storageKey,
-            localFile = if (entity.sourceType == USER_SOURCE) {
-                safeReadableUserImageFile(entity.storageKey)
-            } else null,
+            localFile = localFile,
+            fileRevision = localFile?.let(::safeFileRevision),
         )
+    }
+
+    /** Metadata only: never follow a symlink to compute a Compose refresh key. */
+    private fun safeFileRevision(file: File): String? = runCatching {
+        val attrs = Files.readAttributes(
+            file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+        )
+        val key = attrs.fileKey()
+        if (!attrs.isRegularFile || key == null) null
+        else "${key}:${attrs.lastModifiedTime().toMillis()}:${attrs.size()}"
+    }.getOrNull()
 
     /** Malformed Room references must not expose paths or linked files to the gallery. */
     private fun safeReadableUserImageFile(storageKey: String): File? {
