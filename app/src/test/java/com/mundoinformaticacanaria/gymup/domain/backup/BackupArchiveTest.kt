@@ -182,6 +182,46 @@ class BackupArchiveTest {
         assertTrue((result as BackupArchiveReadResult.Invalid).reason.contains("ZIP corrupto"))
     }
 
+    @Test
+    fun `round trip accepts 998 images at the existing ZIP entry limit`() {
+        // Two fixed entries (manifest and data) plus 998 images = 1,000.
+        val archive = BackupArchiveCodec.create(
+            snapshot = BackupSnapshot(
+                data = "{}".encodeToByteArray(),
+                images = numberedImageEntries(998),
+            ),
+            appVersion = "0.1.0",
+            exportedAt = Instant.parse("2026-08-21T00:00:00Z"),
+        )
+
+        val result = BackupArchiveCodec.readAndValidate(archive)
+        assertTrue(result is BackupArchiveReadResult.Valid)
+        assertEquals(998, (result as BackupArchiveReadResult.Valid).snapshot.images.size)
+    }
+
+    @Test
+    fun `exporter can create 999 images that the current reader rejects by entry count`() {
+        // This is a regression fixture for #58, not approval to change ZIP v1 limits.
+        // Two fixed entries plus 999 images exceed the existing 1,000-entry cap.
+        val archive = BackupArchiveCodec.create(
+            snapshot = BackupSnapshot(
+                data = "{}".encodeToByteArray(),
+                images = numberedImageEntries(999),
+            ),
+            appVersion = "0.1.0",
+            exportedAt = Instant.parse("2026-08-21T00:00:00Z"),
+        )
+
+        val result = BackupArchiveCodec.readAndValidate(archive)
+        assertTrue(result is BackupArchiveReadResult.Invalid)
+        assertTrue((result as BackupArchiveReadResult.Invalid).reason.contains("demasiados archivos"))
+    }
+
+    private fun numberedImageEntries(count: Int): Map<String, ByteArray> =
+        (1..count).associate { index ->
+            "user:00000000-0000-0000-0000-${index.toString().padStart(12, '0')}" to byteArrayOf(1)
+        }
+
     private fun zipOf(vararg entries: Pair<String, ByteArray>): ByteArray = ByteArrayOutputStream().use { output ->
         ZipOutputStream(output).use { zip ->
             entries.forEach { (path, bytes) ->
