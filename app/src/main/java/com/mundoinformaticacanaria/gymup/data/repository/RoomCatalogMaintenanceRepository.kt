@@ -18,6 +18,11 @@ import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogKind
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterMaintenanceItem
 import com.mundoinformaticacanaria.gymup.domain.repository.RoutineRemovalConfirmationRequired
 import java.io.File
+import java.io.IOException
+import java.nio.channels.FileChannel
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.StandardOpenOption
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -25,9 +30,13 @@ import kotlinx.coroutines.flow.map
 class RoomCatalogMaintenanceRepository(
     context: Context,
     private val database: GymUpDatabase,
+    // Deterministic seams for failure testing; production uses filesystem operations.
+    private val removeImageFile: (File) -> Boolean = File::delete,
+    private val syncImageDirectory: (File) -> Unit = ::syncDirectoryMetadata,
 ) : CatalogMaintenanceRepository {
     private val dao: CatalogMaintenanceDao = database.catalogMaintenanceDao()
-    private val imageDirectory = File(context.applicationContext.filesDir, "exercise-images")
+    private val filesDirectory = context.applicationContext.filesDir
+    private val imageDirectory = File(filesDirectory, "exercise-images")
 
     override fun observeMasters(kind: MasterCatalogKind): Flow<List<MasterMaintenanceItem>> = when (kind) {
         MasterCatalogKind.SESSION_TYPE -> dao.observeSessionTypes().map { items ->
@@ -146,9 +155,19 @@ class RoomCatalogMaintenanceRepository(
             if (routineReferences > 0 && !confirmRoutineRemoval) {
                 throw RoutineRemovalConfirmationRequired(routineReferences)
             }
+            // Validate all user-image references before committing the Room deletion.
+            // Corrupt or legacy keys must never resolve outside the private image directory
+            // or silently skip cleanup after the exercise and routine links are gone.
             val imageStorageKeys = dao.getExerciseImages(exerciseId)
-                .filter { it.sourceType == "USER" && it.storageKey.startsWith("user:") }
-                .map { it.storageKey }
+                .filter { it.sourceType == "USER" }
+                .map { validatedUserImageStorageKey(it.storageKey) }
+            // The schema does not enforce unique storage_key across image rows. Never
+            // remove bytes still referenced by another image, even in corrupt/legacy data.
+            imageStorageKeys.forEach { storageKey ->
+                require(dao.countUserImageStorageKeyReferences(storageKey) == 1) {
+                    "La imagen personalizada tiene referencias duplicadas: baja cancelada"
+                }
+            }
             if (routineReferences > 0) dao.removeRoutineReferences(exerciseId)
             dao.deleteExercise(exerciseId)
             DeletionExecution(
@@ -156,10 +175,71 @@ class RoomCatalogMaintenanceRepository(
                 imageStorageKeys,
             )
         }
+        // Room has already committed. Never report success when private image cleanup fails:
+        // this would silently leave orphan files. A durable journal is still required to
+        // recover an interrupted delete and to handle multi-image partial cleanup.
         execution.userImageStorageKeys.forEach { storageKey ->
-            File(imageDirectory, storageKey.removePrefix("user:")).delete()
+            // Recheck the directory itself before touching image bytes. A symlink
+            // at the root could otherwise redirect cleanup outside app-private storage.
+            requireSafeImageDirectory()
+            val file = File(imageDirectory, storageKey.removePrefix("user:"))
+            // File.exists() follows symlinks: a dangling link reports false and must
+            // not be silently skipped after Room has already committed the deletion.
+            if (Files.isSymbolicLink(file.toPath())) {
+                throw IOException("La ruta de imagen del ejercicio es un enlace simbólico")
+            }
+            if (file.exists()) {
+                // A corrupt on-disk entry must not turn image cleanup into directory removal.
+                if (!file.isFile) {
+                    throw IOException("La ruta de imagen del ejercicio no es un archivo regular")
+                }
+                if (!removeImageFile(file) || file.exists()) {
+                    throw IOException("No se pudo eliminar el archivo de imagen del ejercicio; la baja en Room ya se confirmó")
+                }
+                syncImageDirectory(imageDirectory)
+            }
         }
         return execution.result
+    }
+
+    private fun validatedUserImageStorageKey(storageKey: String): String {
+        require(storageKey.startsWith("user:")) {
+            "Referencia de imagen personalizada sin prefijo válido: baja cancelada"
+        }
+        val fileName = storageKey.removePrefix("user:")
+        require(
+            fileName.isNotBlank() && fileName != "." && fileName != ".." &&
+                fileName.none { it == '/' || it == '\\' || it == '\u0000' },
+        ) {
+            "Ruta de imagen personalizada no válida: baja cancelada"
+        }
+        // The directory root must also be safe; checking only the final image entry
+        // would follow a symlinked exercise-images root into an unrelated directory.
+        requireSafeImageDirectory()
+        // Validate filesystem object type before Room commits the exercise deletion.
+        // A missing image is tolerated (legacy/incomplete state), but an existing directory
+        // or symbolic link must not be deleted under the guise of an image.
+        val imageFile = File(imageDirectory, fileName)
+        // Check the link itself before exists(): a dangling symlink has exists() == false.
+        require(!Files.isSymbolicLink(imageFile.toPath()) && (!imageFile.exists() || imageFile.isFile)) {
+            "La ruta de imagen personalizada no es un archivo regular: baja cancelada"
+        }
+        return storageKey
+    }
+
+    private fun requireSafeImageDirectory() {
+        // A safe final exercise-images path is insufficient when filesDir itself
+        // is a symlink: deleting an image could otherwise reach external bytes.
+        // Check before the Room transaction commits and again before each delete.
+        require(Files.isDirectory(filesDirectory.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            "El directorio privado de la aplicación no es seguro: baja cancelada"
+        }
+        require(!Files.isSymbolicLink(imageDirectory.toPath())) {
+            "El directorio de imágenes es un enlace simbólico: baja cancelada"
+        }
+        require(!imageDirectory.exists() || imageDirectory.isDirectory) {
+            "La ruta de imágenes no es un directorio: baja cancelada"
+        }
     }
 
     private suspend fun validateExerciseInput(
@@ -247,6 +327,12 @@ class RoomCatalogMaintenanceRepository(
             isFavorite = favorite,
             isActive = active,
         )
+    }
+
+    private companion object {
+        fun syncDirectoryMetadata(directory: File) {
+            FileChannel.open(directory.toPath(), StandardOpenOption.READ).use { it.force(true) }
+        }
     }
 
     private data class DeletionExecution(

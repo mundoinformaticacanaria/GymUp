@@ -54,6 +54,8 @@ jobs:
             echo "Android project has not been bootstrapped on this ref yet."
           fi
 
-      - name: Test, lint and compile debug
+      - name: Test, lint and compile debug plus instrumentation sources
         if: steps.android-project.outputs.exists == 'true'
-        run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
+        # Compile androidTest Kotlin without running an emulator or packaging/publishing an APK.
+        # Device execution (Android 15/16) remains a separate physical acceptance gate.
+        run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin

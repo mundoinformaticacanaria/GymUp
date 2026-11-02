@@ -1,6 +1,5 @@
 package com.mundoinformaticacanaria.gymup.feature.exercises
 
-import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -28,9 +27,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -41,7 +41,10 @@ import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseCatalogReposi
 import com.mundoinformaticacanaria.gymup.domain.repository.HistoryRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.usecase.rankExercises
+import java.io.InputStream
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,9 +78,12 @@ fun ExercisesScreen(
                 runCatching {
                     val mime = context.contentResolver.getType(uri)
                     require(mime == null || mime.startsWith("image/")) { "El archivo seleccionado no es una imagen" }
-                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: error("No se pudo leer la imagen seleccionada")
-                    exerciseImageManager.addUserImage(exerciseId, bytes)
+                    withContext(Dispatchers.IO) {
+                        val bytes = context.contentResolver.openInputStream(uri)
+                            ?.use(::readSelectedImageBytes)
+                            ?: error("No se pudo leer la imagen seleccionada")
+                        exerciseImageManager.addUserImage(exerciseId, bytes)
+                    }
                 }.onSuccess {
                     message = "Imagen añadida"
                 }.onFailure { error ->
@@ -181,13 +187,25 @@ private fun ExerciseImagesSection(
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(images, key = ExerciseImageItem::id) { image ->
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    val file = image.localFile
-                    val bitmap = remember(file?.absolutePath, file?.lastModified()) {
-                        file?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
+                    // Reuse the bounded, NOFOLLOW_LINKS reader used by the session
+                    // gallery. A File path observed earlier may now refer to a
+                    // different regular file or a symlink. The refresh revision is
+                    // captured by the manager on IO, not by Compose pathname stat.
+                    val bitmap by produceState<ImageBitmap?>(
+                        initialValue = null,
+                        manager,
+                        image.id,
+                        image.storageKey,
+                        image.fileRevision,
+                    ) {
+                        value = withContext(Dispatchers.IO) {
+                            decodeUserImageBitmap(manager, image)
+                        }
                     }
-                    if (bitmap != null) {
+                    val loadedBitmap = bitmap
+                    if (loadedBitmap != null) {
                         Image(
-                            bitmap = bitmap,
+                            bitmap = loadedBitmap,
                             contentDescription = "Imagen del ejercicio",
                             modifier = Modifier.size(96.dp),
                             contentScale = ContentScale.Crop,
@@ -199,7 +217,12 @@ private fun ExerciseImagesSection(
                         TextButton(
                             onClick = {
                                 scope.launch {
-                                    runCatching { manager.deleteUserImage(image.id) }
+                                    // File deletion and directory fsync must not block Compose's UI thread.
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            manager.deleteUserImage(image.id)
+                                        }
+                                    }
                                         .onSuccess { onMessage("Imagen eliminada") }
                                         .onFailure { onMessage(it.message ?: "No se pudo eliminar la imagen") }
                                 }
@@ -216,4 +239,14 @@ private fun ExerciseImagesSection(
             Text("Añadir imagen (${images.size}/3)")
         }
     }
+}
+
+/** SAF streams are untrusted: never call InputStream.readBytes() without a bound. */
+internal fun readSelectedImageBytes(input: InputStream): ByteArray {
+    val limit = ExerciseImageManager.MAX_IMAGE_BYTES
+    // Read one extra byte to distinguish exactly-at-limit from oversized input.
+    // InputStream.readNBytes bounds allocation even when the provider lies about size.
+    val bytes = input.readNBytes(limit + 1)
+    require(bytes.size <= limit) { "La imagen supera el límite de 10 MiB" }
+    return bytes
 }
