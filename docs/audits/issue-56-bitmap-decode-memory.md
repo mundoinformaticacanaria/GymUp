@@ -47,3 +47,28 @@ publicar APK ni retirar `exercise-images-previous-*` por este cambio.
 El commit [`27015fd`](https://github.com/mundoinformaticacanaria/GymUp/commit/27015fd559fee940e290f02760079eedfc84c1a4) añade dos regresiones Robolectric: arista exactamente de 512 px sin reducción y arista de 513 px con muestreo a un máximo de 512 px. **CI de estas dos pruebas pendiente de comprobar**; no se atribuye el éxito anterior al nuevo commit. No hay cambios de comportamiento de producción ni de formato de backup.
 
 Continúan sin resolver las pruebas instrumentadas Android 15/16, durabilidad/cortes reales, carreras TOCTOU y auditoría integral DAO/lectores/procesos. #56 y PR #57 deben permanecer abiertas/DRAFT.
+
+## Metadatos de miniaturas fuera de Compose — 2026-11-02
+
+La galería de sesión y el catálogo usaban `image.localFile?.lastModified()`
+como clave de `produceState`. Esa consulta seguía el pathname desde
+composición (hilo principal), incluso si el archivo observado en Room se
+había sustituido. No leía bytes, pero sí metadatos del destino de un symlink.
+
+La revisión `fileRevision` ahora se obtiene en
+`ExerciseImageManager.observeImages()` con `flowOn(Dispatchers.IO)`.
+Se calcula a partir de `BasicFileAttributes` con `NOFOLLOW_LINKS` y
+`fileKey`, fecha y tamaño; si el archivo no es regular o no hay identidad
+fiable, queda nula. Las dos pantallas usan esta revisión como clave de
+`produceState`, sin ejecutar `File.lastModified()` en Compose.
+Dos regresiones Robolectric cubren reemplazo por otro archivo regular con
+bytes/fecha iguales y cambio de fecha sin cambiar la fila Room; el test de
+symlink exige revisión nula. **Validar el HEAD exacto en CI** antes de
+considerar las pruebas superadas.
+
+Límite: el cambio recalcula la revisión cuando `observeImages` emite
+una lista o se inicia una nueva observación; no constituye un observador
+de cambios arbitrarios del filesystem ni protege contra TOCTOU/ABA.
+El lector de bytes sigue siendo la barrera efectiva. No se han ejecutado
+pruebas instrumentadas API 35/36 ni físicas; no fusionar PR #57, no
+activar el limpiador de staging ni borrar `exercise-images-previous-*`.
