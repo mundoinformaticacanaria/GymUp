@@ -344,16 +344,9 @@ private class UserExerciseImageStore(
         check(!Files.isSymbolicLink(file.toPath()) && file.isFile) {
             "Imagen personalizada ausente o insegura: $storageKey"
         }
-        // Preflight alone has a TOCTOU window. Open the final component without
-        // following symlinks so a replacement after validation cannot leak other bytes.
-        beforeRequiredImageRead(file)
-        // The image root may be swapped after preflight. NOFOLLOW_LINKS on the
-        // final file alone does not prevent traversal through a linked parent.
-        // Reject the substituted root before opening any image bytes.
-        requireSafePrivateParent()
-        check(Files.isDirectory(rootDir.toPath(), LinkOption.NOFOLLOW_LINKS)) {
-            "El directorio de imágenes personalizadas cambió a una ruta insegura"
-        }
+        // Pin identities BEFORE the deterministic read seam. Invoking the seam
+        // during preflight would let a regular file/root replacement become the
+        // trusted baseline and silently enter an exported backup.
         return try {
             // A replacement by another *regular* directory or file can evade the
             // symlink checks. Pin all three identities before the test seam and
@@ -384,6 +377,7 @@ private class UserExerciseImageStore(
                         file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
                     ).fileKey() == imageKey
 
+            check(sameReadPath()) { "La ruta de imagen cambió durante la validación: $storageKey" }
             beforeRequiredImageRead(file)
             check(sameReadPath()) { "La ruta de imagen cambió antes de exportar: $storageKey" }
             val bytes = Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS).use { input ->
