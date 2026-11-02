@@ -36,6 +36,29 @@ class BackupArchiveTest {
     }
 
     @Test
+    fun `read rejects malformed UTF8 data even when its manifest checksum matches`() {
+        val data = """{"name":"X"}""".encodeToByteArray()
+        val invalidByte = data.indexOf('X'.code.toByte())
+        assertTrue(invalidByte >= 0)
+        data[invalidByte] = 0xFF.toByte()
+        val manifest = BackupManifestCodec.create(
+            data = data,
+            images = emptyMap(),
+            appVersion = "0.1.0",
+            exportedAt = Instant.parse("2026-08-21T00:00:00Z"),
+        )
+        val archive = zipOf(
+            BackupManifestV1.MANIFEST_PATH to BackupManifestCodec.encode(manifest).encodeToByteArray(),
+            BackupManifestV1.DATA_PATH to data,
+        )
+
+        val result = BackupArchiveCodec.readAndValidate(archive)
+
+        assertTrue(result is BackupArchiveReadResult.Invalid)
+        assertTrue((result as BackupArchiveReadResult.Invalid).reason.contains("UTF-8"))
+    }
+
+    @Test
     fun `read rejects undeclared file`() {
         val data = "{}".encodeToByteArray()
         val manifest = BackupManifestCodec.create(

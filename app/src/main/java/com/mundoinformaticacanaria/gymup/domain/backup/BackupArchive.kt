@@ -3,6 +3,7 @@ package com.mundoinformaticacanaria.gymup.domain.backup
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.nio.charset.CharacterCodingException
 import java.time.Instant
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -139,13 +140,23 @@ object BackupArchiveCodec {
             return BackupArchiveReadResult.ValidationFailed(validation)
         }
 
+        // A valid checksum proves the bytes were not altered, not that JSON text
+        // can be decoded without silently replacing malformed UTF-8 sequences.
+        // Reject invalid data.json before exposing the snapshot as importable.
+        val dataBytes = entries.getValue(manifest.data.path)
+        try {
+            dataBytes.decodeToString(throwOnInvalidSequence = true)
+        } catch (error: CharacterCodingException) {
+            return BackupArchiveReadResult.Invalid("data.json no válido: UTF-8 inválido")
+        }
+
         val images = manifest.images.associate { image ->
             image.storageKey to entries.getValue(image.path)
         }
         return BackupArchiveReadResult.Valid(
             manifest = manifest,
             snapshot = BackupSnapshot(
-                data = entries.getValue(manifest.data.path),
+                data = dataBytes,
                 images = images,
             ),
         )

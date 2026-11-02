@@ -38,6 +38,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.channels.Channels
 import java.nio.channels.FileChannel
+import java.nio.charset.CharacterCodingException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.StandardOpenOption
@@ -103,7 +104,14 @@ class RoomBackupDataSource(
     }
 
     override suspend fun replaceAll(snapshot: BackupSnapshot) {
-        val data = BackupDataCodec.decode(snapshot.data.decodeToString()).getOrElse {
+        // Journal/recovery callers may supply snapshots without going through
+        // BackupArchiveCodec. Never silently rewrite invalid UTF-8 user data.
+        val dataText = try {
+            snapshot.data.decodeToString(throwOnInvalidSequence = true)
+        } catch (error: CharacterCodingException) {
+            throw IllegalArgumentException("data.json no es UTF-8 válido", error)
+        }
+        val data = BackupDataCodec.decode(dataText).getOrElse {
             throw IllegalArgumentException("data.json no es JSON v1 válido", it)
         }
         when (val validation = BackupDataCodec.validate(data)) {

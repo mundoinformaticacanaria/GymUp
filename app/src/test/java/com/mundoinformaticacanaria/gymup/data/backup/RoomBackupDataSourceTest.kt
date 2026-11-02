@@ -66,6 +66,25 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `direct snapshot import rejects malformed UTF8 before changing Room or theme`() = runBlocking {
+        val source = RoomBackupDataSource(context, database, preferences)
+        val before = source.exportSnapshot()
+        val malformed = """{"name":"X"}""".encodeToByteArray()
+        val invalidByte = malformed.indexOf('X'.code.toByte())
+        assertTrue(invalidByte >= 0)
+        malformed[invalidByte] = 0xFF.toByte()
+
+        val failure = runCatching {
+            source.replaceAll(BackupSnapshot(data = malformed))
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertTrue(failure?.message?.contains("UTF-8") == true)
+        assertArrayEquals(before.data, source.exportSnapshot().data)
+        assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+    }
+
+    @Test
     fun `snapshot round trip restores masters sessions sets preferences and custom images`() = runBlocking {
         val dao = database.backupDao()
         val sessionType = dao.getSessionTypes().first()
