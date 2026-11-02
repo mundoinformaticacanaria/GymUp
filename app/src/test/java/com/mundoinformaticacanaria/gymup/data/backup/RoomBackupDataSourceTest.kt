@@ -339,16 +339,23 @@ class RoomBackupDataSourceTest {
             .apply { mkdirs() }
         val foreignFile = foreignRoot.resolve(image.storageKey.removePrefix("user:"))
             .apply { writeBytes(originalBytes) }
+        var readHooks = 0
         val source = RoomBackupDataSource(
             context, database, preferences,
             beforeRequiredImageRead = {
-                Files.move(root.toPath(), parked.toPath())
-                Files.move(foreignRoot.toPath(), root.toPath())
+                readHooks++
+                // Swap exactly once. A second hook invocation used to throw
+                // FileAlreadyExistsException and mask the identity-check bypass.
+                if (readHooks == 1) {
+                    Files.move(root.toPath(), parked.toPath())
+                    Files.move(foreignRoot.toPath(), root.toPath())
+                }
             },
         )
 
         try {
             val failure = runCatching { source.exportSnapshot() }.exceptionOrNull()
+            assertEquals("Image export must expose one read seam", 1, readHooks)
             assertTrue("Export must reject a different regular root with identical bytes",
                 failure is IllegalStateException)
             assertArrayEquals(originalBytes, root.resolve(foreignFile.name).readBytes())
@@ -376,16 +383,21 @@ class RoomBackupDataSourceTest {
         val parked = context.filesDir.resolve("original-export-file-${UUID.randomUUID()}")
         val foreign = context.filesDir.resolve("foreign-export-file-${UUID.randomUUID()}")
             .apply { writeBytes(originalBytes) }
+        var readHooks = 0
         val source = RoomBackupDataSource(
             context, database, preferences,
             beforeRequiredImageRead = {
-                Files.move(imageFile.toPath(), parked.toPath())
-                Files.move(foreign.toPath(), imageFile.toPath())
+                readHooks++
+                if (readHooks == 1) {
+                    Files.move(imageFile.toPath(), parked.toPath())
+                    Files.move(foreign.toPath(), imageFile.toPath())
+                }
             },
         )
 
         try {
             val failure = runCatching { source.exportSnapshot() }.exceptionOrNull()
+            assertEquals("Image export must expose one read seam", 1, readHooks)
             assertTrue("Export must reject a different regular file with identical bytes",
                 failure is IllegalStateException)
             assertArrayEquals(originalBytes, imageFile.readBytes())
