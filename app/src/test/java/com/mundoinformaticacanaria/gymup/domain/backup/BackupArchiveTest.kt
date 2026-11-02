@@ -217,6 +217,26 @@ class BackupArchiveTest {
         assertTrue((result as BackupArchiveReadResult.Invalid).reason.contains("demasiados archivos"))
     }
 
+    @Test
+    fun `exporter can create a data entry exceeding the existing per entry reader limit`() {
+        // The exporter currently has no symmetric 25 MiB check (#58).
+        // Highly compressible bytes keep the ZIP fixture small; this is not a
+        // proposed change to the format or an approval of new export limits.
+        val oversizedData = ByteArray(25 * 1024 * 1024 + 1) { 1 }
+        val archive = BackupArchiveCodec.create(
+            snapshot = BackupSnapshot(data = oversizedData),
+            appVersion = "0.1.0",
+            exportedAt = Instant.parse("2026-08-21T00:00:00Z"),
+        )
+
+        assertTrue(archive.size < 100 * 1024 * 1024)
+        val result = BackupArchiveCodec.readAndValidate(archive)
+        assertTrue(result is BackupArchiveReadResult.Invalid)
+        assertTrue(
+            (result as BackupArchiveReadResult.Invalid).reason.contains("supera el tamaño máximo"),
+        )
+    }
+
     private fun numberedImageEntries(count: Int): Map<String, ByteArray> =
         (1..count).associate { index ->
             "user:00000000-0000-0000-0000-${index.toString().padStart(12, '0')}" to byteArrayOf(1)
