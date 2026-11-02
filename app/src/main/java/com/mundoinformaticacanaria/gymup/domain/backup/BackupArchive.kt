@@ -24,6 +24,9 @@ sealed interface BackupArchiveReadResult {
 
 object BackupArchiveCodec {
     private const val MAX_ENTRY_BYTES = 25L * 1024L * 1024L
+    // Defensive aggregate expansion budget: compressed ZIP size and per-entry limits alone
+    // do not bound the sum of all entries retained in memory before manifest validation.
+    internal const val MAX_TOTAL_EXPANDED_BYTES = 128L * 1024L * 1024L
     internal const val MAX_ARCHIVE_BYTES = 100L * 1024L * 1024L
     private const val MAX_ENTRIES = 1_000
 
@@ -52,12 +55,21 @@ object BackupArchiveCodec {
         }
     }
 
-    fun readAndValidate(archive: ByteArray): BackupArchiveReadResult {
+    fun readAndValidate(archive: ByteArray): BackupArchiveReadResult =
+        readAndValidateWithExpandedLimit(archive, MAX_TOTAL_EXPANDED_BYTES)
+
+    // Test seam permits tiny fixtures for the aggregate budget without allocating 128 MiB.
+    internal fun readAndValidateWithExpandedLimit(
+        archive: ByteArray,
+        maxExpandedBytes: Long,
+    ): BackupArchiveReadResult {
+        require(maxExpandedBytes > 0L) { "Límite descomprimido no válido" }
         if (archive.size.toLong() > MAX_ARCHIVE_BYTES) {
             return BackupArchiveReadResult.Invalid("El backup supera el tamaño máximo permitido")
         }
 
         val entries = linkedMapOf<String, ByteArray>()
+        var expandedBytes = 0L
         ZipInputStream(ByteArrayInputStream(archive)).use { zip ->
             var entryCount = 0
             while (true) {
@@ -77,9 +89,16 @@ object BackupArchiveCodec {
                 if (entries.containsKey(path)) {
                     return BackupArchiveReadResult.Invalid("Archivo ZIP duplicado: $path")
                 }
-                val bytes = readEntry(zip) ?: return BackupArchiveReadResult.Invalid(
-                    "El archivo $path supera el tamaño máximo permitido",
+                val remaining = maxExpandedBytes - expandedBytes
+                val entryBudget = minOf(MAX_ENTRY_BYTES, remaining)
+                val bytes = readEntry(zip, entryBudget) ?: return BackupArchiveReadResult.Invalid(
+                    if (entryBudget < MAX_ENTRY_BYTES) {
+                        "El backup supera el tamaño descomprimido total permitido"
+                    } else {
+                        "El archivo $path supera el tamaño máximo permitido"
+                    },
                 )
+                expandedBytes += bytes.size.toLong()
                 entries[path] = bytes
                 zip.closeEntry()
             }
@@ -121,7 +140,7 @@ object BackupArchiveCodec {
         zip.closeEntry()
     }
 
-    private fun readEntry(zip: ZipInputStream): ByteArray? {
+    private fun readEntry(zip: ZipInputStream, maxBytes: Long): ByteArray? {
         val output = ByteArrayOutputStream()
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
         var total = 0L
@@ -129,7 +148,7 @@ object BackupArchiveCodec {
             val read = zip.read(buffer)
             if (read < 0) break
             total += read
-            if (total > MAX_ENTRY_BYTES) return null
+            if (total > maxBytes) return null
             output.write(buffer, 0, read)
         }
         return output.toByteArray()

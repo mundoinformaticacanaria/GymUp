@@ -89,6 +89,51 @@ class BackupArchiveTest {
         )
     }
 
+    @Test
+    fun `read rejects aggregate ZIP expansion even when each entry fits its own limit`() {
+        val archive = zipOf(
+            "images/first" to ByteArray(80) { 1 },
+            "images/second" to ByteArray(80) { 2 },
+        )
+        val result = BackupArchiveCodec.readAndValidateWithExpandedLimit(
+            archive,
+            maxExpandedBytes = 128,
+        )
+        assertTrue(result is BackupArchiveReadResult.Invalid)
+        assertTrue(
+            (result as BackupArchiveReadResult.Invalid).reason.contains("descomprimido total"),
+        )
+    }
+
+    @Test
+    fun `read accepts exact aggregate boundary and rejects one byte less`() {
+        val data = "{}".encodeToByteArray()
+        val manifest = BackupManifestCodec.create(
+            data = data,
+            images = emptyMap(),
+            appVersion = "0.1.0",
+            exportedAt = Instant.parse("2026-08-21T00:00:00Z"),
+        )
+        val manifestBytes = BackupManifestCodec.encode(manifest).encodeToByteArray()
+        val archive = zipOf(
+            BackupManifestV1.MANIFEST_PATH to manifestBytes,
+            BackupManifestV1.DATA_PATH to data,
+        )
+        val expandedBytes = manifestBytes.size.toLong() + data.size.toLong()
+        assertTrue(
+            BackupArchiveCodec.readAndValidateWithExpandedLimit(archive, expandedBytes)
+                is BackupArchiveReadResult.Valid,
+        )
+        val rejected = BackupArchiveCodec.readAndValidateWithExpandedLimit(
+            archive,
+            expandedBytes - 1,
+        )
+        assertTrue(rejected is BackupArchiveReadResult.Invalid)
+        assertTrue(
+            (rejected as BackupArchiveReadResult.Invalid).reason.contains("descomprimido total"),
+        )
+    }
+
     private fun zipOf(vararg entries: Pair<String, ByteArray>): ByteArray = ByteArrayOutputStream().use { output ->
         ZipOutputStream(output).use { zip ->
             entries.forEach { (path, bytes) ->
