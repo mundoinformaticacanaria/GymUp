@@ -109,6 +109,10 @@ object BackupArchiveCodec {
             // A damaged CRC, truncated deflate stream or malformed ZIP is invalid input,
             // not an exception that should escape the archive validation boundary.
             return BackupArchiveReadResult.Invalid("Archivo ZIP corrupto: ${error.message ?: "lectura inválida"}")
+        } catch (error: IllegalArgumentException) {
+            // ZipInputStream may throw IllegalArgumentException (not IOException) while
+            // decoding malformed UTF-8 entry names. Treat untrusted ZIP names as invalid.
+            return BackupArchiveReadResult.Invalid("Archivo ZIP corrupto: nombre de entrada inválido")
         }
 
         val manifestRaw = entries.remove(BackupManifestV1.MANIFEST_PATH)
