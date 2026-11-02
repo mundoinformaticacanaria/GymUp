@@ -41,6 +41,7 @@ import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.UUID
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -354,7 +355,38 @@ private class UserExerciseImageStore(
             "El directorio de imágenes personalizadas cambió a una ruta insegura"
         }
         return try {
-            Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS).use { input ->
+            // A replacement by another *regular* directory or file can evade the
+            // symlink checks. Pin all three identities before the test seam and
+            // reject a changed path before and after reading its bytes.
+            val parentKey = Files.readAttributes(
+                parentDir.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+            ).fileKey() ?: error("No se puede verificar la identidad del directorio privado")
+            val rootKey = Files.readAttributes(
+                rootDir.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+            ).fileKey() ?: error("No se puede verificar la identidad del directorio de imágenes")
+            check(Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                "La imagen personalizada dejó de ser un archivo regular"
+            }
+            val imageKey = Files.readAttributes(
+                file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+            ).fileKey() ?: error("No se puede verificar la identidad de la imagen")
+            fun sameReadPath(): Boolean =
+                Files.isDirectory(parentDir.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                    Files.isDirectory(rootDir.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                    Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                    Files.readAttributes(
+                        parentDir.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                    ).fileKey() == parentKey &&
+                    Files.readAttributes(
+                        rootDir.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                    ).fileKey() == rootKey &&
+                    Files.readAttributes(
+                        file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                    ).fileKey() == imageKey
+
+            beforeRequiredImageRead(file)
+            check(sameReadPath()) { "La ruta de imagen cambió antes de exportar: $storageKey" }
+            val bytes = Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS).use { input ->
                 val output = java.io.ByteArrayOutputStream()
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                 while (true) {
@@ -368,6 +400,8 @@ private class UserExerciseImageStore(
                 }
                 output.toByteArray()
             }
+            check(sameReadPath()) { "La ruta de imagen cambió durante la exportación: $storageKey" }
+            bytes
         } catch (error: IOException) {
             throw IllegalStateException("No se pudo leer la imagen personalizada de forma segura: $storageKey", error)
         }
