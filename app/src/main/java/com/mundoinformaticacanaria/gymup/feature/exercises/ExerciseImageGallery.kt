@@ -39,12 +39,13 @@ fun ExerciseImageGallery(
                 // Do not decode a File path directly: it can become a symlink
                 // between Room observation and rendering. Use the manager's
                 // bounded NOFOLLOW_LINKS descriptor read off the UI thread.
+                // The revision is observed off-thread; never stat a path in composition.
                 val bitmap by produceState<ImageBitmap?>(
                     initialValue = null,
                     manager,
                     image.id,
                     image.storageKey,
-                    image.localFile?.lastModified(),
+                    image.fileRevision,
                 ) {
                     value = withContext(Dispatchers.IO) {
                         decodeUserImageBitmap(manager, image)
