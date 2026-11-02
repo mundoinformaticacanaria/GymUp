@@ -1115,3 +1115,31 @@ ABA o reciclaje de inodos; no sustituyen pruebas reales de cortes, fsync,
 lectores/DAO y regresión física BF-02. Mantener #56 abierta y PR #57 DRAFT;
 no habilitar limpieza aislada, borrar `exercise-images-previous-*`, fusionar
 ni generar APK.
+
+## Exportación USER: captura de identidad previa a la inyección de carrera — 2026-11-02
+
+En la inspección de `UserExerciseImageStore.readRequired()` se encontró un
+defecto de orden: `beforeRequiredImageRead(file)` se invocaba **dos veces**,
+la primera *antes* de capturar `fileKey` de `filesDir`, raíz e imagen.
+Una sustitución por directorio/fichero **regular** en esa primera ventana
+podía pasar a ser la identidad de referencia y, sin una segunda sustitución,
+ser aceptada durante la exportación o captura de preimagen. Las regresiones
+anteriores sustituían la ruta en ambas invocaciones; la segunda podía fallar
+por nombre ya ocupado y enmascarar el defecto. Hallazgo por inspección
+estática; no se afirma explotación ni pérdida de datos reales.
+
+- `467ff203`: elimina la primera invocación y captura las tres identidades
+  antes del único hook de carrera; comprueba la identidad tanto antes como
+  después de dicho hook y tras leer los bytes.
+- `df1ba904`: adapta dos regresiones Robolectric para sustituir una sola vez
+  raíz/archivo por otro regular con bytes idénticos, y exige exactamente una
+  invocación del hook y rechazo `IllegalStateException`.
+
+**Validación:** los cambios nuevos requieren Android CI del HEAD exacto;
+no se han ejecutado tests locales ni instrumentación Android 15/16.
+La [CI #41371534009](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41371534009)
+terminó SUCCESS para `003bf9c`, que es **anterior** a esta corrección.
+La verificación por rutas/`fileKey` continúa siendo best-effort: no es
+una operación atómica contra TOCTOU/ABA. Se mantienen pendientes cortes
+reales, compatibilidad API 35/36, auditoría DAO/lectores/procesos y
+regresión física BF-02. #56 y PR #57 permanecen abiertas y DRAFT.
