@@ -1060,3 +1060,31 @@ con un hook de prueba; no consta exposición real de datos.
 Mantener #56 abierta y PR #57 DRAFT sobre #50. Pendientes instrumentación
 API 35/36, cortes/durabilidad, auditoría global DAO/lectores/procesos,
 TOCTOU atómico y regresión física BF-02. Sin merge, APK, etiqueta ni release.
+
+## Miniaturas del catálogo: lector UI sin validación — 2026-11-02 00:20 UTC
+
+La auditoría de lectores descubrió una ruta **adicional** a
+`ExerciseImageGallery`: `ExerciseImagesSection` en
+`feature/exercises/ExercisesScreen.kt` usaba
+`BitmapFactory.decodeFile(image.localFile.absolutePath)` directamente.
+`localFile` procede de una observación Room anterior; entre observación
+y renderizado, una ruta regular puede cambiar de identidad o convertirse en
+symlink. Ese lector evitaba `ExerciseImageManager.readBytes()` y sus límites
+de tamaño, verificaciones `NOFOLLOW_LINKS` e identidad `fileKey`.
+No consta lectura real de datos ajenos.
+
+El commit `e30c290` cambia **solo la miniatura del catálogo** para usar
+`decodeUserImageBitmap(manager, image)`, el helper existente de la galería
+de sesión que consume `manager.readBytes()` y `BitmapFactory.decodeByteArray`.
+Se decodifica en `Dispatchers.IO` con `produceState`, sin cambiar
+la posibilidad de añadir/eliminar imágenes ni el texto de fallback.
+`ExerciseImageSafeReadTest` ya cubre el helper con una imagen PNG válida
+y con un symlink sustituido tras observar la fila; la CI del nuevo HEAD
+debe comprobar compilación y estas pruebas. No se afirma prueba UI física.
+
+Límites: la verificación por pathname sigue siendo no atómica ante
+intercambios concurrentes/ABA; el límite de 10 MiB es de **bytes comprimidos**
+y no demuestra un máximo de memoria del bitmap decodificado. Quedan
+pendientes Android 15/16, cortes/durabilidad, auditoría restante de lectores,
+DAO/procesos y regresión física BF-02. Mantener #56 abierta y PR #57 DRAFT
+sobre #50, sin merge, APK ni release.
