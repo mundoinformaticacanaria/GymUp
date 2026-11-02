@@ -81,6 +81,9 @@ internal fun decodeUserImageBitmap(
 private const val MAX_DISPLAY_IMAGE_EDGE_PX = 512
 
 internal fun decodeBoundedImageBytes(bytes: ByteArray): ImageBitmap? {
+    // Even Robolectric's bitmap shadow may fabricate a bitmap for arbitrary short
+    // bytes. No supported encoded image can fit in fewer than eight bytes.
+    if (bytes.size < 8) return null
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
