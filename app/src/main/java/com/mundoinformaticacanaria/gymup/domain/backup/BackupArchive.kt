@@ -88,6 +88,14 @@ object BackupArchiveCodec {
                     if (!BackupManifestCodec.isSafeRelativePath(directoryPath)) {
                         return BackupArchiveReadResult.Invalid("Ruta ZIP no válida: ${entry.name}")
                     }
+                    // A ZIP directory should carry no payload. closeEntry() drains any
+                    // unread data; skipping straight to it could decompress arbitrarily
+                    // large attacker-controlled bytes outside the entry/total budgets.
+                    if (readEntry(zip, 0L) == null) {
+                        return BackupArchiveReadResult.Invalid(
+                            "Directorio ZIP con contenido no permitido: ${entry.name}",
+                        )
+                    }
                     zip.closeEntry()
                     continue
                 }
