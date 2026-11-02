@@ -189,13 +189,14 @@ private fun ExerciseImagesSection(
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     // Reuse the bounded, NOFOLLOW_LINKS reader used by the session
                     // gallery. A File path observed earlier may now refer to a
-                    // different regular file or a symlink.
+                    // different regular file or a symlink. The refresh revision is
+                    // captured by the manager on IO, not by Compose pathname stat.
                     val bitmap by produceState<ImageBitmap?>(
                         initialValue = null,
                         manager,
                         image.id,
                         image.storageKey,
-                        image.localFile?.lastModified(),
+                        image.fileRevision,
                     ) {
                         value = withContext(Dispatchers.IO) {
                             decodeUserImageBitmap(manager, image)
