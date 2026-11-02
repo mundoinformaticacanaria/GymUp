@@ -1088,3 +1088,30 @@ y no demuestra un máximo de memoria del bitmap decodificado. Quedan
 pendientes Android 15/16, cortes/durabilidad, auditoría restante de lectores,
 DAO/procesos y regresión física BF-02. Mantener #56 abierta y PR #57 DRAFT
 sobre #50, sin merge, APK ni release.
+
+## Exportación de backup: sustitución regular de raíz o imagen USER — 2026-11-02 01:17 UTC
+
+La revisión de `UserExerciseImageStore.readRequired()` en
+`RoomBackupDataSource.kt` encontró una segunda ruta de lectura de imágenes USER,
+independiente del lector de galería. Antes de exportar una imagen se rechazaban
+symlinks del padre, la raíz y el archivo final, pero un intercambio por **otro
+directorio o archivo regular**, incluso con los mismos bytes, podía pasar las
+comprobaciones y terminar incluyendo contenido de una ruta sustituida en el ZIP.
+No consta exportación real de datos ajenos.
+
+El commit `eb6dc21` captura `BasicFileAttributes.fileKey()` del padre
+`filesDir`, la raíz `exercise-images` y el archivo USER; comprueba la misma
+identidad antes y después de la lectura con `NOFOLLOW_LINKS` y mantiene el
+límite de 10 MiB. Si Android no ofrece identidad o cambia la ruta, la
+exportación falla cerrada. El commit `16b4616` añade dos regresiones
+Robolectric de sustitución por raíz y archivo **regulares de bytes idénticos**,
+con preservación de Room, preferencias y ambos árboles, más reintento tras
+restaurar el original.
+
+**Estado:** cambios publicados en PR #57, pendientes de CI exacta del HEAD y de
+instrumentación en AVD desechables Android 15/API35 y 16/API36. Los chequeos
+por ruta son best-effort: no garantizan atomicidad frente a TOCTOU posterior,
+ABA o reciclaje de inodos; no sustituyen pruebas reales de cortes, fsync,
+lectores/DAO y regresión física BF-02. Mantener #56 abierta y PR #57 DRAFT;
+no habilitar limpieza aislada, borrar `exercise-images-previous-*`, fusionar
+ni generar APK.
