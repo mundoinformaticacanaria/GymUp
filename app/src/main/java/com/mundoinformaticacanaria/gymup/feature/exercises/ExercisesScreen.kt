@@ -1,6 +1,5 @@
 package com.mundoinformaticacanaria.gymup.feature.exercises
 
-import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -28,9 +27,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -41,7 +41,9 @@ import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseCatalogReposi
 import com.mundoinformaticacanaria.gymup.domain.repository.HistoryRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.usecase.rankExercises
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -181,13 +183,24 @@ private fun ExerciseImagesSection(
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(images, key = ExerciseImageItem::id) { image ->
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    val file = image.localFile
-                    val bitmap = remember(file?.absolutePath, file?.lastModified()) {
-                        file?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
+                    // Reuse the bounded, NOFOLLOW_LINKS reader used by the session
+                    // gallery. A File path observed earlier may now refer to a
+                    // different regular file or a symlink.
+                    val bitmap by produceState<ImageBitmap?>(
+                        initialValue = null,
+                        manager,
+                        image.id,
+                        image.storageKey,
+                        image.localFile?.lastModified(),
+                    ) {
+                        value = withContext(Dispatchers.IO) {
+                            decodeUserImageBitmap(manager, image)
+                        }
                     }
-                    if (bitmap != null) {
+                    val loadedBitmap = bitmap
+                    if (loadedBitmap != null) {
                         Image(
-                            bitmap = bitmap,
+                            bitmap = loadedBitmap,
                             contentDescription = "Imagen del ejercicio",
                             modifier = Modifier.size(96.dp),
                             contentScale = ContentScale.Crop,
