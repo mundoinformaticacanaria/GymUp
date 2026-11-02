@@ -484,7 +484,7 @@ class ExerciseImageManager internal constructor(
         }
 
         const val MAX_IMAGES_PER_EXERCISE = 3
-        private const val MAX_IMAGE_BYTES = 10 * 1024 * 1024
+        internal const val MAX_IMAGE_BYTES = 10 * 1024 * 1024
         private const val DIRECTORY = "exercise-images"
         private const val USER_SOURCE = "USER"
     }

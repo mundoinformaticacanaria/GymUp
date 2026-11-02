@@ -1143,3 +1143,27 @@ La verificación por rutas/`fileKey` continúa siendo best-effort: no es
 una operación atómica contra TOCTOU/ABA. Se mantienen pendientes cortes
 reales, compatibilidad API 35/36, auditoría DAO/lectores/procesos y
 regresión física BF-02. #56 y PR #57 permanecen abiertas y DRAFT.
+
+## Selector SAF de imágenes: lectura sin límite en el hilo UI — 2026-11-02
+
+En `ExercisesScreen.kt`, el resultado de `GetContent()` ejecutaba
+`contentResolver.openInputStream(uri)?.use { it.readBytes() }` dentro de
+`rememberCoroutineScope().launch` (dispatcher principal). El límite de
+10 MiB de `ExerciseImageManager.addUserImage()` se comprobaba **después**
+de cargar todo el contenido en memoria: un proveedor SAF con archivo grande
+podía provocar una asignación sin límite y bloquear la interfaz antes de
+rechazarlo. Hallazgo por lectura estática; no consta fallo observado.
+
+La corrección usa `readSelectedImageBytes()` con `InputStream.readNBytes`
+limitado a `MAX_IMAGE_BYTES + 1` (constante compartida con el gestor) y
+realiza tanto lectura como guardado en `Dispatchers.IO`. Rechaza el
+archivo si excede 10 MiB, sin cambiar el límite de producto ni el flujo
+de selección. `SelectedImageInputTest` cubre archivo pequeño, límite
+exacto y proveedor mayor: la lectura debe detenerse tras **10 MiB + 1 byte**.
+
+**Pendiente:** CI del HEAD que contiene esta corrección; no se ha
+ejecutado instrumentación API 35/36 ni prueba física. El límite es de
+bytes comprimidos, no de píxeles decodificados; la defensa contra
+bitmaps de dimensiones extremas sigue pendiente. Se mantienen las
+puertas de #56 (durabilidad/cortes, TOCTOU, DAO/lectores/procesos,
+regresión BF-02) y PR #57 DRAFT sobre #50, sin merge ni APK.

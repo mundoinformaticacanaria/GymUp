@@ -41,6 +41,7 @@ import com.mundoinformaticacanaria.gymup.domain.repository.ExerciseCatalogReposi
 import com.mundoinformaticacanaria.gymup.domain.repository.HistoryRepository
 import com.mundoinformaticacanaria.gymup.domain.repository.MasterCatalogRepository
 import com.mundoinformaticacanaria.gymup.domain.usecase.rankExercises
+import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -77,9 +78,12 @@ fun ExercisesScreen(
                 runCatching {
                     val mime = context.contentResolver.getType(uri)
                     require(mime == null || mime.startsWith("image/")) { "El archivo seleccionado no es una imagen" }
-                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: error("No se pudo leer la imagen seleccionada")
-                    exerciseImageManager.addUserImage(exerciseId, bytes)
+                    withContext(Dispatchers.IO) {
+                        val bytes = context.contentResolver.openInputStream(uri)
+                            ?.use(::readSelectedImageBytes)
+                            ?: error("No se pudo leer la imagen seleccionada")
+                        exerciseImageManager.addUserImage(exerciseId, bytes)
+                    }
                 }.onSuccess {
                     message = "Imagen añadida"
                 }.onFailure { error ->
@@ -229,4 +233,14 @@ private fun ExerciseImagesSection(
             Text("Añadir imagen (${images.size}/3)")
         }
     }
+}
+
+/** SAF streams are untrusted: never call InputStream.readBytes() without a bound. */
+internal fun readSelectedImageBytes(input: InputStream): ByteArray {
+    val limit = ExerciseImageManager.MAX_IMAGE_BYTES
+    // Read one extra byte to distinguish exactly-at-limit from oversized input.
+    // InputStream.readNBytes bounds allocation even when the provider lies about size.
+    val bytes = input.readNBytes(limit + 1)
+    require(bytes.size <= limit) { "La imagen supera el límite de 10 MiB" }
+    return bytes
 }
