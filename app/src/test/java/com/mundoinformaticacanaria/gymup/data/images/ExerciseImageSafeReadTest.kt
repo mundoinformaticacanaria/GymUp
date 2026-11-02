@@ -296,6 +296,38 @@ class ExerciseImageSafeReadTest {
     }
 
     @Test
+    fun galleryDecoderRejectsSameBytesRegularFileSwappedAfterObservation() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val original = ExerciseImageManager(context, database.exerciseDao())
+        val saved = original.addUserImage(exercise.id, pngBytes())
+        val file = saved.localFile!!
+        val parked = context.filesDir.resolve("image-original-${UUID.randomUUID()}")
+        // Identical PNG bytes must not be enough to trust a different inode.
+        val foreignBytes = pngBytes()
+        val manager = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            beforeUserImageRead = {
+                Files.move(file.toPath(), parked.toPath())
+                file.writeBytes(foreignBytes)
+            },
+        )
+        val observed = manager.observeImages(exercise.id).first().single()
+
+        try {
+            assertNull(decodeUserImageBitmap(manager, observed))
+            assertArrayEquals(foreignBytes, file.readBytes())
+            assertNotNull(database.exerciseDao().getImageById(saved.id))
+        } finally {
+            if (parked.exists()) {
+                Files.deleteIfExists(file.toPath())
+                Files.move(parked.toPath(), file.toPath())
+            }
+        }
+        assertNotNull(decodeUserImageBitmap(original, saved))
+    }
+
+    @Test
     fun regularImageRemainsVisibleAndReadable() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val manager = ExerciseImageManager(context, database.exerciseDao())
