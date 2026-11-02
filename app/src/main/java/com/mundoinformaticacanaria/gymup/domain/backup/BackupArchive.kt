@@ -2,6 +2,7 @@ package com.mundoinformaticacanaria.gymup.domain.backup
 
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.time.Instant
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -70,7 +71,8 @@ object BackupArchiveCodec {
 
         val entries = linkedMapOf<String, ByteArray>()
         var expandedBytes = 0L
-        ZipInputStream(ByteArrayInputStream(archive)).use { zip ->
+        try {
+            ZipInputStream(ByteArrayInputStream(archive)).use { zip ->
             var entryCount = 0
             while (true) {
                 val entry = zip.nextEntry ?: break
@@ -102,6 +104,11 @@ object BackupArchiveCodec {
                 entries[path] = bytes
                 zip.closeEntry()
             }
+            }
+        } catch (error: IOException) {
+            // A damaged CRC, truncated deflate stream or malformed ZIP is invalid input,
+            // not an exception that should escape the archive validation boundary.
+            return BackupArchiveReadResult.Invalid("Archivo ZIP corrupto: ${error.message ?: "lectura inválida"}")
         }
 
         val manifestRaw = entries.remove(BackupManifestV1.MANIFEST_PATH)

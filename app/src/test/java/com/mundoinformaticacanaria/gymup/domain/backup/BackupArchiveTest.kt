@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.time.Instant
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import java.util.zip.CRC32
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -132,6 +133,35 @@ class BackupArchiveTest {
         assertTrue(
             (rejected as BackupArchiveReadResult.Invalid).reason.contains("descomprimido total"),
         )
+    }
+
+    @Test
+    fun `read rejects a corrupted ZIP CRC without throwing`() {
+        val payload = "unique stored payload for CRC check".encodeToByteArray()
+        val archive = ByteArrayOutputStream().use { output ->
+            ZipOutputStream(output).use { zip ->
+                val entry = ZipEntry(BackupManifestV1.DATA_PATH).apply {
+                    method = ZipEntry.STORED
+                    size = payload.size.toLong()
+                    compressedSize = payload.size.toLong()
+                    crc = CRC32().apply { update(payload) }.value
+                }
+                zip.putNextEntry(entry)
+                zip.write(payload)
+                zip.closeEntry()
+            }
+            output.toByteArray()
+        }
+        val payloadOffset = archive.indices.firstOrNull { offset ->
+            offset + payload.size <= archive.size &&
+                payload.indices.all { archive[offset + it] == payload[it] }
+        } ?: error("No se encontró el payload almacenado en el ZIP de prueba")
+        archive[payloadOffset] = (archive[payloadOffset].toInt() xor 1).toByte()
+
+        val result = BackupArchiveCodec.readAndValidate(archive)
+
+        assertTrue(result is BackupArchiveReadResult.Invalid)
+        assertTrue((result as BackupArchiveReadResult.Invalid).reason.contains("ZIP corrupto"))
     }
 
     private fun zipOf(vararg entries: Pair<String, ByteArray>): ByteArray = ByteArrayOutputStream().use { output ->
