@@ -129,6 +129,29 @@ class BackupArchiveTest {
     }
 
     @Test
+    fun `read rejects directory payload instead of draining unbounded expansion`() {
+        val data = "{}".encodeToByteArray()
+        val manifest = BackupManifestCodec.create(
+            data = data,
+            images = emptyMap(),
+            appVersion = "0.1.0",
+            exportedAt = Instant.parse("2026-08-21T00:00:00Z"),
+        )
+        // ZIP directory names are permitted, but directory payloads must never
+        // bypass the per-entry and aggregate expansion budgets via closeEntry().
+        val archive = zipOf(
+            "images/" to ByteArray(32 * 1024) { 1 },
+            BackupManifestV1.MANIFEST_PATH to BackupManifestCodec.encode(manifest).encodeToByteArray(),
+            BackupManifestV1.DATA_PATH to data,
+        )
+
+        val result = BackupArchiveCodec.readAndValidate(archive)
+
+        assertTrue(result is BackupArchiveReadResult.Invalid)
+        assertTrue((result as BackupArchiveReadResult.Invalid).reason.contains("Directorio ZIP con contenido"))
+    }
+
+    @Test
     fun `read reports checksum mismatch for tampered declared file`() {
         val original = "original".encodeToByteArray()
         val manifest = BackupManifestCodec.create(
