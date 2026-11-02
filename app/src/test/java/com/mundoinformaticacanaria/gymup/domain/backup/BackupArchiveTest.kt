@@ -164,6 +164,24 @@ class BackupArchiveTest {
         assertTrue((result as BackupArchiveReadResult.Invalid).reason.contains("ZIP corrupto"))
     }
 
+    @Test
+    fun `read rejects malformed UTF8 ZIP entry name without throwing`() {
+        val archive = zipOf(BackupManifestV1.DATA_PATH to "{}".encodeToByteArray())
+        // Local ZIP header: 30 fixed bytes followed by the entry filename.
+        // 0xFF alone is not valid UTF-8 and ZipInputStream may throw
+        // IllegalArgumentException while decoding the name.
+        assertEquals(0x50, archive[0].toInt() and 0xFF)
+        assertEquals(0x4B, archive[1].toInt() and 0xFF)
+        assertEquals(0x03, archive[2].toInt() and 0xFF)
+        assertEquals(0x04, archive[3].toInt() and 0xFF)
+        archive[30] = 0xFF.toByte()
+
+        val result = BackupArchiveCodec.readAndValidate(archive)
+
+        assertTrue(result is BackupArchiveReadResult.Invalid)
+        assertTrue((result as BackupArchiveReadResult.Invalid).reason.contains("ZIP corrupto"))
+    }
+
     private fun zipOf(vararg entries: Pair<String, ByteArray>): ByteArray = ByteArrayOutputStream().use { output ->
         ZipOutputStream(output).use { zip ->
             entries.forEach { (path, bytes) ->
