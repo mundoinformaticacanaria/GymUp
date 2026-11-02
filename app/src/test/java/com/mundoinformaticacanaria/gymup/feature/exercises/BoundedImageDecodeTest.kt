@@ -45,6 +45,22 @@ class BoundedImageDecodeTest {
     }
 
     @Test
+    fun exactThumbnailBoundaryDoesNotDownsample() {
+        val result = decodeBoundedImageBytes(png(512, 256))
+        assertNotNull(result)
+        assertEquals(512, result!!.width)
+        assertEquals(256, result.height)
+    }
+
+    @Test
+    fun onePixelOverThumbnailBoundaryIsDownsampled() {
+        val result = decodeBoundedImageBytes(png(513, 257))
+        assertNotNull(result)
+        assertTrue(result!!.width in 1..512)
+        assertTrue(result.height in 1..512)
+    }
+
+    @Test
     fun malformedImageIsNotRendered() {
         assertNull(decodeBoundedImageBytes(byteArrayOf(1, 2, 3, 4)))
         assertNull(decodeBoundedImageBytes(byteArrayOf()))
