@@ -328,6 +328,82 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `backup export rejects regular image root swapped for identical bytes`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val originalBytes = byteArrayOf(1, 2, 3)
+        val image = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, originalBytes)
+        val root = context.filesDir.resolve("exercise-images")
+        val parked = context.filesDir.resolve("original-export-root-${UUID.randomUUID()}")
+        val foreignRoot = context.filesDir.resolve("foreign-export-root-${UUID.randomUUID()}")
+            .apply { mkdirs() }
+        val foreignFile = foreignRoot.resolve(image.storageKey.removePrefix("user:"))
+            .apply { writeBytes(originalBytes) }
+        val source = RoomBackupDataSource(
+            context, database, preferences,
+            beforeRequiredImageRead = {
+                Files.move(root.toPath(), parked.toPath())
+                Files.move(foreignRoot.toPath(), root.toPath())
+            },
+        )
+
+        try {
+            val failure = runCatching { source.exportSnapshot() }.exceptionOrNull()
+            assertTrue("Export must reject a different regular root with identical bytes",
+                failure is IllegalStateException)
+            assertArrayEquals(originalBytes, root.resolve(foreignFile.name).readBytes())
+            assertNotNull(database.exerciseDao().getImageById(image.id))
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+        } finally {
+            if (parked.exists()) {
+                if (root.exists()) Files.move(root.toPath(), foreignRoot.toPath())
+                Files.move(parked.toPath(), root.toPath())
+            }
+            foreignRoot.deleteRecursively()
+        }
+        assertArrayEquals(originalBytes,
+            RoomBackupDataSource(context, database, preferences)
+                .exportSnapshot().images.getValue(image.storageKey))
+    }
+
+    @Test
+    fun `backup export rejects regular image file swapped for identical bytes`() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val originalBytes = byteArrayOf(4, 5, 6)
+        val image = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, originalBytes)
+        val imageFile = requireNotNull(image.localFile)
+        val parked = context.filesDir.resolve("original-export-file-${UUID.randomUUID()}")
+        val foreign = context.filesDir.resolve("foreign-export-file-${UUID.randomUUID()}")
+            .apply { writeBytes(originalBytes) }
+        val source = RoomBackupDataSource(
+            context, database, preferences,
+            beforeRequiredImageRead = {
+                Files.move(imageFile.toPath(), parked.toPath())
+                Files.move(foreign.toPath(), imageFile.toPath())
+            },
+        )
+
+        try {
+            val failure = runCatching { source.exportSnapshot() }.exceptionOrNull()
+            assertTrue("Export must reject a different regular file with identical bytes",
+                failure is IllegalStateException)
+            assertArrayEquals(originalBytes, imageFile.readBytes())
+            assertNotNull(database.exerciseDao().getImageById(image.id))
+            assertEquals(ThemeMode.DARK, preferences.currentThemeMode())
+        } finally {
+            if (parked.exists()) {
+                if (imageFile.exists()) Files.move(imageFile.toPath(), foreign.toPath())
+                Files.move(parked.toPath(), imageFile.toPath())
+            }
+            foreign.delete()
+        }
+        assertArrayEquals(originalBytes,
+            RoomBackupDataSource(context, database, preferences)
+                .exportSnapshot().images.getValue(image.storageKey))
+    }
+
+    @Test
     fun `backup export rejects oversized persisted image without changing Room or theme`() = runBlocking {
         val exercise = database.backupDao().getExercises().first()
         val image = ExerciseImageManager(context, database.exerciseDao())
