@@ -33,3 +33,9 @@ TOCTOU/ABA. Continúan pendientes ejecución instrumentada Android 15/16,
 durabilidad/cortes reales, auditoría DAO/lectores/procesos y regresión
 física BF-02. Mantener #56 abierta y PR #57 DRAFT sobre #50. No fusionar,
 publicar APK ni retirar `exercise-images-previous-*` por este cambio.
+
+## CI del primer cambio y corrección posterior
+
+[Android CI #41387156929](https://github.com/mundoinformaticacanaria/GymUp/actions/runs/41387156929) terminó **FAILURE** para `4864fdc`: 368 tests JVM, uno fallido (`BoundedImageDecodeTest.malformedImageIsNotRendered`, línea 49). El `BitmapFactory` de Robolectric puede devolver un bitmap simulado ante cuatro bytes arbitrarios; no se consideró validada la mitigación.
+
+`3ecb6e8` rechaza antes del decoder los buffers menores de ocho bytes, que no pueden contener una imagen codificada válida; `1d3d616` amplía la regresión a entradas vacías y de siete bytes. Esta defensa mínima no sustituye una validación completa del formato y no prueba inmunidad frente a archivos malformados más largos. **Nueva CI pendiente de confirmar** para estos commits; sin AVD API 35/36 ni prueba física.
