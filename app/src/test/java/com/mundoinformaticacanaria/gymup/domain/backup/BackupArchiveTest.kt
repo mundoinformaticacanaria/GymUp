@@ -237,6 +237,35 @@ class BackupArchiveTest {
         )
     }
 
+    @Test
+    fun `read rejects malformed UTF8 manifest instead of silently replacing metadata`() {
+        val data = "{}".encodeToByteArray()
+        val manifest = BackupManifestCodec.create(
+            data = data,
+            images = emptyMap(),
+            appVersion = "build-X",
+            exportedAt = Instant.parse("2026-08-21T00:00:00Z"),
+        )
+        val raw = BackupManifestCodec.encode(manifest).encodeToByteArray()
+        val marker = "build-X".encodeToByteArray()
+        val offset = raw.indices.firstOrNull { start ->
+            start + marker.size <= raw.size &&
+                marker.indices.all { raw[start + it] == marker[it] }
+        } ?: error("No se encontró app_version en el manifest de prueba")
+        // 0xFF is not valid UTF-8. A permissive decode would replace it with U+FFFD,
+        // leaving otherwise valid JSON and allowing the altered version metadata.
+        raw[offset + marker.lastIndex] = 0xFF.toByte()
+        val archive = zipOf(
+            BackupManifestV1.MANIFEST_PATH to raw,
+            BackupManifestV1.DATA_PATH to data,
+        )
+
+        val result = BackupArchiveCodec.readAndValidate(archive)
+
+        assertTrue(result is BackupArchiveReadResult.Invalid)
+        assertTrue((result as BackupArchiveReadResult.Invalid).reason.contains("UTF-8"))
+    }
+
     private fun numberedImageEntries(count: Int): Map<String, ByteArray> =
         (1..count).associate { index ->
             "user:00000000-0000-0000-0000-${index.toString().padStart(12, '0')}" to byteArrayOf(1)

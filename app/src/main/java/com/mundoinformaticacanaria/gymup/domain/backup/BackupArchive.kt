@@ -117,7 +117,14 @@ object BackupArchiveCodec {
 
         val manifestRaw = entries.remove(BackupManifestV1.MANIFEST_PATH)
             ?: return BackupArchiveReadResult.Invalid("Falta ${BackupManifestV1.MANIFEST_PATH}")
-        val manifest = BackupManifestCodec.decode(manifestRaw.decodeToString()).getOrElse {
+        // A replacement character would silently rewrite untrusted manifest metadata.
+        // Reject malformed UTF-8 rather than parsing a different JSON document.
+        val manifestText = runCatching {
+            manifestRaw.decodeToString(throwOnInvalidSequence = true)
+        }.getOrElse {
+            return BackupArchiveReadResult.Invalid("Manifest no válido: UTF-8 inválido")
+        }
+        val manifest = BackupManifestCodec.decode(manifestText).getOrElse {
             return BackupArchiveReadResult.Invalid("Manifest no válido: ${it.message ?: "JSON inválido"}")
         }
 
