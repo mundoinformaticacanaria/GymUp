@@ -24,18 +24,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mundoinformaticacanaria.gymup.core.model.SessionExecutionResult
 import com.mundoinformaticacanaria.gymup.core.model.SessionOperationalState
 import com.mundoinformaticacanaria.gymup.domain.repository.SessionSummary
-import com.mundoinformaticacanaria.gymup.domain.repository.TrainingRepository
+import com.mundoinformaticacanaria.gymup.domain.repository.SessionRepository
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionsScreen(
-    trainingRepository: TrainingRepository,
+    sessionRepository: SessionRepository,
     onNewSession: () -> Unit,
     onOpenSession: (String) -> Unit,
     onBack: () -> Unit,
 ) {
-    val sessions by trainingRepository.observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
+    val sessions by sessionRepository.observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
     Scaffold(
         topBar = {
             TopAppBar(
@@ -59,7 +59,7 @@ fun SessionsScreen(
                                 Text(session.name, style = MaterialTheme.typography.titleMedium)
                                 Text("${session.date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))} · ${session.sessionTypeName}")
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Text(session.operationalState.label())
+                                    Text(session.operationalState.sessionStateLabel())
                                     Text(session.executionResult.label())
                                 }
                             }
@@ -71,7 +71,7 @@ fun SessionsScreen(
     }
 }
 
-internal fun SessionOperationalState.label(): String = when (this) {
+private fun SessionOperationalState.sessionStateLabel(): String = when (this) {
     SessionOperationalState.PLANNED -> "Planificada"
     SessionOperationalState.IN_PROGRESS -> "En curso"
     SessionOperationalState.REALIZED -> "Realizada"

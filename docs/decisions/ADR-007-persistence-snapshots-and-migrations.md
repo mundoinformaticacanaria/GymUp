@@ -1,4 +1,4 @@
-# ADR-004 — Persistencia, snapshots y migraciones
+# ADR-007 — Persistencia, snapshots y migraciones
 
 Estado: **Aceptado**  
 Fecha: 2026-08-20  
