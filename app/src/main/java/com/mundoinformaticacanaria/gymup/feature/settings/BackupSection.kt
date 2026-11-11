@@ -20,14 +20,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mundoinformaticacanaria.gymup.data.backup.AndroidBackupFiles
-import com.mundoinformaticacanaria.gymup.data.backup.BackupImportResult
 import com.mundoinformaticacanaria.gymup.data.backup.BackupManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun BackupSection(backupManager: BackupManager) {
+fun BackupSection(
+    backupManager: BackupManager,
+    onImportConfirmed: (ByteArray) -> Boolean,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var pendingExport by remember { mutableStateOf<ByteArray?>(null) }
@@ -126,24 +128,11 @@ fun BackupSection(backupManager: BackupManager) {
                 Button(
                     onClick = {
                         pendingImport = null
-                        scope.launch {
-                            runCatching {
-                                withContext(Dispatchers.IO) { backupManager.importReplaceAll(archive) }
-                            }.onSuccess { result ->
-                                when (result) {
-                                    is BackupImportResult.Imported -> {
-                                        status = "Backup importado correctamente (${result.imageCount} imagen(es))."
-                                        error = null
-                                    }
-                                    is BackupImportResult.Rejected -> {
-                                        error = result.reason
-                                        status = null
-                                    }
-                                }
-                            }.onFailure {
-                                error = it.message ?: "No se pudo importar el backup."
-                                status = null
-                            }
+                        // The application coordinator owns the import and closes all readers
+                        // before touching Room, images or DataStore. Never launch it in this scope.
+                        if (!onImportConfirmed(archive)) {
+                            error = "No se puede iniciar otra importación mientras haya una en curso."
+                            status = null
                         }
                     },
                 ) { Text("Validar y reemplazar") }

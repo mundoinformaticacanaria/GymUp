@@ -90,4 +90,9 @@ dependencies {
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.robolectric)
     testImplementation(libs.room.testing)
+
+    // Android 15/16 on-device checks: not executed by JVM/Robolectric CI.
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation("androidx.test:runner:1.7.0")
 }

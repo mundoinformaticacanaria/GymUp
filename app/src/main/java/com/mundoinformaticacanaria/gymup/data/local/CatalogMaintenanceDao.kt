@@ -72,6 +72,9 @@ interface CatalogMaintenanceDao {
     @Query("SELECT * FROM exercise_images WHERE exercise_id = :exerciseId ORDER BY position")
     suspend fun getExerciseImages(exerciseId: String): List<ExerciseImageEntity>
 
+    @Query("SELECT COUNT(*) FROM exercise_images WHERE source_type = 'USER' AND storage_key = :storageKey")
+    suspend fun countUserImageStorageKeyReferences(storageKey: String): Int
+
     @Query("SELECT COUNT(*) FROM session_exercises WHERE exercise_id = :exerciseId")
     suspend fun countHistoricalReferences(exerciseId: String): Int
 

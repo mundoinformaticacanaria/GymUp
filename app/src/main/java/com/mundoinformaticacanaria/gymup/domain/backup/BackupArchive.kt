@@ -2,6 +2,8 @@ package com.mundoinformaticacanaria.gymup.domain.backup
 
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.nio.charset.CharacterCodingException
 import java.time.Instant
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -24,7 +26,10 @@ sealed interface BackupArchiveReadResult {
 
 object BackupArchiveCodec {
     private const val MAX_ENTRY_BYTES = 25L * 1024L * 1024L
-    private const val MAX_ARCHIVE_BYTES = 100L * 1024L * 1024L
+    // Defensive aggregate expansion budget: compressed ZIP size and per-entry limits alone
+    // do not bound the sum of all entries retained in memory before manifest validation.
+    internal const val MAX_TOTAL_EXPANDED_BYTES = 128L * 1024L * 1024L
+    internal const val MAX_ARCHIVE_BYTES = 100L * 1024L * 1024L
     private const val MAX_ENTRIES = 1_000
 
     fun create(
@@ -52,13 +57,23 @@ object BackupArchiveCodec {
         }
     }
 
-    fun readAndValidate(archive: ByteArray): BackupArchiveReadResult {
+    fun readAndValidate(archive: ByteArray): BackupArchiveReadResult =
+        readAndValidateWithExpandedLimit(archive, MAX_TOTAL_EXPANDED_BYTES)
+
+    // Test seam permits tiny fixtures for the aggregate budget without allocating 128 MiB.
+    internal fun readAndValidateWithExpandedLimit(
+        archive: ByteArray,
+        maxExpandedBytes: Long,
+    ): BackupArchiveReadResult {
+        require(maxExpandedBytes > 0L) { "Límite descomprimido no válido" }
         if (archive.size.toLong() > MAX_ARCHIVE_BYTES) {
             return BackupArchiveReadResult.Invalid("El backup supera el tamaño máximo permitido")
         }
 
         val entries = linkedMapOf<String, ByteArray>()
-        ZipInputStream(ByteArrayInputStream(archive)).use { zip ->
+        var expandedBytes = 0L
+        try {
+            ZipInputStream(ByteArrayInputStream(archive)).use { zip ->
             var entryCount = 0
             while (true) {
                 val entry = zip.nextEntry ?: break
@@ -67,6 +82,20 @@ object BackupArchiveCodec {
                     return BackupArchiveReadResult.Invalid("El backup contiene demasiados archivos")
                 }
                 if (entry.isDirectory) {
+                    // Directory entries are not extracted, but still belong to the
+                    // untrusted archive: never silently accept traversal paths.
+                    val directoryPath = entry.name.removeSuffix("/")
+                    if (!BackupManifestCodec.isSafeRelativePath(directoryPath)) {
+                        return BackupArchiveReadResult.Invalid("Ruta ZIP no válida: ${entry.name}")
+                    }
+                    // A ZIP directory should carry no payload. closeEntry() drains any
+                    // unread data; skipping straight to it could decompress arbitrarily
+                    // large attacker-controlled bytes outside the entry/total budgets.
+                    if (readEntry(zip, 0L) == null) {
+                        return BackupArchiveReadResult.Invalid(
+                            "Directorio ZIP con contenido no permitido: ${entry.name}",
+                        )
+                    }
                     zip.closeEntry()
                     continue
                 }
@@ -77,17 +106,40 @@ object BackupArchiveCodec {
                 if (entries.containsKey(path)) {
                     return BackupArchiveReadResult.Invalid("Archivo ZIP duplicado: $path")
                 }
-                val bytes = readEntry(zip) ?: return BackupArchiveReadResult.Invalid(
-                    "El archivo $path supera el tamaño máximo permitido",
+                val remaining = maxExpandedBytes - expandedBytes
+                val entryBudget = minOf(MAX_ENTRY_BYTES, remaining)
+                val bytes = readEntry(zip, entryBudget) ?: return BackupArchiveReadResult.Invalid(
+                    if (entryBudget < MAX_ENTRY_BYTES) {
+                        "El backup supera el tamaño descomprimido total permitido"
+                    } else {
+                        "El archivo $path supera el tamaño máximo permitido"
+                    },
                 )
+                expandedBytes += bytes.size.toLong()
                 entries[path] = bytes
                 zip.closeEntry()
             }
+            }
+        } catch (error: IOException) {
+            // A damaged CRC, truncated deflate stream or malformed ZIP is invalid input,
+            // not an exception that should escape the archive validation boundary.
+            return BackupArchiveReadResult.Invalid("Archivo ZIP corrupto: ${error.message ?: "lectura inválida"}")
+        } catch (error: IllegalArgumentException) {
+            // ZipInputStream may throw IllegalArgumentException (not IOException) while
+            // decoding malformed UTF-8 entry names. Treat untrusted ZIP names as invalid.
+            return BackupArchiveReadResult.Invalid("Archivo ZIP corrupto: nombre de entrada inválido")
         }
 
         val manifestRaw = entries.remove(BackupManifestV1.MANIFEST_PATH)
             ?: return BackupArchiveReadResult.Invalid("Falta ${BackupManifestV1.MANIFEST_PATH}")
-        val manifest = BackupManifestCodec.decode(manifestRaw.decodeToString()).getOrElse {
+        // A replacement character would silently rewrite untrusted manifest metadata.
+        // Reject malformed UTF-8 rather than parsing a different JSON document.
+        val manifestText = runCatching {
+            manifestRaw.decodeToString(throwOnInvalidSequence = true)
+        }.getOrElse {
+            return BackupArchiveReadResult.Invalid("Manifest no válido: UTF-8 inválido")
+        }
+        val manifest = BackupManifestCodec.decode(manifestText).getOrElse {
             return BackupArchiveReadResult.Invalid("Manifest no válido: ${it.message ?: "JSON inválido"}")
         }
 
@@ -102,13 +154,23 @@ object BackupArchiveCodec {
             return BackupArchiveReadResult.ValidationFailed(validation)
         }
 
+        // A valid checksum proves the bytes were not altered, not that JSON text
+        // can be decoded without silently replacing malformed UTF-8 sequences.
+        // Reject invalid data.json before exposing the snapshot as importable.
+        val dataBytes = entries.getValue(manifest.data.path)
+        try {
+            dataBytes.decodeToString(throwOnInvalidSequence = true)
+        } catch (error: CharacterCodingException) {
+            return BackupArchiveReadResult.Invalid("data.json no válido: UTF-8 inválido")
+        }
+
         val images = manifest.images.associate { image ->
             image.storageKey to entries.getValue(image.path)
         }
         return BackupArchiveReadResult.Valid(
             manifest = manifest,
             snapshot = BackupSnapshot(
-                data = entries.getValue(manifest.data.path),
+                data = dataBytes,
                 images = images,
             ),
         )
@@ -121,7 +183,7 @@ object BackupArchiveCodec {
         zip.closeEntry()
     }
 
-    private fun readEntry(zip: ZipInputStream): ByteArray? {
+    private fun readEntry(zip: ZipInputStream, maxBytes: Long): ByteArray? {
         val output = ByteArrayOutputStream()
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
         var total = 0L
@@ -129,7 +191,7 @@ object BackupArchiveCodec {
             val read = zip.read(buffer)
             if (read < 0) break
             total += read
-            if (total > MAX_ENTRY_BYTES) return null
+            if (total > maxBytes) return null
             output.write(buffer, 0, read)
         }
         return output.toByteArray()
