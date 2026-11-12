@@ -31,6 +31,7 @@ abstract class GymUpDatabase : RoomDatabase() {
     abstract fun routineDao(): RoutineDao
     abstract fun trainingDao(): TrainingDao
     abstract fun backupDao(): BackupDao
+    abstract fun catalogMaintenanceDao(): CatalogMaintenanceDao
 
     companion object {
         const val DATABASE_NAME = "gymup.db"
