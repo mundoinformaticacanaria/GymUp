@@ -40,6 +40,103 @@ class SeriesPagerStateTest {
         )
     }
 
+
+    @Test
+    fun deletingSelectedMiddleSeriesKeepsAValidNextSeries() {
+        assertEquals(
+            1,
+            resolveSeriesPageIndex(
+                previousSetIds = listOf("one", "two", "three"),
+                currentSetIds = listOf("one", "three"),
+                previousPage = 1,
+            ),
+        )
+    }
+
+    @Test
+    fun reorderingSeriesKeepsTheSelectedSeriesById() {
+        assertEquals(
+            0,
+            resolveSeriesPageIndex(
+                previousSetIds = listOf("one", "two", "three"),
+                currentSetIds = listOf("three", "one", "two"),
+                previousPage = 2,
+            ),
+        )
+    }
+
+    @Test
+    fun deletingEverySeriesReturnsSafeEmptyPage() {
+        assertEquals(
+            0,
+            resolveSeriesPageIndex(
+                previousSetIds = listOf("one"),
+                currentSetIds = emptyList(),
+                previousPage = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun stalePageIndexIsClampedToSurvivingSeries() {
+        assertEquals(
+            1,
+            resolveSeriesPageIndex(
+                previousSetIds = listOf("one", "two", "three"),
+                currentSetIds = listOf("one", "two"),
+                previousPage = 99,
+            ),
+        )
+    }
+
+    @Test
+    fun addingSeveralSeriesSelectsTheLastNewSeries() {
+        assertEquals(
+            3,
+            resolveSeriesPageIndex(
+                previousSetIds = listOf("one"),
+                currentSetIds = listOf("one", "two", "three", "four"),
+                previousPage = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun deletingFirstSeriesPreservesSelectionById() {
+        assertEquals(
+            0,
+            resolveSeriesPageIndex(
+                previousSetIds = listOf("one", "two", "three"),
+                currentSetIds = listOf("two", "three"),
+                previousPage = 1,
+            ),
+        )
+    }
+
+    @Test
+    fun unchangedSeriesKeepTheCurrentPage() {
+        assertEquals(
+            1,
+            resolveSeriesPageIndex(
+                previousSetIds = listOf("one", "two"),
+                currentSetIds = listOf("one", "two"),
+                previousPage = 1,
+            ),
+        )
+    }
+
+    @Test
+    fun firstSeriesAfterEmptyStateIsSelected() {
+        assertEquals(
+            0,
+            resolveSeriesPageIndex(
+                previousSetIds = emptyList(),
+                currentSetIds = listOf("one"),
+                previousPage = 0,
+            ),
+        )
+    }
+
     @Test
     fun indicatorsDisappearAtTheirLimits() {
         assertEquals("Serie 1 de 4  >", seriesPositionText(page = 0, pageCount = 4))
