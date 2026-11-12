@@ -166,11 +166,14 @@ class RoomTrainingRepository(
             current.add(index, session)
             assignSessionOrder(current, oldEpoch)
         } else {
-            trainingDao.updateSession(session.copy(orderInDay = -100000))
+            val parked = session.copy(sessionDateEpochDay = newEpoch, orderInDay = -100000)
+            trainingDao.updateSession(parked)
             compactSessionOrders(oldEpoch)
-            val destination = trainingDao.getSessionsForDate(newEpoch).toMutableList()
+            val destination = trainingDao.getSessionsForDate(newEpoch)
+                .filterNot { it.id == sessionId }
+                .toMutableList()
             val index = (orderInDay - 1).coerceIn(0, destination.size)
-            destination.add(index, session.copy(sessionDateEpochDay = newEpoch, orderInDay = -100000))
+            destination.add(index, parked)
             assignSessionOrder(destination, newEpoch)
         }
     }
