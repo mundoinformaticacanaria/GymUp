@@ -102,6 +102,42 @@ class SeriesPagerStateTest {
     }
 
     @Test
+    fun deletingFirstSeriesPreservesSelectionById() {
+        assertEquals(
+            0,
+            resolveSeriesPageIndex(
+                previousSetIds = listOf("one", "two", "three"),
+                currentSetIds = listOf("two", "three"),
+                previousPage = 1,
+            ),
+        )
+    }
+
+    @Test
+    fun unchangedSeriesKeepTheCurrentPage() {
+        assertEquals(
+            1,
+            resolveSeriesPageIndex(
+                previousSetIds = listOf("one", "two"),
+                currentSetIds = listOf("one", "two"),
+                previousPage = 1,
+            ),
+        )
+    }
+
+    @Test
+    fun firstSeriesAfterEmptyStateIsSelected() {
+        assertEquals(
+            0,
+            resolveSeriesPageIndex(
+                previousSetIds = emptyList(),
+                currentSetIds = listOf("one"),
+                previousPage = 0,
+            ),
+        )
+    }
+
+    @Test
     fun indicatorsDisappearAtTheirLimits() {
         assertEquals("Serie 1 de 4  >", seriesPositionText(page = 0, pageCount = 4))
         assertEquals("<  Serie 2 de 4  >", seriesPositionText(page = 1, pageCount = 4))
