@@ -472,4 +472,49 @@ class HotBackupImportCoordinatorTest {
         }
     }
 
+
+    @Test
+    fun `cancellation while closing readers never starts import or recovery`() = runBlocking {
+        val appJob = SupervisorJob()
+        val appScope = CoroutineScope(appJob + Dispatchers.Unconfined)
+        var imports = 0
+        var recoveries = 0
+        val coordinator = HotBackupImportCoordinator(
+            scope = appScope,
+            importArchive = {
+                imports++
+                BackupImportResult.Imported(0)
+            },
+            recover = { recoveries++ },
+        )
+        val firstActivity = requireNotNull(coordinator.registerReader())
+        val stoppedActivity = requireNotNull(coordinator.registerReader())
+        try {
+            assertTrue(coordinator.start(byteArrayOf(1)))
+            firstActivity.close()
+            coordinator.readersDisposed()
+            assertEquals(HotBackupImportCoordinator.State.ClosingReaders, coordinator.state.value)
+
+            // The import coroutine is cancelled while the second Activity still reads.
+            // Even rollback/replay would be unsafe before its lease is disposed.
+            appJob.cancelAndJoin()
+
+            assertEquals(0, imports)
+            assertEquals(0, recoveries)
+            val completed = coordinator.state.value as HotBackupImportCoordinator.State.Completed
+            assertTrue(completed.outcome is HotBackupImportCoordinator.Outcome.Failed)
+            assertEquals(1L, completed.generation)
+            assertFalse(coordinator.start(byteArrayOf(2)))
+
+            stoppedActivity.close()
+            coordinator.readersDisposed()
+            assertEquals(0, imports)
+            assertEquals(0, recoveries)
+        } finally {
+            firstActivity.close()
+            stoppedActivity.close()
+            appScope.cancel()
+        }
+    }
+
 }

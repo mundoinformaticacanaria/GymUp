@@ -109,6 +109,16 @@ class HotBackupImportCoordinator(
                 mutableState.value = State.Completed(Outcome.Result(result), generation.incrementAndGet())
             } catch (failure: Exception) {
                 originalFailure = failure.message ?: "No se pudo importar el backup."
+                if (!closed.isCompleted) {
+                    // Cancellation while waiting for disposal cannot have started import.
+                    // Recovery may mutate the domain too: do not run it while another
+                    // Activity still holds a reader lease. Preserve the unchanged data.
+                    mutableState.value = State.Completed(
+                        Outcome.Failed(originalFailure),
+                        generation.incrementAndGet(),
+                    )
+                    return@launch
+                }
                 mutableState.value = State.Recovering
                 // A cancellation must not expose readers before rollback/recovery completes.
                 withContext(NonCancellable) {
