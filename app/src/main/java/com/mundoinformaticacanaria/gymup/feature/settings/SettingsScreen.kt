@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     currentMode: ThemeMode,
     backupManager: BackupManager,
+    onImportConfirmed: (ByteArray) -> Boolean,
     historicalCleanupManager: HistoricalCleanupManager,
     onThemeModeSelected: (ThemeMode) -> Unit,
     onCatalogMaintenance: () -> Unit,
@@ -63,7 +64,7 @@ fun SettingsScreen(
             }
         }
 
-        item { BackupSection(backupManager = backupManager) }
+        item { BackupSection(backupManager = backupManager, onImportConfirmed = onImportConfirmed) }
 
         item {
             Text(text = "Limpieza histórica", style = MaterialTheme.typography.titleMedium)

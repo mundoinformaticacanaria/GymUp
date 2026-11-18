@@ -1,0 +1,436 @@
+package com.mundoinformaticacanaria.gymup.data.images
+
+import android.content.Context
+import android.content.ContextWrapper
+import android.graphics.Bitmap
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.mundoinformaticacanaria.gymup.data.local.ExerciseImageEntity
+import com.mundoinformaticacanaria.gymup.data.local.GymUpDatabase
+import com.mundoinformaticacanaria.gymup.data.seed.DatabaseSeeder
+import com.mundoinformaticacanaria.gymup.feature.exercises.decodeUserImageBitmap
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.nio.file.Files
+import java.util.UUID
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class ExerciseImageSafeReadTest {
+    private lateinit var context: Context
+    private lateinit var database: GymUpDatabase
+
+    private fun cleanup() {
+        val root = context.filesDir.resolve("exercise-images")
+        if (Files.isSymbolicLink(root.toPath())) Files.delete(root.toPath())
+        else root.deleteRecursively()
+        context.filesDir.resolve("image-root-target").deleteRecursively()
+        context.filesDir.resolve("outside-gallery").delete()
+    }
+
+    @Before
+    fun setUp() = runBlocking {
+        context = ApplicationProvider.getApplicationContext()
+        cleanup()
+        database = Room.inMemoryDatabaseBuilder(context, GymUpDatabase::class.java)
+            .allowMainThreadQueries().build()
+        DatabaseSeeder(context, database).seedIfNeeded()
+    }
+
+    @After
+    fun tearDown() {
+        database.close()
+        cleanup()
+    }
+
+    @Test
+    fun linkedRootRejectsImageWrite() = runBlocking {
+        val target = context.filesDir.resolve("image-root-target").apply { mkdirs() }
+        val root = context.filesDir.resolve("exercise-images")
+        Files.createSymbolicLink(root.toPath(), target.toPath())
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+
+        val failure = runCatching {
+            manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertTrue(target.listFiles().isNullOrEmpty())
+        assertTrue(database.exerciseDao().getImages(exercise.id).isEmpty())
+    }
+
+    @Test
+    fun galleryIgnoresTraversalAndForgedOutsideFile() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val outside = context.filesDir.resolve("outside-gallery").apply { writeBytes(byteArrayOf(9, 8)) }
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "unsafe-gallery", exerciseId = exercise.id, position = 1,
+                sourceType = "USER", storageKey = "user:../outside-gallery",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val item = manager.observeImages(exercise.id).first().single()
+
+        assertNull(item.localFile)
+        assertNull(manager.readBytes(item.copy(localFile = outside)))
+        assertArrayEquals(byteArrayOf(9, 8), outside.readBytes())
+    }
+
+    @Test
+    fun galleryAndReadBytesIgnoreSymlinkToOutsideFile() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val outside = context.filesDir.resolve("outside-gallery").apply { writeBytes(byteArrayOf(7, 6)) }
+        val root = context.filesDir.resolve("exercise-images").apply { mkdirs() }
+        val link = root.resolve("linked-gallery")
+        Files.createSymbolicLink(link.toPath(), outside.toPath())
+        database.exerciseDao().insertImage(
+            ExerciseImageEntity(
+                id = "linked-gallery", exerciseId = exercise.id, position = 1,
+                sourceType = "USER", storageKey = "user:linked-gallery",
+                originalSourceUrl = null, author = null, license = null,
+            ),
+        )
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val item = manager.observeImages(exercise.id).first().single()
+
+        assertNull(item.localFile)
+        assertNull(item.fileRevision)
+        assertNull(manager.readBytes(item.copy(localFile = link)))
+        assertTrue(Files.isSymbolicLink(link.toPath()))
+        assertArrayEquals(byteArrayOf(7, 6), outside.readBytes())
+    }
+
+    @Test
+    fun swappedSymlinkAfterValidationCannotBeRead() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val ordinaryManager = ExerciseImageManager(context, database.exerciseDao())
+        val saved = ordinaryManager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val outside = context.filesDir.resolve("outside-gallery").apply {
+            writeBytes(byteArrayOf(8, 7, 6))
+        }
+        val manager = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            beforeUserImageRead = { file ->
+                Files.delete(file.toPath())
+                Files.createSymbolicLink(file.toPath(), outside.toPath())
+            },
+        )
+        val item = manager.observeImages(exercise.id).first().single()
+
+        assertNull(manager.readBytes(item))
+        assertTrue(Files.isSymbolicLink(saved.localFile!!.toPath()))
+        assertArrayEquals(byteArrayOf(8, 7, 6), outside.readBytes())
+    }
+
+    @Test
+    fun swappedImageRootSymlinkBeforeOpenCannotReadExternalBytes() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val ordinaryManager = ExerciseImageManager(context, database.exerciseDao())
+        val saved = ordinaryManager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val root = context.filesDir.resolve("exercise-images")
+        val originalRoot = context.filesDir.resolve("image-root-original-${UUID.randomUUID()}")
+        val outsideRoot = context.filesDir.resolve("image-root-target").apply { mkdirs() }
+        val outsideBytes = byteArrayOf(9, 8, 7, 6)
+        val outsideImage = outsideRoot.resolve(saved.storageKey.removePrefix("user:")).apply {
+            writeBytes(outsideBytes)
+        }
+        val manager = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            beforeUserImageRead = {
+                // Simulate the ancestor being replaced after the gallery's first check.
+                Files.move(root.toPath(), originalRoot.toPath())
+                Files.createSymbolicLink(root.toPath(), outsideRoot.toPath())
+            },
+        )
+        val item = manager.observeImages(exercise.id).first().single()
+
+        try {
+            assertNull(manager.readBytes(item))
+            assertTrue(Files.isSymbolicLink(root.toPath()))
+            assertArrayEquals(outsideBytes, outsideImage.readBytes())
+            assertNotNull(database.exerciseDao().getImageById(saved.id))
+        } finally {
+            // Never let the test's linked root leak into the next Robolectric case.
+            if (Files.isSymbolicLink(root.toPath())) Files.delete(root.toPath())
+            if (Files.exists(originalRoot.toPath())) {
+                Files.move(originalRoot.toPath(), root.toPath())
+            }
+        }
+    }
+
+    @Test
+    fun swappedRegularImageRootBeforeOpenCannotReadForeignBytes() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val saved = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val root = context.filesDir.resolve("exercise-images")
+        val parked = context.filesDir.resolve("image-root-original-${UUID.randomUUID()}")
+        val foreignRoot = context.filesDir.resolve("image-root-target").apply { mkdirs() }
+        val foreignBytes = byteArrayOf(9, 8, 7, 6)
+        val foreignImage = foreignRoot.resolve(saved.storageKey.removePrefix("user:"))
+            .apply { writeBytes(foreignBytes) }
+        val manager = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            beforeUserImageRead = {
+                Files.move(root.toPath(), parked.toPath())
+                Files.move(foreignRoot.toPath(), root.toPath())
+            },
+        )
+        val observed = manager.observeImages(exercise.id).first().single()
+
+        try {
+            assertNull(manager.readBytes(observed))
+            assertArrayEquals(foreignBytes, root.resolve(foreignImage.name).readBytes())
+            assertNotNull(database.exerciseDao().getImageById(saved.id))
+        } finally {
+            if (Files.exists(root.toPath()) && Files.exists(parked.toPath())) {
+                Files.move(root.toPath(), foreignRoot.toPath())
+                Files.move(parked.toPath(), root.toPath())
+            }
+        }
+        assertArrayEquals(byteArrayOf(1, 2, 3),
+            ExerciseImageManager(context, database.exerciseDao()).readBytes(saved))
+    }
+
+    @Test
+    fun swappedRegularImageFileBeforeOpenCannotReadForeignBytes() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val saved = ExerciseImageManager(context, database.exerciseDao())
+            .addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val file = saved.localFile!!
+        val parked = context.filesDir.resolve("image-original-${UUID.randomUUID()}")
+        val foreignBytes = byteArrayOf(7, 8, 9)
+        val manager = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            beforeUserImageRead = {
+                Files.move(file.toPath(), parked.toPath())
+                file.writeBytes(foreignBytes)
+            },
+        )
+        val observed = manager.observeImages(exercise.id).first().single()
+
+        try {
+            assertNull(manager.readBytes(observed))
+            assertArrayEquals(foreignBytes, file.readBytes())
+            assertArrayEquals(byteArrayOf(1, 2, 3), parked.readBytes())
+            assertNotNull(database.exerciseDao().getImageById(saved.id))
+        } finally {
+            if (parked.exists()) {
+                Files.deleteIfExists(file.toPath())
+                Files.move(parked.toPath(), file.toPath())
+            }
+        }
+        assertArrayEquals(byteArrayOf(1, 2, 3),
+            ExerciseImageManager(context, database.exerciseDao()).readBytes(saved))
+    }
+
+    @Test
+    fun oversizedPersistedImageCannotBeReadIntoMemory() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val saved = manager.addUserImage(exercise.id, byteArrayOf(1))
+        saved.localFile!!.writeBytes(ByteArray(10 * 1024 * 1024 + 1))
+
+        assertNull(manager.readBytes(saved))
+    }
+
+    private fun pngBytes(): ByteArray {
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        return try {
+            ByteArrayOutputStream().use { output ->
+                assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                output.toByteArray()
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    @Test
+    fun galleryDecoderReadsValidImageThroughManager() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val saved = manager.addUserImage(exercise.id, pngBytes())
+
+        assertNotNull(decodeUserImageBitmap(manager, saved))
+    }
+
+    @Test
+    fun galleryDecoderRejectsSymlinkSwappedAfterObservation() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val original = ExerciseImageManager(context, database.exerciseDao())
+        val saved = original.addUserImage(exercise.id, pngBytes())
+        val outsideBytes = pngBytes()
+        val outside = context.filesDir.resolve("outside-gallery").apply { writeBytes(outsideBytes) }
+        val manager = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            beforeUserImageRead = { file ->
+                Files.delete(file.toPath())
+                Files.createSymbolicLink(file.toPath(), outside.toPath())
+            },
+        )
+        val observed = manager.observeImages(exercise.id).first().single()
+
+        assertNull(decodeUserImageBitmap(manager, observed))
+        assertTrue(Files.isSymbolicLink(saved.localFile!!.toPath()))
+        assertArrayEquals(outsideBytes, outside.readBytes())
+    }
+
+    @Test
+    fun galleryDecoderRejectsSameBytesRegularFileSwappedAfterObservation() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val original = ExerciseImageManager(context, database.exerciseDao())
+        val saved = original.addUserImage(exercise.id, pngBytes())
+        val file = saved.localFile!!
+        val parked = context.filesDir.resolve("image-original-${UUID.randomUUID()}")
+        // Identical PNG bytes must not be enough to trust a different inode.
+        val foreignBytes = pngBytes()
+        val manager = ExerciseImageManager(
+            context,
+            database.exerciseDao(),
+            beforeUserImageRead = {
+                Files.move(file.toPath(), parked.toPath())
+                file.writeBytes(foreignBytes)
+            },
+        )
+        val observed = manager.observeImages(exercise.id).first().single()
+
+        try {
+            assertNull(decodeUserImageBitmap(manager, observed))
+            assertArrayEquals(foreignBytes, file.readBytes())
+            assertNotNull(database.exerciseDao().getImageById(saved.id))
+        } finally {
+            if (parked.exists()) {
+                Files.deleteIfExists(file.toPath())
+                Files.move(parked.toPath(), file.toPath())
+            }
+        }
+        assertNotNull(decodeUserImageBitmap(original, saved))
+    }
+
+    @Test
+    fun regularImageRemainsVisibleAndReadable() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val bytes = byteArrayOf(1, 3, 5, 7)
+        val saved = manager.addUserImage(exercise.id, bytes)
+        val item = manager.observeImages(exercise.id).first().single()
+
+        assertTrue(item.localFile?.isFile == true)
+        assertArrayEquals(bytes, manager.readBytes(item))
+        assertArrayEquals(bytes, manager.readBytes(saved))
+    }
+
+    @Test
+    fun linkedPrivateParentRejectsImageWritesReadsAndDeletionWithoutChangingRoom() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val linkedParent = context.filesDir.resolve("linked-gallery-parent-${UUID.randomUUID()}")
+        val outside = context.filesDir.resolve("outside-gallery-parent-${UUID.randomUUID()}")
+        val externalRoot = outside.resolve("exercise-images").apply { mkdirs() }
+        val sentinel = byteArrayOf(91, 92, 93, 94)
+        val externalImage = externalRoot.resolve("legacy-image").apply { writeBytes(sentinel) }
+        Files.createSymbolicLink(linkedParent.toPath(), outside.toPath())
+        val linkedContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = linkedParent
+        }
+
+        try {
+            database.exerciseDao().insertImage(
+                ExerciseImageEntity(
+                    id = "linked-parent-image", exerciseId = exercise.id, position = 1,
+                    sourceType = "USER", storageKey = "user:legacy-image",
+                    originalSourceUrl = null, author = null, license = null,
+                ),
+            )
+            val manager = ExerciseImageManager(linkedContext, database.exerciseDao())
+            val item = manager.observeImages(exercise.id).first().single()
+            assertNull(item.localFile)
+            assertNull(manager.readBytes(item.copy(localFile = externalImage)))
+
+            val addFailure = runCatching {
+                manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+            }.exceptionOrNull()
+            assertTrue(addFailure is IllegalStateException)
+
+            val deleteFailure = runCatching {
+                manager.deleteUserImage(item.id)
+            }.exceptionOrNull()
+            assertTrue(deleteFailure is IllegalStateException)
+
+            assertArrayEquals(sentinel, externalImage.readBytes())
+            assertTrue(database.exerciseDao().getImageById(item.id) != null)
+            assertTrue(database.exerciseDao().getImages(exercise.id).size == 1)
+        } finally {
+            Files.deleteIfExists(linkedParent.toPath())
+            outside.deleteRecursively()
+        }
+    }
+    @Test
+    fun galleryRevisionChangesForSameNamedRegularReplacementWithSameBytesAndTime() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val bytes = byteArrayOf(10, 20, 30, 40)
+        val saved = manager.addUserImage(exercise.id, bytes)
+        val before = manager.observeImages(exercise.id).first().single()
+        assertNotNull(before.fileRevision)
+
+        val file = saved.localFile!!
+        val parked = context.filesDir.resolve("image-revision-original-${UUID.randomUUID()}")
+        val originalTime = Files.getLastModifiedTime(file.toPath())
+        try {
+            Files.move(file.toPath(), parked.toPath())
+            file.writeBytes(bytes)
+            Files.setLastModifiedTime(file.toPath(), originalTime)
+            val after = manager.observeImages(exercise.id).first().single()
+            assertNotNull(after.fileRevision)
+            assertNotEquals(before.fileRevision, after.fileRevision)
+            assertArrayEquals(bytes, manager.readBytes(after))
+        } finally {
+            Files.deleteIfExists(file.toPath())
+            if (Files.exists(parked.toPath())) Files.move(parked.toPath(), file.toPath())
+        }
+    }
+
+    @Test
+    fun galleryRevisionChangesWhenFileTimestampChangesWithoutRoomRowChange() = runBlocking {
+        val exercise = database.backupDao().getExercises().first()
+        val manager = ExerciseImageManager(context, database.exerciseDao())
+        val saved = manager.addUserImage(exercise.id, byteArrayOf(1, 2, 3))
+        val before = manager.observeImages(exercise.id).first().single()
+        assertNotNull(before.fileRevision)
+
+        val file = saved.localFile!!
+        val initialTime = Files.getLastModifiedTime(file.toPath())
+        try {
+            Files.setLastModifiedTime(file.toPath(),
+                java.nio.file.attribute.FileTime.fromMillis(initialTime.toMillis() + 5_000))
+            val after = manager.observeImages(exercise.id).first().single()
+            assertNotEquals(before.fileRevision, after.fileRevision)
+        } finally {
+            Files.setLastModifiedTime(file.toPath(), initialTime)
+        }
+    }
+
+}
